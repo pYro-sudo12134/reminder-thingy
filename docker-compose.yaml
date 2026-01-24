@@ -1,10 +1,13 @@
 version: '3.8'
 services:
   localstack:
-    image: localstack/localstack:4.0
+    image: localstack/localstack:4.12
     container_name: localstack
     ports:
       - "4566:4566"
+      - "4571:4571"
+      - "4510:4510"
+      - "9200:9200"
       - "4510-4559:4510-4559"
       - "8080:8080"
     environment:
@@ -16,8 +19,9 @@ services:
       - AWS_DEFAULT_REGION=us-east-1
       - EDGE_PORT=4566
       - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY:-}
-      - TRANScribe_ENDPOINT_STRATEGY=domain
-      - OPENSEARCH_ENDPOINT_STRATEGY=domain
+      - OPENSEARCH_ENDPOINT_STRATEGY=port
+      - OPENSEARCH_PORT_EXTERNAL=4571
+      - OPENSEARCH_PORT=9200
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"

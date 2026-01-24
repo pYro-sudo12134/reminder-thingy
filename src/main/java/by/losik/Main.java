@@ -19,7 +19,6 @@ public class Main {
     private static final ExecutorService asyncExecutor = Executors.newCachedThreadPool();
 
     public static void main(String[] args) {
-        System.setProperty("file.encoding", "UTF-8");
 
         try {
             Injector injector = Guice.createInjector(new CompositionRoot());

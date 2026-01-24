@@ -2,6 +2,9 @@ package by.losik.config;
 
 import com.google.inject.Singleton;
 import org.apache.http.HttpHost;
+import org.apache.http.util.EntityUtils;
+import org.opensearch.client.Request;
+import org.opensearch.client.Response;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.RestClientBuilder;
 import org.opensearch.client.RestHighLevelClient;
@@ -14,6 +17,9 @@ import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.iam.IamAsyncClient;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 import software.amazon.awssdk.services.opensearch.OpenSearchAsyncClient;
+import software.amazon.awssdk.services.opensearch.model.DescribeDomainRequest;
+import software.amazon.awssdk.services.opensearch.model.DescribeDomainResponse;
+import software.amazon.awssdk.services.opensearch.model.DomainStatus;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.ses.SesAsyncClient;
 import software.amazon.awssdk.services.transcribe.TranscribeAsyncClient;
@@ -160,15 +166,33 @@ public class LocalStackConfig {
                 .build();
     }
 
-    private RestHighLevelClient createOpenSearchClient() {
-        RestClientBuilder builder = RestClient.builder(
-                HttpHost.create(LOCALSTACK_ENDPOINT.replace("4566", "9200"))
-        );
+    private RestHighLevelClient createOpenSearchClient() {  //временно
+        String endpoint = "localhost:4510";
+        try {
+            RestClientBuilder builder = RestClient.builder(
+                    HttpHost.create("http://" + endpoint)
+            );
 
-        builder.setHttpClientConfigCallback(httpClientBuilder ->
-                httpClientBuilder);
+            RestHighLevelClient client = new RestHighLevelClient(builder);
 
-        return new RestHighLevelClient(builder);
+            System.out.println("Testing OpenSearch connection...");
+            try {
+                Request request = new Request("GET", "/");
+                Response response = client.getLowLevelClient().performRequest(request);
+                System.out.println("OpenSearch connection successful!");
+                System.out.println("Response: " + response.getStatusLine());
+            } catch (Exception e) {
+                System.err.println("OpenSearch connection test failed: " + e.getMessage());
+                System.err.println("But continuing with client creation anyway...");
+            }
+
+            return client;
+
+        } catch (Exception e) {
+            System.err.println("Failed to create OpenSearch client: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("OpenSearch client creation failed", e);
+        }
     }
 
     private OpenSearchAsyncClient createOpenSearchAsyncClient() {
@@ -196,7 +220,7 @@ public class LocalStackConfig {
     }
 
     public String getOpenSearchEndpoint() {
-        return LOCALSTACK_ENDPOINT.replace("4566", "4571");
+        return LOCALSTACK_ENDPOINT.replace("4566", "4510");
     }
 
     public void shutdown() {
