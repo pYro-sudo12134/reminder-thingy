@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Singleton
-public class SimpleReminderParser {
+public class SimpleReminderParser { //temporary
 
     private static final Logger log = LoggerFactory.getLogger(SimpleReminderParser.class);
 
@@ -195,7 +195,7 @@ public class SimpleReminderParser {
             }
         }
 
-        cleaned = cleaned.replaceAll("\\b(мне|пожалуйста|нужно|надо|сейчас|сегодня|завтра|не\\s+забудь|пожалуйста)\\b", "")
+        cleaned = cleaned.replaceAll("\\b(мне|пожалуйста|нужно|надо|сейчас|сегодня|завтра|не\\s+забудь)\\b", "")
                 .replaceAll("\\s+", " ")
                 .trim();
 

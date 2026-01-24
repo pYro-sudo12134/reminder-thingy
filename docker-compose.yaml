@@ -37,3 +37,8 @@ services:
 networks:
   localstack-network:
     driver: bridge
+
+
+# aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain
+# --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}'
+# --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'

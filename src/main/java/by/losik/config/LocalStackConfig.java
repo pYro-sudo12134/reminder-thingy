@@ -2,7 +2,6 @@ package by.losik.config;
 
 import com.google.inject.Singleton;
 import org.apache.http.HttpHost;
-import org.apache.http.util.EntityUtils;
 import org.opensearch.client.Request;
 import org.opensearch.client.Response;
 import org.opensearch.client.RestClient;
@@ -17,9 +16,6 @@ import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.iam.IamAsyncClient;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 import software.amazon.awssdk.services.opensearch.OpenSearchAsyncClient;
-import software.amazon.awssdk.services.opensearch.model.DescribeDomainRequest;
-import software.amazon.awssdk.services.opensearch.model.DescribeDomainResponse;
-import software.amazon.awssdk.services.opensearch.model.DomainStatus;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
 import software.amazon.awssdk.services.ses.SesAsyncClient;
 import software.amazon.awssdk.services.transcribe.TranscribeAsyncClient;
@@ -35,6 +31,7 @@ public class LocalStackConfig {
     private final String ACCESS_KEY;
     private final String SECRET_KEY;
     private final String EMAIL;
+    private final String OPENSEARCH_PORT;
     private final EventBridgeAsyncClient eventBridgeAsyncClient;
     private final S3AsyncClient s3AsyncClient;
     private final TranscribeAsyncClient transcribeAsyncClient;
@@ -44,12 +41,14 @@ public class LocalStackConfig {
     private final SdkAsyncHttpClient asyncHttpClient;
     private final SesAsyncClient sesAsyncClient;
 
-    public LocalStackConfig(String localstackEndpoint, String region, String accessKey, String secretKey, String email) {
+    public LocalStackConfig(String localstackEndpoint, String region, String accessKey,
+                            String secretKey, String email, String openSearchPort) {
         this.LOCALSTACK_ENDPOINT = localstackEndpoint;
         this.REGION = region;
         this.ACCESS_KEY = accessKey;
         this.SECRET_KEY = secretKey;
         this.EMAIL = email;
+        this.OPENSEARCH_PORT = openSearchPort;
         this.asyncHttpClient = createAsyncHttpClient();
         this.eventBridgeAsyncClient = createEventBridgeAsyncClient();
         this.s3AsyncClient = createS3AsyncClient();
@@ -166,24 +165,25 @@ public class LocalStackConfig {
                 .build();
     }
 
-    private RestHighLevelClient createOpenSearchClient() {  //временно
-        String endpoint = "localhost:4510";
+    private RestHighLevelClient createOpenSearchClient() {
         try {
+            String endpoint = "localhost:" + OPENSEARCH_PORT;
             RestClientBuilder builder = RestClient.builder(
                     HttpHost.create("http://" + endpoint)
             );
 
             RestHighLevelClient client = new RestHighLevelClient(builder);
 
-            System.out.println("Testing OpenSearch connection...");
+            System.out.println("Testing OpenSearch connection on port " + OPENSEARCH_PORT);
             try {
                 Request request = new Request("GET", "/");
                 Response response = client.getLowLevelClient().performRequest(request);
-                System.out.println("OpenSearch connection successful!");
+                System.out.println("OpenSearch connection successful! Port: " + OPENSEARCH_PORT);
                 System.out.println("Response: " + response.getStatusLine());
             } catch (Exception e) {
-                System.err.println("OpenSearch connection test failed: " + e.getMessage());
-                System.err.println("But continuing with client creation anyway...");
+                System.err.println("OpenSearch connection test failed on port " +
+                        OPENSEARCH_PORT + ": " + e.getMessage());
+                System.err.println("But continuing with client creation anyway");
             }
 
             return client;
