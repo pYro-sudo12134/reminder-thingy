@@ -1,0 +1,80 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+group 'by.losik'
+version '1.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+run {
+    systemProperty "file.encoding", "UTF-8"
+    systemProperty "console.encoding", "UTF-8"
+    systemProperty "sun.jnu.encoding", "UTF-8"
+    jvmArgs = ['-Dfile.encoding=UTF-8', '-Dconsole.encoding=UTF-8', '-Dsun.jnu.encoding=UTF-8']
+}
+
+dependencies {
+    implementation platform('software.amazon.awssdk:bom:2.25.38')
+    implementation 'software.amazon.awssdk:s3:2.34.9'
+    implementation 'software.amazon.awssdk:transcribe:2.34.9'
+    implementation 'software.amazon.awssdk:lambda:2.34.9'
+    implementation 'software.amazon.awssdk:eventbridge:2.34.9'
+    implementation 'software.amazon.awssdk:iam:2.34.9'
+    implementation 'software.amazon.awssdk:opensearch:2.34.9'
+    implementation 'software.amazon.awssdk:ses:2.34.9'
+    implementation 'software.amazon.awssdk:netty-nio-client'
+    implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
+    implementation 'com.amazonaws:aws-lambda-java-events:3.11.6'
+    implementation 'org.opensearch.client:opensearch-rest-high-level-client:2.11.0'
+    implementation 'org.opensearch.client:opensearch-rest-client:2.11.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
+    implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.1'
+    implementation 'org.slf4j:slf4j-api:2.0.12'
+    implementation 'ch.qos.logback:logback-classic:1.4.14'
+    implementation 'com.google.inject:guice:7.0.0'
+    implementation 'com.googlecode.soundlibs:jlayer:1.0.1.4'
+    implementation 'com.googlecode.soundlibs:mp3spi:1.9.5.4'
+    implementation 'com.googlecode.soundlibs:tritonus-share:0.3.7.4'
+    implementation 'org.apache.commons:commons-lang3:3.14.0'
+    implementation 'commons-io:commons-io:2.15.1'
+    implementation 'com.typesafe:config:1.4.3'
+    implementation 'joda-time:joda-time:2.12.6'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.testcontainers:localstack:1.19.3'
+    testImplementation 'org.testcontainers:junit-jupiter:1.19.3'
+}
+
+test {
+    useJUnitPlatform()
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+    }
+}
+
+application {
+    mainClass = 'by.losik.Main'
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+    options.compilerArgs += ['-parameters']
+}
