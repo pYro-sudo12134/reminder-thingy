@@ -46,7 +46,7 @@ public class S3Service {
 
     public CompletableFuture<String> uploadAudioFileAsync(File audioFile, String userId) {
         return ensureBucketExists()
-                .thenCompose(v -> {
+                .thenCompose(response -> {
                     String key = generateAudioKey(userId, audioFile.getName());
                     return uploadFileAsync(audioFile, key);
                 });
@@ -164,15 +164,21 @@ public class S3Service {
                 .exceptionally(ex -> {
                     Throwable cause = ex.getCause();
                     if (cause instanceof S3Exception s3Exception) {
-                        String errorCode = s3Exception.awsErrorDetails().errorCode();
-                        if (errorCode.equals("BucketAlreadyExists") ||
-                                errorCode.equals("BucketAlreadyOwnedByYou")) {
+                        String errorCode = s3Exception.awsErrorDetails() != null ?
+                                s3Exception.awsErrorDetails().errorCode() : null;
+
+                        if (errorCode != null && (
+                                errorCode.equals("BucketAlreadyExists") ||
+                                        errorCode.equals("BucketAlreadyOwnedByYou"))) {
                             log.info("Bucket already exists: {}", bucketName);
-                            return null;
+                        } else {
+                            log.warn("Bucket creation failed with error code {}: {}",
+                                    errorCode, ex.getMessage());
                         }
+                    } else {
+                        log.warn("Bucket creation failed: {}", ex.getMessage());
                     }
 
-                    log.warn("Bucket creation check failed (might already exist): {}", ex.getMessage());
                     return null;
                 });
     }

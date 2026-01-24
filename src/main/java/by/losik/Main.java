@@ -54,16 +54,15 @@ public class Main {
                 System.out.println("6. Выход");
                 System.out.print("\nВыберите действие (1-6): ");
 
-                // Используем hasNext() который ждет ввода
                 if (!scanner.hasNext()) {
                     System.out.println("\nКонец ввода. Завершение программы.");
                     break;
                 }
 
                 String choice = scanner.next();
-                scanner.nextLine(); // Очищаем буфер после next()
+                scanner.nextLine();
 
-                System.out.println(); // Пустая строка для читаемости
+                System.out.println();
 
                 switch (choice) {
                     case "1" -> recordVoiceReminder(scanner, audioRecorder);
@@ -80,9 +79,9 @@ public class Main {
                 }
 
             } catch (Exception e) {
-                System.out.println("\n❌ Ошибка: " + e.getMessage());
+                System.out.println("\nОшибка: " + e.getMessage());
                 if (scanner.hasNextLine()) {
-                    scanner.nextLine(); // Очищаем буфер при ошибке
+                    scanner.nextLine();
                 }
             }
         }
@@ -109,7 +108,7 @@ public class Main {
                 return;
             }
 
-            System.out.println("\n🎤 Начинаю запись через 3 секунды...");
+            System.out.println("\nНачинаю запись через 3 секунды...");
             Thread.sleep(1000);
             System.out.println("2...");
             Thread.sleep(1000);
@@ -117,23 +116,22 @@ public class Main {
             Thread.sleep(1000);
             System.out.println("Записываю!");
 
-            // Запускаем в отдельном потоке, чтобы не блокировать интерфейс
             asyncExecutor.submit(() -> {
                 try {
-                    System.out.println("⏳ Обрабатываю запись...");
+                    System.out.println("Обрабатываю запись...");
                     CompletableFuture<String> future = audioRecorder.recordAndProcessReminder(
                             userId, userEmail, duration);
 
                     String reminderId = future.join();
-                    System.out.println("\n✅ Напоминание создано! ID: " + reminderId);
+                    System.out.println("\nНапоминание создано! ID: " + reminderId);
 
                 } catch (Exception e) {
-                    System.out.println("\n❌ Ошибка при создании напоминания: " + e.getMessage());
+                    System.out.println("\nОшибка при создании напоминания: " + e.getMessage());
                 }
             });
 
         } catch (Exception e) {
-            System.out.println("❌ Ошибка: " + e.getMessage());
+            System.out.println("Ошибка: " + e.getMessage());
         }
     }
 
@@ -156,23 +154,22 @@ public class Main {
                 return;
             }
 
-            // Запускаем в отдельном потоке
             asyncExecutor.submit(() -> {
                 try {
-                    System.out.println("⏳ Обработка аудио...");
+                    System.out.println("Обработка аудио...");
                     CompletableFuture<String> future = service.processVoiceReminder(
                             userId, audioFile, userEmail);
 
                     String reminderId = future.join();
-                    System.out.println("\n✅ Напоминание создано! ID: " + reminderId);
+                    System.out.println("\nНапоминание создано! ID: " + reminderId);
 
                 } catch (Exception e) {
-                    System.out.println("\n❌ Ошибка при создании напоминания: " + e.getMessage());
+                    System.out.println("\nОшибка при создании напоминания: " + e.getMessage());
                 }
             });
 
         } catch (Exception e) {
-            System.out.println("❌ Ошибка: " + e.getMessage());
+            System.out.println("Ошибка: " + e.getMessage());
         }
     }
 
@@ -195,7 +192,6 @@ public class Main {
                 }
             }
 
-            // Запускаем в отдельном потоке
             int finalLimit = limit;
             asyncExecutor.submit(() -> {
                 try {
@@ -210,7 +206,7 @@ public class Main {
                     } else {
                         System.out.println("\n=== Ваши напоминания ===");
                         for (by.losik.dto.ReminderRecord reminder : reminders) {
-                            System.out.printf("\n📅 ID: %s\n", reminder.reminderId());
+                            System.out.printf("\n ID: %s\n", reminder.reminderId());
                             System.out.printf("   Действие: %s\n", reminder.extractedAction());
                             System.out.printf("   Время: %s\n", reminder.reminderTime());
                             System.out.printf("   Статус: %s\n", reminder.status());
@@ -219,12 +215,12 @@ public class Main {
                     }
 
                 } catch (Exception e) {
-                    System.out.println("\n❌ Ошибка при загрузке напоминаний: " + e.getMessage());
+                    System.out.println("\nОшибка при загрузке напоминаний: " + e.getMessage());
                 }
             });
 
         } catch (Exception e) {
-            System.out.println("❌ Ошибка: " + e.getMessage());
+            System.out.println("Ошибка: " + e.getMessage());
         }
     }
 
@@ -239,21 +235,20 @@ public class Main {
             String confirm = scanner.nextLine();
 
             if (confirm.equalsIgnoreCase("да")) {
-                // Запускаем в отдельном потоке
                 asyncExecutor.submit(() -> {
                     try {
-                        System.out.println("⏳ Удаляю напоминание...");
+                        System.out.println("Удаляю напоминание...");
                         CompletableFuture<Boolean> future = service.deleteReminder(reminderId);
 
                         boolean success = future.join();
                         if (success) {
-                            System.out.println("\n✅ Напоминание удалено");
+                            System.out.println("\nНапоминание удалено");
                         } else {
-                            System.out.println("\n❌ Не удалось удалить напоминание");
+                            System.out.println("\nНе удалось удалить напоминание");
                         }
 
                     } catch (Exception e) {
-                        System.out.println("\n❌ Ошибка при удалении: " + e.getMessage());
+                        System.out.println("\nОшибка при удалении: " + e.getMessage());
                     }
                 });
             } else {
@@ -261,7 +256,7 @@ public class Main {
             }
 
         } catch (Exception e) {
-            System.out.println("❌ Ошибка: " + e.getMessage());
+            System.out.println("Ошибка: " + e.getMessage());
         }
     }
 
@@ -279,7 +274,6 @@ public class Main {
                 return;
             }
 
-            // Запускаем в отдельном потоке
             asyncExecutor.submit(() -> {
                 try {
                     System.out.println("⏳ Выполняю деплой...");
@@ -287,20 +281,20 @@ public class Main {
 
                     String functionArn = future.join();
                     if (functionArn != null) {
-                        System.out.println("\n✅ Лямбда успешно деплоирована!");
+                        System.out.println("\nЛямбда успешно задеплоена!");
                         System.out.println("   ARN функции: " + functionArn);
                     } else {
-                        System.out.println("\n❌ Не удалось деплоить лямбду");
+                        System.out.println("\nНе удалось деплоить лямбду");
                         System.out.println("   Возможно, лямбда уже существует");
                     }
 
                 } catch (Exception e) {
-                    System.out.println("\n❌ Ошибка при деплое лямбды: " + e.getMessage());
+                    System.out.println("\nОшибка при деплое лямбды: " + e.getMessage());
                 }
             });
 
         } catch (Exception e) {
-            System.out.println("❌ Ошибка: " + e.getMessage());
+            System.out.println("Ошибка: " + e.getMessage());
         }
     }
 }

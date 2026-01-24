@@ -61,7 +61,7 @@ public class AudioRecorderService {
                 audioStream = new ByteArrayOutputStream();
 
                 log.info("Начинаю запись... Говорите!");
-                System.out.println("🎤 Запись началась. Говорите ваше напоминание...");
+                System.out.println("Запись началась. Говорите ваше напоминание...");
 
                 recording.set(true);
                 line.start();
@@ -80,7 +80,7 @@ public class AudioRecorderService {
 
                 stopRecording();
 
-                System.out.println("✅ Запись завершена");
+                System.out.println("Запись завершена");
                 log.info("Запись завершена, размер: {} байт", audioStream.size());
 
                 try {
@@ -142,7 +142,7 @@ public class AudioRecorderService {
     public CompletableFuture<String> recordAndProcessReminder(String userId, String userEmail, int durationSeconds) {
         return startRecording(userId, durationSeconds)
                 .thenCompose(audioFile -> {
-                    System.out.println("📡 Обрабатываю аудио...");
+                    System.out.println("Обрабатываю аудио...");
                     return voiceReminderService.processVoiceReminder(userId, audioFile, userEmail)
                             .thenApply(reminderId -> {
                                 if (audioFile.exists()) {

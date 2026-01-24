@@ -69,70 +69,6 @@ public class OpenSearchService {
         });
     }
 
-    private void ensureTranscriptionIndex() throws IOException {
-        if (!indexExists(TRANSCRIPTION_INDEX)) {
-            CreateIndexRequest request = new CreateIndexRequest(TRANSCRIPTION_INDEX);
-
-            XContentBuilder mapping = XContentFactory.jsonBuilder()
-                    .startObject()
-                    .startObject("properties")
-                    .startObject("original_audio_key")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("transcribed_text")
-                    .field("type", "text")
-                    .field("analyzer", "russian")
-                    .endObject()
-                    .startObject("confidence")
-                    .field("type", "float")
-                    .endObject()
-                    .startObject("language")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("duration_seconds")
-                    .field("type", "float")
-                    .endObject()
-                    .startObject("user_id")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("completed_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .startObject("indexed_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .endObject()
-                    .endObject();
-
-            request.mapping(mapping);
-            var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
-            log.info("Created transcription index: {}", response.index());
-        }
-    }
-
-    private XContentBuilder createCustomAnalyzer() throws IOException {
-        return XContentFactory.jsonBuilder()
-                .startObject()
-                .startObject("settings")
-                .startObject("analysis")
-                .startObject("analyzer")
-                .startObject("russian_with_entities")
-                .field("type", "custom")
-                .field("tokenizer", "standard")
-                .field("filter", new String[]{
-                        "lowercase",
-                        "russian_stop",
-                        "russian_stemmer"
-                })
-                .endObject()
-                .endObject()
-                .endObject()
-                .endObject()
-                .endObject();
-    }
-
     private void ensureReminderIndex() throws IOException {
         if (!indexExists(REMINDER_INDEX)) {
             CreateIndexRequest request = new CreateIndexRequest(REMINDER_INDEX);
@@ -180,7 +116,58 @@ public class OpenSearchService {
 
             request.mapping(mapping);
             var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
-            log.info("Created reminder index: {}", response.index());
+            if (response != null && response.index() != null) {
+                log.info("Created reminder index: {}", response.index());
+            } else {
+                log.warn("Create reminder index response was null");
+            }
+        }
+    }
+
+    private void ensureTranscriptionIndex() throws IOException {
+        if (!indexExists(TRANSCRIPTION_INDEX)) {
+            CreateIndexRequest request = new CreateIndexRequest(TRANSCRIPTION_INDEX);
+
+            XContentBuilder mapping = XContentFactory.jsonBuilder()
+                    .startObject()
+                    .startObject("properties")
+                    .startObject("original_audio_key")
+                    .field("type", "keyword")
+                    .endObject()
+                    .startObject("transcribed_text")
+                    .field("type", "text")
+                    .field("analyzer", "russian")
+                    .endObject()
+                    .startObject("confidence")
+                    .field("type", "float")
+                    .endObject()
+                    .startObject("language")
+                    .field("type", "keyword")
+                    .endObject()
+                    .startObject("duration_seconds")
+                    .field("type", "float")
+                    .endObject()
+                    .startObject("user_id")
+                    .field("type", "keyword")
+                    .endObject()
+                    .startObject("completed_at")
+                    .field("type", "date")
+                    .field("format", "strict_date_optional_time||epoch_millis")
+                    .endObject()
+                    .startObject("indexed_at")
+                    .field("type", "date")
+                    .field("format", "strict_date_optional_time||epoch_millis")
+                    .endObject()
+                    .endObject()
+                    .endObject();
+
+            request.mapping(mapping);
+            var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
+            if (response != null && response.index() != null) {
+                log.info("Created transcription index: {}", response.index());
+            } else {
+                log.warn("Create transcription index response was null");
+            }
         }
     }
 
@@ -453,16 +440,16 @@ public class OpenSearchService {
     private ReminderRecord mapToReminderRecord(Map<String, Object> source, String id) {
         try {
             return new ReminderRecord(
-                id,
-                (String) source.get("user_id"),
-                (String) source.get("original_text"),
-                (String) source.get("extracted_action"),
-                LocalDateTime.parse((String) source.get("scheduled_time")),
-                (String) source.get("reminder_time"),
-                LocalDateTime.parse((String) source.get("created_at")),
-                ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
-                (Boolean) source.get("notification_sent"),
-                (String) source.get("rule_name")
+                    id,
+                    (String) source.get("user_id"),
+                    (String) source.get("original_text"),
+                    (String) source.get("extracted_action"),
+                    LocalDateTime.parse((String) source.get("scheduled_time")),
+                    (String) source.get("reminder_time"),
+                    LocalDateTime.parse((String) source.get("created_at")),
+                    ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
+                    (Boolean) source.get("notification_sent"),
+                    (String) source.get("eventbridge_rule_name")
             );
         } catch (Exception e) {
             log.error("Failed to map source to ReminderRecord", e);
