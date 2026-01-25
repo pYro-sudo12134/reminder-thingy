@@ -1,0 +1,57 @@
+model:
+  default_language: "en"
+  fallback_language: "en"
+
+  languages:
+    - code: "ru"
+      name: "Russian"
+      model: "ru_core_news_md"
+      enabled: true
+    - code: "en"
+      name: "English"
+      model: "en_core_web_md"
+      enabled: true
+    - code: "de"
+      name: "German"
+      model: "de_core_news_md"
+      enabled: false
+    - code: "fr"
+      name: "French"
+      model: "fr_core_news_md"
+      enabled: false
+    - code: "es"
+      name: "Spanish"
+      model: "es_core_news_md"
+      enabled: false
+
+parsing:
+  max_text_length: 1000
+  min_confidence: 0.3
+  timezone: "UTC"
+
+  relative_time_units:
+    minutes: 60
+    hours: 3600
+    days: 86400
+    weeks: 604800
+    months: 2592000
+
+  action_extraction:
+    min_action_length: 2
+    default_action:
+      ru: "напоминание"
+      en: "reminder"
+      de: "Erinnerung"
+      fr: "rappel"
+      es: "recordatorio"
+
+grpc:
+  port: 50051
+  max_workers: 10
+  max_message_size_mb: 100
+  enable_reflection: true
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/nlp_service.log"

@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package nlp_service;
+
+service ReminderParserService {
+  rpc ParseReminder(ParseRequest) returns (ParseResponse) {}
+  rpc HealthCheck(HealthRequest) returns (HealthResponse) {}
+}
+
+message ParseRequest {
+  string text = 1;
+  string language_code = 2;
+  string user_id = 3;
+}
+
+message ParseResponse {
+  string reminder_id = 1;
+  ParsedReminder parsed = 2;
+  double confidence = 3;
+  string language_detected = 4;
+  string raw_text = 5;
+}
+
+message ParsedReminder {
+  string action = 1;
+  TemporalExpression time_expression = 2;
+  string normalized_text = 3;
+  string intent = 4;
+}
+
+message TemporalExpression {
+  oneof expression_type {
+    AbsoluteTime absolute = 1;
+    RelativeTime relative = 2;
+    RecurringTime recurring = 3;
+  }
+}
+
+message AbsoluteTime {
+  string iso_datetime = 1;
+  string natural_language = 2;
+}
+
+message RelativeTime {
+  int64 seconds_from_now = 1;
+  string unit = 2;
+  double amount = 3;
+}
+
+message RecurringTime {
+  string cron_expression = 1;
+  string natural_language = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+  string model_version = 2;
+  repeated string supported_languages = 3;
+}

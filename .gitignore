@@ -12,6 +12,11 @@
 *.tar.gz
 *.rar
 *.bat
+*.pyc
+*.pt
+*.pkl
+*.json
+nlp/models/intent_classifier/vocab.txt
 gradlew
 
 gradle
