@@ -36,6 +36,9 @@ public record ReminderRecord(
         @JsonProperty("notification_sent")
         boolean notificationSent,
 
+        @JsonProperty("intent")
+        String intent,
+
         @JsonProperty("rule_name")
         String eventBridgeRuleName
 ) {

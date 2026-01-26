@@ -1,5 +1,27 @@
 version: '3.8'
 services:
+  nlp-service:
+    image: reminder-nlp:1.0
+    container_name: nlp-service
+    ports:
+      - "50051:50051"
+    environment:
+      - MODEL_DIR=/app/models
+      - INTENT_MODEL_PATH=/app/models/intent_classifier
+      - NER_MODEL_PATH=/app/models/ner_model
+      - LOG_LEVEL=INFO
+    volumes:
+      - "./nlp/models:/app/models"
+      - "./nlp/data:/app/data"
+    networks:
+      - localstack-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; import sys; channel = grpc.insecure_channel('localhost:50051'); sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
   localstack:
     image: localstack/localstack:4.12
     container_name: localstack
@@ -8,8 +30,6 @@ services:
       - "4571:4571"
       - "4510:4510"
       - "9200:9200"
-      - "4510-4559:4510-4559"
-      - "8080:8080"
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe
       - DEBUG=1
@@ -22,23 +42,36 @@ services:
       - OPENSEARCH_ENDPOINT_STRATEGY=port
       - OPENSEARCH_PORT_EXTERNAL=4571
       - OPENSEARCH_PORT=9200
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin123
+      - DISK_WATERMARK_LOW=1gb
+      - DISK_WATERMARK_HIGH=500mb
+      - DISK_WATERMARK_FLOOD=200mb
+      - cluster.routing.allocation.disk.threshold_enabled=false
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"
       - "./lambda_functions:/var/lib/localstack/lambda_functions"
+    mem_reservation: 1g
+    shm_size: 1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
     networks:
       - localstack-network
+    depends_on:
+      nlp-service:
+        condition: service_healthy
 
 networks:
   localstack-network:
     driver: bridge
 
 
-# aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain
-# --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}'
-# --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'
+# aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}' --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'

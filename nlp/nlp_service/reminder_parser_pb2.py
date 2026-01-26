@@ -14,31 +14,34 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15reminder_parser.proto\x12\x0bnlp_service\"D\n\x0cParseRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x15\n\rlanguage_code\x18\x02 \x01(\t\x12\x0f\n\x07user_id\x18\x03 \x01(\t\"\x92\x01\n\rParseResponse\x12\x13\n\x0breminder_id\x18\x01 \x01(\t\x12+\n\x06parsed\x18\x02 \x01(\x0b\x32\x1b.nlp_service.ParsedReminder\x12\x12\n\nconfidence\x18\x03 \x01(\x01\x12\x19\n\x11language_detected\x18\x04 \x01(\t\x12\x10\n\x08raw_text\x18\x05 \x01(\t\"\x83\x01\n\x0eParsedReminder\x12\x0e\n\x06\x61\x63tion\x18\x01 \x01(\t\x12\x38\n\x0ftime_expression\x18\x02 \x01(\x0b\x32\x1f.nlp_service.TemporalExpression\x12\x17\n\x0fnormalized_text\x18\x03 \x01(\t\x12\x0e\n\x06intent\x18\x04 \x01(\t\"\xb6\x01\n\x12TemporalExpression\x12-\n\x08\x61\x62solute\x18\x01 \x01(\x0b\x32\x19.nlp_service.AbsoluteTimeH\x00\x12-\n\x08relative\x18\x02 \x01(\x0b\x32\x19.nlp_service.RelativeTimeH\x00\x12/\n\trecurring\x18\x03 \x01(\x0b\x32\x1a.nlp_service.RecurringTimeH\x00\x42\x11\n\x0f\x65xpression_type\">\n\x0c\x41\x62soluteTime\x12\x14\n\x0ciso_datetime\x18\x01 \x01(\t\x12\x18\n\x10natural_language\x18\x02 \x01(\t\"F\n\x0cRelativeTime\x12\x18\n\x10seconds_from_now\x18\x01 \x01(\x03\x12\x0c\n\x04unit\x18\x02 \x01(\t\x12\x0e\n\x06\x61mount\x18\x03 \x01(\x01\"B\n\rRecurringTime\x12\x17\n\x0f\x63ron_expression\x18\x01 \x01(\t\x12\x18\n\x10natural_language\x18\x02 \x01(\t\"\x0f\n\rHealthRequest\"U\n\x0eHealthResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x15\n\rmodel_version\x18\x02 \x01(\t\x12\x1b\n\x13supported_languages\x18\x03 \x03(\t2\xab\x01\n\x15ReminderParserService\x12H\n\rParseReminder\x12\x19.nlp_service.ParseRequest\x1a\x1a.nlp_service.ParseResponse\"\x00\x12H\n\x0bHealthCheck\x12\x1a.nlp_service.HealthRequest\x1a\x1b.nlp_service.HealthResponse\"\x00\x62\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x15reminder_parser.proto\x12\x0ereminderparser\"D\n\x0cParseRequest\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x15\n\rlanguage_code\x18\x02 \x01(\t\x12\x0f\n\x07user_id\x18\x03 \x01(\t\"\x95\x01\n\rParseResponse\x12\x13\n\x0breminder_id\x18\x01 \x01(\t\x12.\n\x06parsed\x18\x02 \x01(\x0b\x32\x1e.reminderparser.ParsedReminder\x12\x12\n\nconfidence\x18\x03 \x01(\x01\x12\x19\n\x11language_detected\x18\x04 \x01(\t\x12\x10\n\x08raw_text\x18\x05 \x01(\t\"\xb0\x01\n\x0eParsedReminder\x12\x0e\n\x06\x61\x63tion\x18\x01 \x01(\t\x12;\n\x0ftime_expression\x18\x02 \x01(\x0b\x32\".reminderparser.TemporalExpression\x12(\n\x08\x65ntities\x18\x03 \x03(\x0b\x32\x16.reminderparser.Entity\x12\x17\n\x0fnormalized_text\x18\x04 \x01(\t\x12\x0e\n\x06intent\x18\x05 \x01(\t\"T\n\x06\x45ntity\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0c\n\x04type\x18\x02 \x01(\t\x12\r\n\x05start\x18\x03 \x01(\x05\x12\x0b\n\x03\x65nd\x18\x04 \x01(\x05\x12\x12\n\nconfidence\x18\x05 \x01(\x01\"\xb9\x01\n\x12TemporalExpression\x12\x30\n\x08\x61\x62solute\x18\x01 \x01(\x0b\x32\x1c.reminderparser.AbsoluteTimeH\x00\x12\x30\n\x08relative\x18\x02 \x01(\x0b\x32\x1c.reminderparser.RelativeTimeH\x00\x12\x32\n\trecurring\x18\x03 \x01(\x0b\x32\x1d.reminderparser.RecurringTimeH\x00\x42\x0b\n\ttime_type\">\n\x0c\x41\x62soluteTime\x12\x14\n\x0ciso_datetime\x18\x01 \x01(\t\x12\x18\n\x10natural_language\x18\x02 \x01(\t\"F\n\x0cRelativeTime\x12\x18\n\x10seconds_from_now\x18\x01 \x01(\x03\x12\x0c\n\x04unit\x18\x02 \x01(\t\x12\x0e\n\x06\x61mount\x18\x03 \x01(\x01\"B\n\rRecurringTime\x12\x17\n\x0f\x63ron_expression\x18\x01 \x01(\t\x12\x18\n\x10natural_language\x18\x02 \x01(\t\"\x0f\n\rHealthRequest\"U\n\x0eHealthResponse\x12\x0f\n\x07healthy\x18\x01 \x01(\x08\x12\x15\n\rmodel_version\x18\x02 \x01(\t\x12\x1b\n\x13supported_languages\x18\x03 \x03(\t2\xb3\x01\n\x15ReminderParserService\x12L\n\rParseReminder\x12\x1c.reminderparser.ParseRequest\x1a\x1d.reminderparser.ParseResponse\x12L\n\x0bHealthCheck\x12\x1d.reminderparser.HealthRequest\x1a\x1e.reminderparser.HealthResponseB\x11\n\rby.losik.grpcP\x01\x62\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'reminder_parser_pb2', _globals)
 if _descriptor._USE_C_DESCRIPTORS == False:
-  DESCRIPTOR._options = None
-  _globals['_PARSEREQUEST']._serialized_start=38
-  _globals['_PARSEREQUEST']._serialized_end=106
-  _globals['_PARSERESPONSE']._serialized_start=109
-  _globals['_PARSERESPONSE']._serialized_end=255
-  _globals['_PARSEDREMINDER']._serialized_start=258
-  _globals['_PARSEDREMINDER']._serialized_end=389
-  _globals['_TEMPORALEXPRESSION']._serialized_start=392
-  _globals['_TEMPORALEXPRESSION']._serialized_end=574
-  _globals['_ABSOLUTETIME']._serialized_start=576
-  _globals['_ABSOLUTETIME']._serialized_end=638
-  _globals['_RELATIVETIME']._serialized_start=640
-  _globals['_RELATIVETIME']._serialized_end=710
-  _globals['_RECURRINGTIME']._serialized_start=712
-  _globals['_RECURRINGTIME']._serialized_end=778
-  _globals['_HEALTHREQUEST']._serialized_start=780
-  _globals['_HEALTHREQUEST']._serialized_end=795
-  _globals['_HEALTHRESPONSE']._serialized_start=797
-  _globals['_HEALTHRESPONSE']._serialized_end=882
-  _globals['_REMINDERPARSERSERVICE']._serialized_start=885
-  _globals['_REMINDERPARSERSERVICE']._serialized_end=1056
+  _globals['DESCRIPTOR']._options = None
+  _globals['DESCRIPTOR']._serialized_options = b'\n\rby.losik.grpcP\001'
+  _globals['_PARSEREQUEST']._serialized_start=41
+  _globals['_PARSEREQUEST']._serialized_end=109
+  _globals['_PARSERESPONSE']._serialized_start=112
+  _globals['_PARSERESPONSE']._serialized_end=261
+  _globals['_PARSEDREMINDER']._serialized_start=264
+  _globals['_PARSEDREMINDER']._serialized_end=440
+  _globals['_ENTITY']._serialized_start=442
+  _globals['_ENTITY']._serialized_end=526
+  _globals['_TEMPORALEXPRESSION']._serialized_start=529
+  _globals['_TEMPORALEXPRESSION']._serialized_end=714
+  _globals['_ABSOLUTETIME']._serialized_start=716
+  _globals['_ABSOLUTETIME']._serialized_end=778
+  _globals['_RELATIVETIME']._serialized_start=780
+  _globals['_RELATIVETIME']._serialized_end=850
+  _globals['_RECURRINGTIME']._serialized_start=852
+  _globals['_RECURRINGTIME']._serialized_end=918
+  _globals['_HEALTHREQUEST']._serialized_start=920
+  _globals['_HEALTHREQUEST']._serialized_end=935
+  _globals['_HEALTHRESPONSE']._serialized_start=937
+  _globals['_HEALTHRESPONSE']._serialized_end=1022
+  _globals['_REMINDERPARSERSERVICE']._serialized_start=1025
+  _globals['_REMINDERPARSERSERVICE']._serialized_end=1204
 # @@protoc_insertion_point(module_scope)

@@ -15,12 +15,12 @@ class ReminderParserServiceStub(object):
             channel: A grpc.Channel.
         """
         self.ParseReminder = channel.unary_unary(
-                '/nlp_service.ReminderParserService/ParseReminder',
+                '/reminderparser.ReminderParserService/ParseReminder',
                 request_serializer=reminder__parser__pb2.ParseRequest.SerializeToString,
                 response_deserializer=reminder__parser__pb2.ParseResponse.FromString,
                 )
         self.HealthCheck = channel.unary_unary(
-                '/nlp_service.ReminderParserService/HealthCheck',
+                '/reminderparser.ReminderParserService/HealthCheck',
                 request_serializer=reminder__parser__pb2.HealthRequest.SerializeToString,
                 response_deserializer=reminder__parser__pb2.HealthResponse.FromString,
                 )
@@ -56,7 +56,7 @@ def add_ReminderParserServiceServicer_to_server(servicer, server):
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'nlp_service.ReminderParserService', rpc_method_handlers)
+            'reminderparser.ReminderParserService', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
 
 
@@ -75,7 +75,7 @@ class ReminderParserService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/nlp_service.ReminderParserService/ParseReminder',
+        return grpc.experimental.unary_unary(request, target, '/reminderparser.ReminderParserService/ParseReminder',
             reminder__parser__pb2.ParseRequest.SerializeToString,
             reminder__parser__pb2.ParseResponse.FromString,
             options, channel_credentials,
@@ -92,7 +92,7 @@ class ReminderParserService(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_unary(request, target, '/nlp_service.ReminderParserService/HealthCheck',
+        return grpc.experimental.unary_unary(request, target, '/reminderparser.ReminderParserService/HealthCheck',
             reminder__parser__pb2.HealthRequest.SerializeToString,
             reminder__parser__pb2.HealthResponse.FromString,
             options, channel_credentials,

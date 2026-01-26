@@ -19,6 +19,13 @@
 nlp/models/intent_classifier/vocab.txt
 gradlew
 
+.tmp
+wrapper
+native
+jdks
+daemon
+caches
+
 gradle
 .gradle
 .idea

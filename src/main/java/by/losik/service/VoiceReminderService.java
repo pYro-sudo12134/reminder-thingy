@@ -1,6 +1,7 @@
 package by.losik.service;
 
 import by.losik.dto.CreateRuleRequest;
+import by.losik.dto.ParsedResult;
 import by.losik.dto.ReminderRecord;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -17,7 +18,7 @@ public class VoiceReminderService {
     private static final Logger log = LoggerFactory.getLogger(VoiceReminderService.class);
     private final S3Service s3Service;
     private final TranscribeService transcribeService;
-    private final SimpleReminderParser reminderParser;
+    private final GRPCService reminderParser;
     private final EventBridgeService eventBridgeService;
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
@@ -26,7 +27,7 @@ public class VoiceReminderService {
     public VoiceReminderService(
             S3Service s3Service,
             TranscribeService transcribeService,
-            SimpleReminderParser reminderParser,
+            GRPCService reminderParser,
             EventBridgeService eventBridgeService,
             OpenSearchService openSearchService,
             EmailService emailService) {
@@ -53,10 +54,11 @@ public class VoiceReminderService {
                 .thenCompose(transcribedText -> {
                     log.info("Transcribed text: {}", transcribedText);
 
-                    SimpleReminderParser.ParsedResult parsed =
-                            reminderParser.parse(transcribedText);
+                    ParsedResult parsed =
+                            reminderParser.parse(transcribedText, null, userId);
 
-                    String reminderId = UUID.randomUUID().toString();
+                    String reminderId = parsed.reminderId() != null ?
+                            parsed.reminderId() : UUID.randomUUID().toString();
 
                     ReminderRecord reminder = new ReminderRecord(
                             reminderId,
@@ -68,6 +70,7 @@ public class VoiceReminderService {
                             LocalDateTime.now(),
                             ReminderRecord.ReminderStatus.SCHEDULED,
                             false,
+                            parsed.intent(),
                             ""
                     );
 
@@ -75,24 +78,25 @@ public class VoiceReminderService {
                             .thenCompose(indexedId -> {
                                 log.info("Reminder saved to OpenSearch: {}", indexedId);
 
-                                Map<String, Object> inputData = createEventInput(reminder, userEmail);
+                                Map<String, Object> inputData = createEventInput(reminder, userEmail, parsed);
 
                                 CreateRuleRequest ruleRequest = new CreateRuleRequest(
                                         "reminder-" + reminderId,
                                         parsed.scheduledTime(),
                                         "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
                                         inputData,
-                                        "Напоминание: " + parsed.action()
+                                        "Напоминание: " + parsed.action(),
+                                        parsed.intent()
                                 );
 
                                 return eventBridgeService.createScheduleRule(ruleRequest)
                                         .thenCompose(rule ->
                                                 openSearchService.updateReminderEventBridgeRule(
-                                                reminderId, rule.ruleName()
-                                        ).thenApply(updated -> {
-                                            log.info("EventBridge rule updated in OpenSearch: {}", updated);
-                                            return reminderId;
-                                        }));
+                                                        reminderId, rule.ruleName()
+                                                ).thenApply(updated -> {
+                                                    log.info("EventBridge rule updated in OpenSearch: {}", updated);
+                                                    return reminderId;
+                                                }));
                             });
                 })
                 .exceptionally(ex -> {
@@ -118,7 +122,7 @@ public class VoiceReminderService {
                             userEmail,
                             reminderId,
                             reminder.extractedAction(),
-                            reminder.reminderTime()
+                            String.valueOf(reminder.scheduledTime())
                     ).thenCompose(emailId -> {
                         log.info("Email sent: {}", emailId);
 
@@ -163,11 +167,19 @@ public class VoiceReminderService {
                 });
     }
 
-    private Map<String, Object> createEventInput(ReminderRecord reminder, String userEmail) {
+    private Map<String, Object> createEventInput(
+            ReminderRecord reminder,
+            String userEmail,
+            ParsedResult parsed) {
+
         return Map.of(
                 "reminderId", reminder.reminderId(),
                 "userEmail", userEmail,
                 "action", reminder.extractedAction(),
-                "scheduledTime", reminder.scheduledTime().toString());
+                "scheduledTime", reminder.scheduledTime().toString(),
+                "intent", parsed.intent() != null ? parsed.intent() : "reminder",
+                "confidence", parsed.confidence(),
+                "language", parsed.language()
+        );
     }
 }

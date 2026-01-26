@@ -107,42 +107,60 @@ class MLReminderParserService(pb_grpc.ReminderParserServiceServicer):
         print(f"Confidence: {parsed.confidence}")
         print(f"Time expression: {parsed.time_expression.type}, {parsed.time_expression.natural_language}")
 
-        if parsed.time_expression.type.name == "ABSOLUTE" and parsed.time_expression.datetime:
-            print(f"Datetime: {parsed.time_expression.datetime}")
-        elif parsed.time_expression.type.name == "RELATIVE" and parsed.time_expression.relative_seconds:
-            print(f"Relative seconds: {parsed.time_expression.relative_seconds}")
+        # Создаем список entities
+        entities_list = []
+        if hasattr(parsed, 'entities') and parsed.entities:
+            for entity in parsed.entities:
+                entity_proto = pb.Entity(
+                    text=entity.get('text', ''),
+                    type=entity.get('label', ''),
+                    start=entity.get('start', 0),
+                    end=entity.get('end', 0),
+                    confidence=entity.get('confidence', 0.0)
+                )
+                entities_list.append(entity_proto)
 
+        print(f"Found {len(entities_list)} entities")
+
+        # Создаем ParsedReminder
+        parsed_reminder = pb.ParsedReminder(
+            action=parsed.action,
+            normalized_text=parsed.normalized_text,
+            intent=parsed.intent
+        )
+
+        # Добавляем entities (этот метод работает с repeated полями)
+        parsed_reminder.entities.extend(entities_list)
+
+        # Создаем TemporalExpression
+        temporal_expr = pb.TemporalExpression()
+
+        if parsed.time_expression.type.name == "ABSOLUTE" and parsed.time_expression.datetime:
+            temporal_expr.absolute.iso_datetime = parsed.time_expression.datetime.isoformat()
+            temporal_expr.absolute.natural_language = parsed.time_expression.natural_language
+            print(f"Set absolute time: {parsed.time_expression.datetime.isoformat()}")
+
+        elif parsed.time_expression.type.name == "RELATIVE" and parsed.time_expression.relative_seconds:
+            temporal_expr.relative.seconds_from_now = parsed.time_expression.relative_seconds
+            temporal_expr.relative.unit = "seconds"
+            temporal_expr.relative.amount = float(parsed.time_expression.relative_seconds)
+            print(f"Set relative time: {parsed.time_expression.relative_seconds} seconds")
+
+        elif parsed.time_expression.type.name == "RECURRING" and parsed.time_expression.cron_expression:
+            temporal_expr.recurring.cron_expression = parsed.time_expression.cron_expression
+            temporal_expr.recurring.natural_language = parsed.time_expression.natural_language
+
+        # Устанавливаем time_expression
+        parsed_reminder.time_expression.CopyFrom(temporal_expr)
+
+        # Создаем финальный ответ
         response = pb.ParseResponse(
             reminder_id=f"{user_id}_{int(datetime.now().timestamp())}",
-            parsed=pb.ParsedReminder(
-                action=parsed.action,
-                normalized_text=parsed.normalized_text,
-                intent=parsed.intent
-            ),
+            parsed=parsed_reminder,
             confidence=parsed.confidence,
             language_detected=parsed.language,
             raw_text=parsed.raw_text
         )
-
-        time_expr = parsed.time_expression
-        temporal_expr = pb.TemporalExpression()
-
-        if time_expr.type.name == "ABSOLUTE" and time_expr.datetime:
-            temporal_expr.absolute.iso_datetime = time_expr.datetime.isoformat()
-            temporal_expr.absolute.natural_language = time_expr.natural_language
-            print(f"Set absolute time: {time_expr.datetime.isoformat()}")
-
-        elif time_expr.type.name == "RELATIVE" and time_expr.relative_seconds:
-            temporal_expr.relative.seconds_from_now = time_expr.relative_seconds
-            temporal_expr.relative.unit = "seconds"
-            temporal_expr.relative.amount = time_expr.relative_seconds
-            print(f"Set relative time: {time_expr.relative_seconds} seconds")
-
-        elif time_expr.type.name == "RECURRING" and time_expr.cron_expression:
-            temporal_expr.recurring.cron_expression = time_expr.cron_expression
-            temporal_expr.recurring.natural_language = time_expr.natural_language
-
-        response.parsed.time_expression.CopyFrom(temporal_expr)
 
         print(f"Conversion completed")
         return response

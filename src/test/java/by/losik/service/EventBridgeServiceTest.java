@@ -88,8 +88,8 @@ class EventBridgeServiceTest {
                 scheduleTime,
                 targetArn,
                 inputData,
-                description
-        );
+                description,
+                parsed.intent());
 
         PutRuleResponse putRuleResponse = PutRuleResponse.builder()
                 .ruleArn("arn:aws:events:us-east-1:123456789012:rule/test-rule")
@@ -148,8 +148,8 @@ class EventBridgeServiceTest {
                 scheduleTime,
                 targetArn,
                 inputData,
-                description
-        );
+                description,
+                parsed.intent());
 
         PutRuleResponse putRuleResponse = PutRuleResponse.builder()
                 .ruleArn("arn:aws:events:test-rule")
@@ -191,8 +191,8 @@ class EventBridgeServiceTest {
                 scheduleTime,
                 targetArn,
                 inputData,
-                null
-        );
+                null,
+                parsed.intent());
 
         PutRuleResponse putRuleResponse = PutRuleResponse.builder()
                 .build();
@@ -235,8 +235,8 @@ class EventBridgeServiceTest {
                 scheduleTime,
                 targetArn,
                 inputData,
-                description
-        );
+                description,
+                parsed.intent());
 
         PutRuleResponse putRuleResponse = PutRuleResponse.builder().build();
         PutTargetsResponse putTargetsResponse = PutTargetsResponse.builder().build();
@@ -266,8 +266,8 @@ class EventBridgeServiceTest {
                 scheduleTime,
                 targetArn,
                 inputData,
-                description
-        );
+                description,
+                parsed.intent());
 
         RuntimeException expectedException = new RuntimeException("EventBridge error");
         when(eventBridgeAsyncClient.putRule(any(PutRuleRequest.class)))
@@ -713,8 +713,8 @@ class EventBridgeServiceTest {
                 dateTime,
                 targetArn,
                 inputData,
-                description
-        );
+                description,
+                parsed.intent());
 
         PutRuleResponse putRuleResponse = PutRuleResponse.builder().build();
         PutTargetsResponse putTargetsResponse = PutTargetsResponse.builder().build();

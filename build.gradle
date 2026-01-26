@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'com.google.protobuf' version '0.9.4'
 }
 
 group 'by.losik'
@@ -55,6 +56,13 @@ dependencies {
     implementation 'commons-io:commons-io:2.15.1'
     implementation 'com.typesafe:config:1.4.3'
     implementation 'joda-time:joda-time:2.12.6'
+    implementation 'io.grpc:grpc-netty-shaded:1.60.0'
+    implementation 'io.grpc:grpc-protobuf:1.60.0'
+    implementation 'io.grpc:grpc-stub:1.60.0'
+    implementation 'com.google.protobuf:protobuf-java-util:3.25.1'
+    protobuf 'com.google.protobuf:protobuf-gradle-plugin:0.9.4'
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
+    implementation 'io.grpc:grpc-services:1.60.0'
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.1")
     testImplementation("org.mockito:mockito-core:5.20.0")
@@ -82,4 +90,41 @@ application {
 tasks.withType(JavaCompile) {
     options.encoding = 'UTF-8'
     options.compilerArgs += ['-parameters']
+}
+
+protobuf {
+    protoc {
+        artifact = "com.google.protobuf:protoc:3.25.1"
+    }
+    plugins {
+        grpc {
+            artifact = 'io.grpc:protoc-gen-grpc-java:1.60.0'
+        }
+    }
+    generateProtoTasks {
+        all()*.plugins {
+            grpc {}
+        }
+    }
+
+    generatedFilesBaseDir = "$projectDir/build/generated"
+}
+
+sourceSets {
+    main {
+        proto {
+            srcDirs = ['src/main/proto']
+        }
+        java {
+            srcDirs = [
+                    'src/main/java',
+                    "$buildDir/generated/source/proto/main/grpc",
+                    "$buildDir/generated/source/proto/main/java"
+            ]
+        }
+    }
+}
+
+clean {
+    delete protobuf.generatedFilesBaseDir
 }

@@ -19,5 +19,8 @@ public record CreateRuleRequest(
         Map<String, Object> inputData,
 
         @JsonProperty("description")
-        String description
+        String description,
+
+        @JsonProperty("intent")
+        String intent
 ) {}

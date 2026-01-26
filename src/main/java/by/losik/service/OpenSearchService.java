@@ -449,6 +449,7 @@ public class OpenSearchService {
                     LocalDateTime.parse((String) source.get("created_at")),
                     ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
                     (Boolean) source.get("notification_sent"),
+                    (String) source.get("intent"),
                     (String) source.get("eventbridge_rule_name")
             );
         } catch (Exception e) {

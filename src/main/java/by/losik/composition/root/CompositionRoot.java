@@ -1,5 +1,6 @@
 package by.losik.composition.root;
 
+import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
@@ -41,5 +42,26 @@ public class CompositionRoot extends AbstractModule {
                 .orElse("4510");
 
         return new LocalStackConfig(endpoint, region, accessKey, secretKey, email, openSearchPort);
+    }
+
+    @Provides
+    @Singleton
+    private GRPCConfig createGRPCConfig() {
+        String nlpServiceHost = Optional.ofNullable(System.getenv("NLP_SERVICE_HOST"))
+                .or(() -> Optional.ofNullable(System.getProperty("NLP_SERVICE_HOST")))
+                .orElse("localhost");
+
+        String portStr = Optional.ofNullable(System.getenv("NLP_SERVICE_PORT"))
+                .or(() -> Optional.ofNullable(System.getProperty("NLP_SERVICE_PORT")))
+                .orElse("50051");
+
+        int nlpServicePort;
+        try {
+            nlpServicePort = Integer.parseInt(portStr);
+        } catch (NumberFormatException e) {
+            nlpServicePort = 50051;
+        }
+
+        return new GRPCConfig(nlpServiceHost, nlpServicePort);
     }
 }
