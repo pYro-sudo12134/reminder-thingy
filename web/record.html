@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Голосовые напоминания - Запись</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .nav {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .nav a {
+            text-decoration: none;
+            padding: 10px 20px;
+            background: #4CAF50;
+            color: white;
+            border-radius: 5px;
+            transition: background 0.3s;
+        }
+        .nav a:hover {
+            background: #45a049;
+        }
+        .recorder {
+            text-align: center;
+            margin: 30px 0;
+        }
+        #recordButton {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 200px;
+        }
+        #recordButton:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        #recordButton.recording {
+            background: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
+        }
+        .timer {
+            font-size: 24px;
+            margin: 20px 0;
+            color: #666;
+        }
+        .status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+            min-height: 20px;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.processing {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+        .result {
+            display: none;
+            margin-top: 20px;
+            padding: 20px;
+            background: #e8f5e9;
+            border-radius: 5px;
+            border: 1px solid #c8e6c9;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Голосовые напоминания</h1>
+
+    <div class="nav">
+        <a href="/">Запись</a>
+        <a href="/reminders.html">Мои напоминания</a>
+    </div>
+
+    <div class="form-group">
+        <label for="userId">ID пользователя:</label>
+        <input type="text" id="userId" placeholder="Введите ваш ID" required>
+    </div>
+
+    <div class="form-group">
+        <label for="userEmail">Email:</label>
+        <input type="email" id="userEmail" placeholder="Ваш email для напоминаний" required>
+    </div>
+
+    <div class="recorder">
+        <div class="timer" id="timer">00:00</div>
+        <button id="recordButton">Начать запись</button>
+        <div class="status" id="status"></div>
+    </div>
+
+    <div id="result" class="result">
+        <h3>Напоминание создано!</h3>
+        <p><strong>ID напоминания:</strong> <span id="reminderId"></span></p>
+        <p><strong>Статус:</strong> <span id="reminderStatus">обрабатывается...</span></p>
+        <p><a href="/reminders.html" id="viewRemindersLink">Посмотреть все напоминания</a></p>
+    </div>
+</div>
+
+<script>
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+    let timerInterval;
+    let seconds = 0;
+    let maxDuration = 30;
+
+    const recordButton = document.getElementById('recordButton');
+    const timerElement = document.getElementById('timer');
+    const statusElement = document.getElementById('status');
+    const resultElement = document.getElementById('result');
+
+    recordButton.addEventListener('click', toggleRecording);
+
+    async function toggleRecording() {
+        if (!isRecording) {
+            await startRecording();
+        } else {
+            stopRecording();
+        }
+    }
+
+    async function startRecording() {
+        const userId = document.getElementById('userId').value.trim();
+        const userEmail = document.getElementById('userEmail').value.trim();
+
+        if (!userId || !userEmail) {
+            showStatus('Введите ID и email перед записью', 'error');
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    sampleRate: 16000,
+                    channelCount: 1,
+                    echoCancellation: true,
+                    noiseSuppression: true
+                }
+            });
+
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm;codecs=opus'
+            });
+
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                sendAudioToServer(audioBlob, userId, userEmail);
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            mediaRecorder.start(1000);
+            isRecording = true;
+            recordButton.textContent = 'Остановить запись';
+            recordButton.classList.add('recording');
+            startTimer();
+            showStatus('Записываю... Говорите ваше напоминание', 'processing');
+
+        } catch (error) {
+            showStatus(`Ошибка доступа к микрофону: ${error.message}`, 'error');
+        }
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
+            mediaRecorder.stop();
+            isRecording = false;
+            recordButton.textContent = 'Начать запись';
+            recordButton.classList.remove('recording');
+            stopTimer();
+            showStatus('Обработка записи...', 'processing');
+        }
+    }
+
+    function startTimer() {
+        seconds = 0;
+        updateTimer();
+        timerInterval = setInterval(() => {
+            seconds++;
+            updateTimer();
+
+            if (seconds >= maxDuration) {
+                stopRecording();
+            }
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+    }
+
+    function updateTimer() {
+        const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
+        const secs = (seconds % 60).toString().padStart(2, '0');
+        timerElement.textContent = `${mins}:${secs}`;
+    }
+
+    async function sendAudioToServer(audioBlob, userId, userEmail) {
+        try {
+            showStatus('Отправляю аудио на сервер...', 'processing');
+
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('userId', userId);
+            formData.append('userEmail', userEmail);
+
+            const response = await fetch('/api/reminder/record', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || `HTTP error ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            showStatus('Напоминание успешно создано!', 'success');
+            displayResult(result);
+
+        } catch (error) {
+            console.error('Error:', error);
+            showStatus(`Ошибка: ${error.message}`, 'error');
+        }
+    }
+
+    function showStatus(message, type) {
+        statusElement.textContent = message;
+        statusElement.className = 'status';
+        if (type) {
+            statusElement.classList.add(type);
+        }
+    }
+
+    function displayResult(result) {
+        document.getElementById('reminderId').textContent = result.reminderId;
+
+        if (result.scheduledTime) {
+            const scheduledTime = new Date(result.scheduledTime);
+            document.getElementById('reminderStatus').textContent =
+                `запланировано на ${scheduledTime.toLocaleString('ru-RU')}`;
+        }
+
+        const link = document.getElementById('viewRemindersLink');
+        link.href = `/reminders.html?userId=${result.userId}`;
+
+        resultElement.style.display = 'block';
+        resultElement.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const userIdFromUrl = urlParams.get('userId');
+    if (userIdFromUrl) {
+        document.getElementById('userId').value = userIdFromUrl;
+    }
+</script>
+</body>
+</html>

@@ -161,8 +161,10 @@ class ReminderNLPModel:
                     )
 
             try:
+                timezone = pytz.timezone('Europe/Minsk')
+
                 settings = {
-                    'RELATIVE_BASE': datetime.now(),
+                    'RELATIVE_BASE': datetime.now(timezone),
                     'TIMEZONE': 'UTC',
                     'DATE_ORDER': 'DMY' if lang == 'ru' else 'MDY',
                 }

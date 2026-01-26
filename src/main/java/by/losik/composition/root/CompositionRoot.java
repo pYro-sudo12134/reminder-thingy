@@ -2,6 +2,8 @@ package by.losik.composition.root;
 
 import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
+import by.losik.resource.ReminderResource;
+import by.losik.server.WebServer;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
@@ -12,6 +14,7 @@ public class CompositionRoot extends AbstractModule {
 
     @Override
     protected void configure() {
+
     }
 
     @Provides
@@ -63,5 +66,22 @@ public class CompositionRoot extends AbstractModule {
         }
 
         return new GRPCConfig(nlpServiceHost, nlpServicePort);
+    }
+
+    @Provides
+    @Singleton
+    private WebServer createWebServer(ReminderResource reminderResource) {
+        String portStr = Optional.ofNullable(System.getenv("WS_PORT"))
+                .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
+                .orElse("8090");
+
+        int webServerPort;
+        try {
+            webServerPort = Integer.parseInt(portStr);
+        } catch (NumberFormatException e) {
+            webServerPort = 8090;
+        }
+
+        return new WebServer(webServerPort, reminderResource);
     }
 }

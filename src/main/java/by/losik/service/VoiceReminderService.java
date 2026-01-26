@@ -182,4 +182,8 @@ public class VoiceReminderService {
                 "language", parsed.language()
         );
     }
+
+    public OpenSearchService getOpenSearchService() {
+        return openSearchService;
+    }
 }
