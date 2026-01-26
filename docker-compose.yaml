@@ -27,42 +27,33 @@ services:
     container_name: localstack
     ports:
       - "4566:4566"
-      - "4571:4571"
       - "4510:4510"
-      - "9200:9200"
+      - "4510-4559:4510-4559"
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe
       - DEBUG=1
-      - PERSISTENCE=1
+      - PERSISTENCE=0
       - LAMBDA_EXECUTOR=docker
       - DOCKER_HOST=unix:///var/run/docker.sock
       - AWS_DEFAULT_REGION=us-east-1
       - EDGE_PORT=4566
       - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY:-}
       - OPENSEARCH_ENDPOINT_STRATEGY=port
-      - OPENSEARCH_PORT_EXTERNAL=4571
-      - OPENSEARCH_PORT=9200
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=admin123
-      - DISK_WATERMARK_LOW=1gb
-      - DISK_WATERMARK_HIGH=500mb
-      - DISK_WATERMARK_FLOOD=200mb
-      - cluster.routing.allocation.disk.threshold_enabled=false
+      - OPENSEARCH_PORT=4510
+      - OPENSEARCH_PORT_EXTERNAL=4510
+      - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs
+      - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"
       - "./lambda_functions:/var/lib/localstack/lambda_functions"
     mem_reservation: 1g
-    shm_size: 1g
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 30s
     networks:
       - localstack-network
     depends_on:
