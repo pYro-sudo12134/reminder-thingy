@@ -10,17 +10,14 @@ services:
       - INTENT_MODEL_PATH=/app/models/intent_classifier
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
+      - GRPC_PORT=50051
     volumes:
       - "./nlp/models:/app/models"
       - "./nlp/data:/app/data"
+      - "./nlp/nlp_service:/app/nlp_service"
+      - "./nlp/proto:/app/proto"
     networks:
       - localstack-network
-    healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; import sys; channel = grpc.insecure_channel('localhost:50051'); sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
 
   localstack:
     image: localstack/localstack:4.12
@@ -30,7 +27,7 @@ services:
       - "4510:4510"
       - "4510-4559:4510-4559"
     environment:
-      - SERVICES=lambda,s3,events,opensearch,ses,transcribe
+      - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,iam,cloudformation,cloudwatch,logs,eventbridge
       - DEBUG=1
       - PERSISTENCE=0
       - LAMBDA_EXECUTOR=docker
@@ -47,13 +44,14 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"
-      - "./lambda_functions:/var/lib/localstack/lambda_functions"
-    mem_reservation: 1g
+      - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
+      - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
+    mem_reservation: 2g
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:4566/_localstack/health" ]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health?expected-services=s3%2Copensearch"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 10
       start_period: 30s
     networks:
       - localstack-network
@@ -66,20 +64,20 @@ services:
     container_name: reminder-app
     ports:
       - "8080:8080"
+      - "8090:8090"
     environment:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
-      - LOCALSTACK_ENDPOINT=http://localstack:4566
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_DOMAIN=test-domain
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
-      - WS_PORT=8080
-      - EMAIL=losik2006@gmail.com
       - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
+    volumes:
+      - "./web:/app/web"
     networks:
       - localstack-network
     depends_on:
@@ -87,6 +85,12 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/test || exit 0"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
 
 networks:
   localstack-network:

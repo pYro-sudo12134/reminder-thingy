@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder Full Stack for LocalStack Testing
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  EmailAddress:
+    Type: String
+    Default: notifications@example.com
+    Description: Email address for sending reminders
+
+  OpenSearchDomainName:
+    Type: String
+    Default: reminder-domain
+    Description: OpenSearch domain name
+
+  S3BucketName:
+    Type: String
+    Default: voice-reminder-audio-bucket
+    Description: S3 bucket for audio files
+
+  LambdaFunctionName:
+    Type: String
+    Default: send-reminder-lambda
+    Description: Lambda function name
+
+Resources:
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldAudio
+            Status: Enabled
+            ExpirationInDays: 30
+
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Ref OpenSearchDomainName
+      EngineVersion: "OpenSearch_2.5"
+      ClusterConfig:
+        InstanceType: "t3.small.search"
+        InstanceCount: 1
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: "gp2"
+        VolumeSize: 10
+
+  TranscribeServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-transcribe-service-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: transcribe.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TranscribeS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${AudioBucket}
+                  - !Sub arn:aws:s3:::${AudioBucket}/*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::${AudioBucket}/transcriptions/*
+
+  AppExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-reminder-app-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppReminderPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${AudioBucket}
+                  - !Sub arn:aws:s3:::${AudioBucket}/*
+
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:ListTranscriptionJobs
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:ListRules
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPost
+                  - es:ESHttpGet
+                  - es:ESHttpPut
+                  - es:ESHttpDelete
+                Resource: !Sub arn:aws:es:*:*:domain/${OpenSearchDomain}/*
+
+              - Effect: Allow
+                Action:
+                  - ses:VerifyEmailIdentity
+                  - ses:SendEmail
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt TranscribeServiceRole.Arn
+
+  SESVerifiedEmail:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref EmailAddress
+
+  ReminderNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${EnvironmentName}-reminder-notifications
+      DisplayName: "Voice Reminder Notifications"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref EmailAddress
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+      RetentionInDays: 30
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${EnvironmentName}/reminder-app
+      RetentionInDays: 30
+
+  TranscribeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/transcribe/${EnvironmentName}
+      RetentionInDays: 7
+
+Outputs:
+  AudioBucketName:
+    Description: S3 Bucket for audio files
+    Value: !Ref AudioBucket
+
+  OpenSearchEndpoint:
+    Description: OpenSearch Domain Endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+
+  AppExecutionRoleArn:
+    Description: IAM Role for Application
+    Value: !GetAtt AppExecutionRole.Arn
+
+  TranscribeServiceRoleArn:
+    Description: IAM Role for Amazon Transcribe
+    Value: !GetAtt TranscribeServiceRole.Arn
+
+  SESVerifiedEmail:
+    Description: Verified SES Email Address
+    Value: !Ref EmailAddress
+
+  S3BucketUrl:
+    Description: S3 Bucket URL
+    Value: !Sub s3://${AudioBucket}

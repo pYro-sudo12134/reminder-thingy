@@ -1,5 +1,6 @@
 package by.losik.composition.root;
 
+import by.losik.config.CloudWatchConfigForLocalstack;
 import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
 import by.losik.resource.ReminderResource;
@@ -86,5 +87,11 @@ public class CompositionRoot extends AbstractModule {
         }
 
         return new WebServer(webServerPort, reminderResource);
+    }
+
+    @Provides
+    @Singleton
+    private CloudWatchConfigForLocalstack createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig) {
+        return new CloudWatchConfigForLocalstack(localStackConfig);
     }
 }

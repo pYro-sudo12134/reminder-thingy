@@ -12,6 +12,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
 import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
 import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.iam.IamAsyncClient;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
@@ -42,6 +43,7 @@ public class LocalStackConfig {
     private final OpenSearchAsyncClient openSearchAsyncClient;
     private final SdkAsyncHttpClient asyncHttpClient;
     private final SesAsyncClient sesAsyncClient;
+    private final CloudWatchAsyncClient cloudWatchAsyncClient;
 
     public LocalStackConfig(String localstackEndpoint, String region, String accessKey,
                             String secretKey, String email, String openSearchPort, String openSearchHost) {
@@ -60,6 +62,7 @@ public class LocalStackConfig {
         this.openSearchClient = createOpenSearchClient();
         this.openSearchAsyncClient = createOpenSearchAsyncClient();
         this.sesAsyncClient = createSesAsyncClient();
+        this.cloudWatchAsyncClient = createCloudWatchAsyncClient();
     }
 
     public EventBridgeAsyncClient getEventBridgeAsyncClient() {
@@ -93,6 +96,9 @@ public class LocalStackConfig {
         return LOCALSTACK_ENDPOINT;
     }
 
+    public CloudWatchAsyncClient getCloudWatchAsyncClient() {
+        return this.cloudWatchAsyncClient;
+    }
     public String getRegion() {
         return REGION;
     }
@@ -105,6 +111,14 @@ public class LocalStackConfig {
                 .connectionTimeout(Duration.ofSeconds(10))
                 .connectionMaxIdleTime(Duration.ofSeconds(5))
                 .maxConcurrency(100)
+                .build();
+    }
+
+    private CloudWatchAsyncClient createCloudWatchAsyncClient() {
+        return CloudWatchAsyncClient.builder()
+                .endpointOverride(URI.create(LOCALSTACK_ENDPOINT))
+                .credentialsProvider(createCredentialsProvider())
+                .region(Region.US_EAST_1)
                 .build();
     }
 
