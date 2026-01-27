@@ -40,6 +40,7 @@ services:
       - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY:-}
       - OPENSEARCH_ENDPOINT_STRATEGY=port
       - OPENSEARCH_PORT=4510
+      - OPENSEARCH_HOST=0.0.0.0
       - OPENSEARCH_PORT_EXTERNAL=4510
       - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs
       - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
@@ -64,20 +65,21 @@ services:
     image: reminder-backend:1.0
     container_name: reminder-app
     ports:
-      - "8090:8090"
+      - "8080:8080"
     environment:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
+      - LOCALSTACK_ENDPOINT=http://localstack:4566
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_DOMAIN=test-domain
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
+      - WS_PORT=8080
+      - EMAIL=losik2006@gmail.com
       - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
-    volumes:
-      - "./web:/app/web"
     networks:
       - localstack-network
     depends_on:
@@ -85,12 +87,6 @@ services:
         condition: service_healthy
       localstack:
         condition: service_healthy
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8090/api/test" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
 
 networks:
   localstack-network:

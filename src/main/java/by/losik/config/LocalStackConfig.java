@@ -23,6 +23,7 @@ import software.amazon.awssdk.services.transcribe.TranscribeAsyncClient;
 import java.io.IOException;
 import java.net.URI;
 import java.time.Duration;
+import java.util.Optional;
 
 @Singleton
 public class LocalStackConfig {
@@ -31,6 +32,7 @@ public class LocalStackConfig {
     private final String ACCESS_KEY;
     private final String SECRET_KEY;
     private final String EMAIL;
+    private final String OPENSEARCH_HOST;
     private final String OPENSEARCH_PORT;
     private final EventBridgeAsyncClient eventBridgeAsyncClient;
     private final S3AsyncClient s3AsyncClient;
@@ -42,12 +44,13 @@ public class LocalStackConfig {
     private final SesAsyncClient sesAsyncClient;
 
     public LocalStackConfig(String localstackEndpoint, String region, String accessKey,
-                            String secretKey, String email, String openSearchPort) {
+                            String secretKey, String email, String openSearchPort, String openSearchHost) {
         this.LOCALSTACK_ENDPOINT = localstackEndpoint;
         this.REGION = region;
         this.ACCESS_KEY = accessKey;
         this.SECRET_KEY = secretKey;
         this.EMAIL = email;
+        this.OPENSEARCH_HOST = openSearchHost;
         this.OPENSEARCH_PORT = openSearchPort;
         this.asyncHttpClient = createAsyncHttpClient();
         this.eventBridgeAsyncClient = createEventBridgeAsyncClient();
@@ -167,22 +170,32 @@ public class LocalStackConfig {
 
     private RestHighLevelClient createOpenSearchClient() {
         try {
-            String endpoint = "localhost:" + OPENSEARCH_PORT;
+            String host = Optional.ofNullable(OPENSEARCH_HOST)
+                    .filter(h -> !h.isEmpty())
+                    .orElse("localstack");
+
+            String port = Optional.ofNullable(OPENSEARCH_PORT)
+                    .filter(p -> !p.isEmpty())
+                    .orElse("4510");
+
+            String endpoint = host + ":" + port;
+            System.out.println("Creating OpenSearch client for endpoint: http://" + endpoint);
+
             RestClientBuilder builder = RestClient.builder(
                     HttpHost.create("http://" + endpoint)
             );
 
             RestHighLevelClient client = new RestHighLevelClient(builder);
 
-            System.out.println("Testing OpenSearch connection on port " + OPENSEARCH_PORT);
+            System.out.println("Testing OpenSearch connection to: http://" + endpoint);
             try {
                 Request request = new Request("GET", "/");
                 Response response = client.getLowLevelClient().performRequest(request);
-                System.out.println("OpenSearch connection successful! Port: " + OPENSEARCH_PORT);
+                System.out.println("OpenSearch connection successful, endpoint: http://" + endpoint);
                 System.out.println("Response: " + response.getStatusLine());
             } catch (Exception e) {
-                System.err.println("OpenSearch connection test failed on port " +
-                        OPENSEARCH_PORT + ": " + e.getMessage());
+                System.err.println("OpenSearch connection test failed to http://" +
+                        endpoint + ": " + e.getMessage());
                 System.err.println("But continuing with client creation anyway");
             }
 
@@ -220,7 +233,15 @@ public class LocalStackConfig {
     }
 
     public String getOpenSearchEndpoint() {
-        return LOCALSTACK_ENDPOINT.replace("4566", "4510");
+        String host = Optional.ofNullable(OPENSEARCH_HOST)
+                .filter(h -> !h.isEmpty())
+                .orElse("localstack");
+
+        String port = Optional.ofNullable(OPENSEARCH_PORT)
+                .filter(p -> !p.isEmpty())
+                .orElse("4510");
+
+        return "http://" + host + ":" + port;
     }
 
     public void shutdown() {

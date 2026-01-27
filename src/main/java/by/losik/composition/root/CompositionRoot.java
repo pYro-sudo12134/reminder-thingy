@@ -43,7 +43,11 @@ public class CompositionRoot extends AbstractModule {
                 .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_PORT")))
                 .orElse("4510");
 
-        return new LocalStackConfig(endpoint, region, accessKey, secretKey, email, openSearchPort);
+        String openSearchHost = Optional.ofNullable(System.getenv("OPENSEARCH_PORT"))
+                .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_PORT")))
+                .orElse("4510");
+
+        return new LocalStackConfig(endpoint, region, accessKey, secretKey, email, openSearchPort, openSearchHost);
     }
 
     @Provides
