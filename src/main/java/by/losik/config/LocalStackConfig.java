@@ -14,7 +14,6 @@ import software.amazon.awssdk.http.nio.netty.NettyNioAsyncHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
 import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
-import software.amazon.awssdk.services.iam.IamAsyncClient;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 import software.amazon.awssdk.services.opensearch.OpenSearchAsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
@@ -166,15 +165,6 @@ public class LocalStackConfig {
 
     private LambdaAsyncClient createLambdaAsyncClient() {
         return LambdaAsyncClient.builder()
-                .endpointOverride(URI.create(LOCALSTACK_ENDPOINT))
-                .region(Region.of(REGION))
-                .credentialsProvider(createCredentialsProvider())
-                .httpClient(asyncHttpClient)
-                .build();
-    }
-
-    private IamAsyncClient createIamAsyncClient() {
-        return IamAsyncClient.builder()
                 .endpointOverride(URI.create(LOCALSTACK_ENDPOINT))
                 .region(Region.of(REGION))
                 .credentialsProvider(createCredentialsProvider())

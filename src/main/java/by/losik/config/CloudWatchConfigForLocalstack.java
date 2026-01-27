@@ -20,7 +20,7 @@ import java.time.Duration;
 import java.util.Map;
 
 @Singleton
-public class CloudWatchConfigForLocalstack implements AutoCloseable{
+public class CloudWatchConfigForLocalstack implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(CloudWatchConfigForLocalstack.class);
     private final LocalStackConfig localStackConfig;
     private MeterRegistry meterRegistry;

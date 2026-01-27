@@ -148,10 +148,10 @@ Resources:
                 Action: iam:PassRole
                 Resource: !GetAtt TranscribeServiceRole.Arn
 
-  SESVerifiedEmail:
-    Type: AWS::SES::EmailIdentity
-    Properties:
-      EmailIdentity: !Ref EmailAddress
+#  SESVerifiedEmail:
+#    Type: AWS::SES::EmailIdentity
+#    Properties:
+#      EmailIdentity: !Ref EmailAddress
 
   ReminderNotificationTopic:
     Type: AWS::SNS::Topic

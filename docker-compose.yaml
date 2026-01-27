@@ -29,6 +29,8 @@ services:
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,iam,cloudformation,cloudwatch,logs,eventbridge
       - DEBUG=1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
       - PERSISTENCE=0
       - LAMBDA_EXECUTOR=docker
       - DOCKER_HOST=unix:///var/run/docker.sock
@@ -57,7 +59,7 @@ services:
       - localstack-network
     depends_on:
       nlp-service:
-        condition: service_healthy
+        condition: service_started
 
   reminder-app:
     image: reminder-backend:1.0

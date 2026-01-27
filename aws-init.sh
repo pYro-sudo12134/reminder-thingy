@@ -14,7 +14,7 @@ done
 echo "Deploying CloudFormation stack"
 aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
   --stack-name voice-reminder-stack \
-  --template-body file:///etc/localstack/init/ready.d/localstack-template.yaml \
+  --template-body file:///etc/localstack/init/ready.d/template.yaml \
   --parameters \
     ParameterKey=EnvironmentName,ParameterValue=dev \
     ParameterKey=EmailAddress,ParameterValue=notifications@example.com \
