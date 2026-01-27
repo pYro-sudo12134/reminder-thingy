@@ -53,8 +53,6 @@ public class WebServer {
 
         ResourceConfig apiConfig = new ResourceConfig();
 
-
-
         apiConfig.register(reminderResource);
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);

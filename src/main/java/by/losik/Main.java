@@ -22,7 +22,7 @@ public class Main {
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 try {
-                    log.info("\nShutting down...");
+                    log.info("\nShutting down");
                     webServer.stop();
                 } catch (Exception e) {
                     e.printStackTrace();

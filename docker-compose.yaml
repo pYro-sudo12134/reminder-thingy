@@ -60,6 +60,38 @@ services:
       nlp-service:
         condition: service_healthy
 
+  reminder-app:
+    image: reminder-backend:1.0
+    container_name: reminder-app
+    ports:
+      - "8090:8090"
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - OPENSEARCH_HOST=localstack
+      - OPENSEARCH_PORT=4510
+      - OPENSEARCH_DOMAIN=test-domain
+      - NLP_SERVICE_HOST=nlp-service
+      - NLP_SERVICE_PORT=50051
+      - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
+    volumes:
+      - "./web:/app/web"
+    networks:
+      - localstack-network
+    depends_on:
+      nlp-service:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8090/api/test" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 networks:
   localstack-network:
     driver: bridge

@@ -14,7 +14,6 @@ public class CompositionRoot extends AbstractModule {
 
     @Override
     protected void configure() {
-
     }
 
     @Provides
