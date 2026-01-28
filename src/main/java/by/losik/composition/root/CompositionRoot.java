@@ -44,9 +44,9 @@ public class CompositionRoot extends AbstractModule {
                 .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_PORT")))
                 .orElse("4510");
 
-        String openSearchHost = Optional.ofNullable(System.getenv("OPENSEARCH_PORT"))
-                .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_PORT")))
-                .orElse("4510");
+        String openSearchHost = Optional.ofNullable(System.getenv("OPENSEARCH_HOST"))
+                .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_HOST")))
+                .orElse("localstack");
 
         return new LocalStackConfig(endpoint, region, accessKey, secretKey, email, openSearchPort, openSearchHost);
     }
