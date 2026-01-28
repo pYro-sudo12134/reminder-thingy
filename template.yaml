@@ -52,6 +52,8 @@ Resources:
         EBSEnabled: true
         VolumeType: "gp2"
         VolumeSize: 10
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: 2
 
   TranscribeServiceRole:
     Type: AWS::IAM::Role
@@ -148,10 +150,122 @@ Resources:
                 Action: iam:PassRole
                 Resource: !GetAtt TranscribeServiceRole.Arn
 
-#  SESVerifiedEmail:
-#    Type: AWS::SES::EmailIdentity
-#    Properties:
-#      EmailIdentity: !Ref EmailAddress
+  ReminderDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-reminder-dlq
+      MessageRetentionPeriod: 1209600
+
+  ReminderProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-reminder-queue
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReminderDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  DLQMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-dlq-has-messages
+      AlarmDescription: "Messages in Dead Letter Queue require attention"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ReminderDeadLetterQueue.QueueName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+      OKActions:
+        - !Ref ReminderNotificationTopic
+      InsufficientDataActions:
+        - !Ref ReminderNotificationTopic
+
+  DLQOldMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-dlq-old-messages
+      AlarmDescription: "Messages have been in DLQ for too long"
+      Metrics:
+        - Id: m1
+          Label: "ApproximateAgeOfOldestMessage"
+          MetricStat:
+            Metric:
+              Namespace: AWS/SQS
+              MetricName: ApproximateAgeOfOldestMessage
+              Dimensions:
+                - Name: QueueName
+                  Value: !GetAtt ReminderDeadLetterQueue.QueueName
+            Period: 3600
+            Stat: Maximum
+      Threshold: 86400
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-lambda-error-rate-high
+      AlarmDescription: "High error rate in Send Reminder Lambda"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaFunctionName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  OpenSearchCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-opensearch-cpu-high
+      AlarmDescription: "High CPU utilization in OpenSearch"
+      MetricName: CPUUtilization
+      Namespace: AWS/ES
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DomainName
+          Value: !Ref OpenSearchDomainName
+        - Name: ClientId
+          Value: !Ref AWS::AccountId
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  # SESVerifiedEmail:
+  #   Type: AWS::SES::EmailIdentity
+  #   Properties:
+  #     EmailIdentity: !Ref EmailAddress
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${EnvironmentName}-voice-reminder-api
+      Description: API Gateway
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref EnvironmentName
 
   ReminderNotificationTopic:
     Type: AWS::SNS::Topic
@@ -180,6 +294,13 @@ Resources:
       LogGroupName: !Sub /aws/transcribe/${EnvironmentName}
       RetentionInDays: 7
 
+  ApiGatewayHealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "health"
+
 Outputs:
   AudioBucketName:
     Description: S3 Bucket for audio files
@@ -204,3 +325,7 @@ Outputs:
   S3BucketUrl:
     Description: S3 Bucket URL
     Value: !Sub s3://${AudioBucket}
+
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub https://${ApiGateway}.execute-api.localhost.localstack.cloud:4566/${EnvironmentName}

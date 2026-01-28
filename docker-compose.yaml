@@ -1,7 +1,7 @@
 version: '3.8'
 services:
   nlp-service:
-    image: reminder-nlp:1.0
+    image: pyrodocker1/reminder-nlp:1.0
     container_name: nlp-service
     ports:
       - "50051:50051"
@@ -62,7 +62,7 @@ services:
         condition: service_started
 
   reminder-app:
-    image: reminder-backend:1.0
+    image: pyrodocker1/reminder-backend:1.0
     container_name: reminder-app
     ports:
       - "8080:8080"
