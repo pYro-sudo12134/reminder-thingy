@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Voice Reminder Full Stack for LocalStack Testing
+Description: Voice Reminder
 
 Parameters:
   EnvironmentName:
