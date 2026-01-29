@@ -13,7 +13,7 @@ services:
       - GRPC_PORT=50051
       - NLP_GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
       - GRPC_USE_TLS=true
-      - NLP_GRPC_API_KEY=QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY:-QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=}
       - GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
     volumes:
       - "./nlp/models:/app/models"
@@ -61,7 +61,7 @@ services:
       - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
     mem_reservation: 2g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health?expected-services=s3%2Copensearch"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health?expected-services=s3%2Copensearch%2Cses"]
       interval: 30s
       timeout: 10s
       retries: 10
@@ -76,7 +76,6 @@ services:
     image: pyrodocker1/reminder-backend:1.0
     container_name: reminder-app
     ports:
-      - "8080:8080"
       - "8090:8090"
     environment:
       - AWS_ACCESS_KEY_ID=test
