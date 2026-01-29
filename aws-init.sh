@@ -11,37 +11,6 @@ until curl -s http://localhost:4566/_localstack/health; do
   sleep 5
 done
 
-echo "Creating secrets in Secrets Manager"
-
-aws --endpoint-url=http://localhost:4566 secretsmanager create-secret \
-  --name dev/voice-reminder/secrets \
-  --secret-string '{
-    "NLP_GRPC_API_KEY": "localstack-grpc-api-key-12345",
-    "JWT_SECRET": "localstack-jwt-secret-key",
-    "SERVICE_TOKEN": "localstack-service-token",
-    "NLP_SERVICE_HOST": "nlp-service",
-    "NLP_SERVICE_PORT": "50051",
-    "GRPC_USE_TLS": "false",
-    "WS_PORT": "8090",
-    "AWS_ACCESS_KEY_ID": "test",
-    "AWS_SECRET_ACCESS_KEY": "test",
-    "AWS_REGION": "us-east-1"
-  }' \
-  --region us-east-1
-
-echo "Creating KMS key"
-
-KMS_KEY_ID=$(aws --endpoint-url=http://localhost:4566 kms create-key \
-  --description "Voice Reminder KMS Key" \
-  --region us-east-1 \
-  --query 'KeyMetadata.KeyId' \
-  --output text)
-
-aws --endpoint-url=http://localhost:4566 kms create-alias \
-  --alias-name alias/dev-voice-reminder-key \
-  --target-key-id $KMS_KEY_ID \
-  --region us-east-1
-
 echo "Deploying CloudFormation stack"
 aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
   --stack-name voice-reminder-stack \
@@ -55,62 +24,93 @@ aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --region us-east-1
 
-echo "Waiting for CloudFormation stack creation"
-sleep 45
+echo "Waiting for CloudFormation stack creation (60 seconds)"
+sleep 60
 
-aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
+echo "Checking CloudFormation stack status"
+STACK_STATUS=$(aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
   --stack-name voice-reminder-stack \
-  --region us-east-1
-
-echo "Creating S3 folders"
-aws --endpoint-url=http://localhost:4566 s3api put-object \
-  --bucket voice-reminder-audio-bucket \
-  --key audio/ \
-  --region us-east-1
-
-aws --endpoint-url=http://localhost:4566 s3api put-object \
-  --bucket voice-reminder-audio-bucket \
-  --key transcriptions/ \
-  --region us-east-1
-
-echo "Setting up SNS topic for notifications"
-SNS_TOPIC_ARN=$(aws --endpoint-url=http://localhost:4566 sns create-topic \
-  --name dev-reminder-notifications \
   --region us-east-1 \
-  --query 'TopicArn' \
+  --query 'Stacks[0].StackStatus' \
   --output text)
 
-aws --endpoint-url=http://localhost:4566 sns subscribe \
-  --topic-arn $SNS_TOPIC_ARN \
-  --protocol email \
-  --notification-endpoint notifications@example.com \
-  --region us-east-1
+echo "Stack status: $STACK_STATUS"
 
-echo "Creating CloudWatch log groups"
-aws --endpoint-url=http://localhost:4566 logs create-log-group \
-  --log-group-name /aws/lambda/send-reminder-lambda \
-  --region us-east-1
+if [[ "$STACK_STATUS" == "CREATE_COMPLETE" ]]; then
+    echo "CloudFormation stack created successfully"
 
-aws --endpoint-url=http://localhost:4566 logs create-log-group \
-  --log-group-name /dev/reminder-app \
-  --region us-east-1
+    echo "Creating S3 folders"
+    aws --endpoint-url=http://localhost:4566 s3api put-object \
+      --bucket voice-reminder-audio-bucket \
+      --key audio/ \
+      --region us-east-1 2>/dev/null && echo "Created audio folder" || echo "Audio folder already exists"
 
-echo ""
-echo "S3 Buckets:"
-aws --endpoint-url=http://localhost:4566 s3api list-buckets --region us-east-1
+    aws --endpoint-url=http://localhost:4566 s3api put-object \
+      --bucket voice-reminder-audio-bucket \
+      --key transcriptions/ \
+      --region us-east-1 2>/dev/null && echo "Created transcriptions folder" || echo "Transcriptions folder already exists"
 
-echo ""
-echo "OpenSearch Domains:"
-aws --endpoint-url=http://localhost:4566 opensearch list-domain-names --region us-east-1
+    echo "Checking SNS topic"
+    SNS_TOPICS=$(aws --endpoint-url=http://localhost:4566 sns list-topics --region us-east-1 --query 'Topics[].TopicArn' --output text)
 
-echo ""
-echo "Secrets in Secrets Manager:"
-aws --endpoint-url=http://localhost:4566 secretsmanager list-secrets --region us-east-1
+    if [[ "$SNS_TOPICS" == *"dev-reminder-notifications"* ]]; then
+        echo "SNS topic already exists"
+    else
+        echo "Creating SNS topic for notifications"
+        SNS_TOPIC_ARN=$(aws --endpoint-url=http://localhost:4566 sns create-topic \
+          --name dev-reminder-notifications \
+          --region us-east-1 \
+          --query 'TopicArn' \
+          --output text)
 
-echo ""
-echo "SNS Topics:"
-aws --endpoint-url=http://localhost:4566 sns list-topics --region us-east-1
+        aws --endpoint-url=http://localhost:4566 sns subscribe \
+          --topic-arn $SNS_TOPIC_ARN \
+          --protocol email \
+          --notification-endpoint notifications@example.com \
+          --region us-east-1
+    fi
 
-echo ""
-echo "CloudWatch Log Groups:"
-aws --endpoint-url=http://localhost:4566 logs describe-log-groups --region us-east-1 --query 'logGroups[*].logGroupName'
+    echo ""
+    echo "=== Resource Summary ==="
+    echo ""
+    echo "S3 Buckets:"
+    aws --endpoint-url=http://localhost:4566 s3api list-buckets --region us-east-1 --query 'Buckets[*].Name'
+
+    echo ""
+    echo "OpenSearch Domains:"
+    aws --endpoint-url=http://localhost:4566 opensearch list-domain-names --region us-east-1 --query 'DomainNames[*].DomainName'
+
+    echo ""
+    echo "Secrets in Secrets Manager:"
+    aws --endpoint-url=http://localhost:4566 secretsmanager list-secrets --region us-east-1 --query 'SecretList[*].Name'
+
+    echo ""
+    echo "SNS Topics:"
+    aws --endpoint-url=http://localhost:4566 sns list-topics --region us-east-1 --query 'Topics[*].TopicArn'
+
+    echo ""
+    echo "CloudWatch Log Groups:"
+    aws --endpoint-url=http://localhost:4566 logs describe-log-groups --region us-east-1 --query 'logGroups[*].logGroupName'
+
+    echo ""
+    echo "IAM Roles:"
+    aws --endpoint-url=http://localhost:4566 iam list-roles --region us-east-1 --query 'Roles[*].RoleName'
+
+    echo ""
+    echo "=== CloudFormation Outputs ==="
+    aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
+      --stack-name voice-reminder-stack \
+      --region us-east-1 \
+      --query 'Stacks[0].Outputs'
+
+else
+    echo "WARNING: CloudFormation stack not in CREATE_COMPLETE state"
+    echo "Checking for errors..."
+    aws --endpoint-url=http://localhost:4566 cloudformation describe-stack-events \
+      --stack-name voice-reminder-stack \
+      --region us-east-1 \
+      --query 'StackEvents[?ResourceStatus==`CREATE_FAILED`]' \
+      --output table || true
+fi
+
+echo "LocalStack initialization complete!"

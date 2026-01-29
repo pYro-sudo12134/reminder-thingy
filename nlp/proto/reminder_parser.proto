@@ -70,4 +70,7 @@ message HealthResponse {
   bool healthy = 1;
   string model_version = 2;
   repeated string supported_languages = 3;
+  bool auth_required = 4;
+  int64 total_requests = 5;
+  int64 error_count = 6;
 }
