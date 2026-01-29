@@ -1,5 +1,6 @@
 package by.losik.server;
 
+import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.CorsFilter;
 import by.losik.resource.ReminderResource;
 import com.google.inject.Inject;
@@ -21,16 +22,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.EnumSet;
+import java.util.Optional;
 
 @Singleton
-public class WebServer {
+public class WebServer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(WebServer.class);
     private Server server;
     private final int port;
     private final ReminderResource reminderResource;
 
     @Inject
-    public WebServer(int port, ReminderResource reminderResource) {
+    public WebServer(int port,
+                     ReminderResource reminderResource) {
         this.port = port;
         this.reminderResource = reminderResource;
     }
@@ -38,13 +41,45 @@ public class WebServer {
     public void start() throws Exception {
         server = new Server(port);
 
-        Path webDir = Paths.get("./web");
+        Path webDir = createStaticDirectory();
+
+        ServletContextHandler apiContext = createApiContext();
+        ServletContextHandler staticContext = createStaticContext(webDir);
+
+        org.eclipse.jetty.server.handler.ContextHandlerCollection contexts =
+                new org.eclipse.jetty.server.handler.ContextHandlerCollection();
+        contexts.setHandlers(new org.eclipse.jetty.server.Handler[] {
+                apiContext,
+                staticContext
+        });
+
+        server.setHandler(contexts);
+        server.start();
+
+        logServerInfo();
+    }
+
+    private Path createStaticDirectory() {
+        String staticPath = Optional.ofNullable(System.getenv("STATIC_FILES_PATH"))
+                .or(() -> Optional.ofNullable(System.getProperty("static.files.path")))
+                .orElse("./web");
+
+        Path webDir = Paths.get(staticPath);
+
         if (!Files.exists(webDir)) {
-            log.warn("Static directory 'web' not found at: {}", webDir.toAbsolutePath());
-            Files.createDirectories(webDir);
-            log.info("Created static directory at: {}", webDir.toAbsolutePath());
+            log.warn("Static directory not found at: {}", webDir.toAbsolutePath());
+            try {
+                Files.createDirectories(webDir);
+                log.info("Created static directory at: {}", webDir.toAbsolutePath());
+            } catch (Exception e) {
+                log.error("Failed to create static directory", e);
+            }
         }
 
+        return webDir;
+    }
+
+    private ServletContextHandler createApiContext() {
         ServletContextHandler apiContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
         apiContext.setContextPath("/api");
 
@@ -52,7 +87,6 @@ public class WebServer {
         apiContext.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
         ResourceConfig apiConfig = new ResourceConfig();
-
         apiConfig.register(reminderResource);
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);
@@ -61,6 +95,10 @@ public class WebServer {
         ServletHolder apiHolder = new ServletHolder("api", apiContainer);
         apiContext.addServlet(apiHolder, "/*");
 
+        return apiContext;
+    }
+
+    private ServletContextHandler createStaticContext(Path webDir) {
         ServletContextHandler staticContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
         staticContext.setContextPath("/");
 
@@ -75,26 +113,27 @@ public class WebServer {
 
         staticContext.addServlet(staticHolder, "/*");
 
-        org.eclipse.jetty.server.handler.ContextHandlerCollection contexts =
-                new org.eclipse.jetty.server.handler.ContextHandlerCollection();
-        contexts.setHandlers(new org.eclipse.jetty.server.Handler[] {
-                apiContext,
-                staticContext
-        });
+        return staticContext;
+    }
 
-        server.setHandler(contexts);
-        server.start();
-
-        log.info("Server started on port {}", port);
-        log.info("Static files directory: {}", webDir.toAbsolutePath());
-        log.info("Static files: http://localhost:{}", port);
-        log.info("API base: http://localhost:{}/api/test", port);
+    private void logServerInfo() {
+        log.info("========================================");
+        log.info("Server started on port: {}", port);
+        log.info("Static files: http://localhost:{}/", port);
+        log.info("API base: http://localhost:{}/api", port);
+        log.info("Health check: http://localhost:{}/api/health", port);
+        log.info("========================================");
     }
 
     public void stop() throws Exception {
-        if (server != null) {
+        if (server != null && server.isRunning()) {
             server.stop();
             log.info("Web server stopped");
         }
+    }
+
+    @Override
+    public void close() throws Exception {
+        stop();
     }
 }

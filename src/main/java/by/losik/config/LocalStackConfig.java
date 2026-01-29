@@ -105,6 +105,13 @@ public class LocalStackConfig {
         return EMAIL;
     }
 
+    public String getAccessKeyId() {
+        return ACCESS_KEY;
+    }
+    public String secretAccessKey() {
+        return SECRET_KEY;
+    }
+
     private SdkAsyncHttpClient createAsyncHttpClient() {
         return NettyNioAsyncHttpClient.builder()
                 .connectionTimeout(Duration.ofSeconds(10))
@@ -275,5 +282,9 @@ public class LocalStackConfig {
 
     public SesAsyncClient getSesAsyncClient() {
         return sesAsyncClient;
+    }
+
+    public String getSecretKey() {
+        return SECRET_KEY;
     }
 }

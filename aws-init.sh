@@ -11,6 +11,37 @@ until curl -s http://localhost:4566/_localstack/health; do
   sleep 5
 done
 
+echo "Creating secrets in Secrets Manager"
+
+aws --endpoint-url=http://localhost:4566 secretsmanager create-secret \
+  --name dev/voice-reminder/secrets \
+  --secret-string '{
+    "NLP_GRPC_API_KEY": "localstack-grpc-api-key-12345",
+    "JWT_SECRET": "localstack-jwt-secret-key",
+    "SERVICE_TOKEN": "localstack-service-token",
+    "NLP_SERVICE_HOST": "nlp-service",
+    "NLP_SERVICE_PORT": "50051",
+    "GRPC_USE_TLS": "false",
+    "WS_PORT": "8090",
+    "AWS_ACCESS_KEY_ID": "test",
+    "AWS_SECRET_ACCESS_KEY": "test",
+    "AWS_REGION": "us-east-1"
+  }' \
+  --region us-east-1
+
+echo "Creating KMS key"
+
+KMS_KEY_ID=$(aws --endpoint-url=http://localhost:4566 kms create-key \
+  --description "Voice Reminder KMS Key" \
+  --region us-east-1 \
+  --query 'KeyMetadata.KeyId' \
+  --output text)
+
+aws --endpoint-url=http://localhost:4566 kms create-alias \
+  --alias-name alias/dev-voice-reminder-key \
+  --target-key-id $KMS_KEY_ID \
+  --region us-east-1
+
 echo "Deploying CloudFormation stack"
 aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
   --stack-name voice-reminder-stack \
@@ -42,6 +73,29 @@ aws --endpoint-url=http://localhost:4566 s3api put-object \
   --key transcriptions/ \
   --region us-east-1
 
+echo "Setting up SNS topic for notifications"
+SNS_TOPIC_ARN=$(aws --endpoint-url=http://localhost:4566 sns create-topic \
+  --name dev-reminder-notifications \
+  --region us-east-1 \
+  --query 'TopicArn' \
+  --output text)
+
+aws --endpoint-url=http://localhost:4566 sns subscribe \
+  --topic-arn $SNS_TOPIC_ARN \
+  --protocol email \
+  --notification-endpoint notifications@example.com \
+  --region us-east-1
+
+echo "Creating CloudWatch log groups"
+aws --endpoint-url=http://localhost:4566 logs create-log-group \
+  --log-group-name /aws/lambda/send-reminder-lambda \
+  --region us-east-1
+
+aws --endpoint-url=http://localhost:4566 logs create-log-group \
+  --log-group-name /dev/reminder-app \
+  --region us-east-1
+
+echo ""
 echo "S3 Buckets:"
 aws --endpoint-url=http://localhost:4566 s3api list-buckets --region us-east-1
 
@@ -50,16 +104,8 @@ echo "OpenSearch Domains:"
 aws --endpoint-url=http://localhost:4566 opensearch list-domain-names --region us-east-1
 
 echo ""
-echo "Lambda Functions:"
-aws --endpoint-url=http://localhost:4566 lambda list-functions --region us-east-1
-
-echo ""
-echo "EventBridge Rules:"
-aws --endpoint-url=http://localhost:4566 events list-rules --region us-east-1
-
-echo ""
-echo "SES Verified Emails:"
-aws --endpoint-url=http://localhost:4566 ses list-identities --region us-east-1
+echo "Secrets in Secrets Manager:"
+aws --endpoint-url=http://localhost:4566 secretsmanager list-secrets --region us-east-1
 
 echo ""
 echo "SNS Topics:"
@@ -67,8 +113,4 @@ aws --endpoint-url=http://localhost:4566 sns list-topics --region us-east-1
 
 echo ""
 echo "CloudWatch Log Groups:"
-aws --endpoint-url=http://localhost:4566 logs describe-log-groups --region us-east-1 | grep logGroupName
-
-echo ""
-echo "IAM Roles:"
-aws --endpoint-url=http://localhost:4566 iam list-roles --region us-east-1 | grep RoleName
+aws --endpoint-url=http://localhost:4566 logs describe-log-groups --region us-east-1 --query 'logGroups[*].logGroupName'

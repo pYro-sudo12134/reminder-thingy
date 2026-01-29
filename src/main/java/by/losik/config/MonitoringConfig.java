@@ -16,18 +16,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
 
-import java.time.Duration;
 import java.util.Map;
 
 @Singleton
-public class CloudWatchConfigForLocalstack implements AutoCloseable {
-    private static final Logger log = LoggerFactory.getLogger(CloudWatchConfigForLocalstack.class);
+public class MonitoringConfig implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(MonitoringConfig.class);
     private final LocalStackConfig localStackConfig;
+    private final SecretsManagerConfig secretsManagerConfig;
     private MeterRegistry meterRegistry;
 
     @Inject
-    public CloudWatchConfigForLocalstack(LocalStackConfig localStackConfig) {
+    public MonitoringConfig(LocalStackConfig localStackConfig,
+                            SecretsManagerConfig secretsManagerConfig) {
         this.localStackConfig = localStackConfig;
+        this.secretsManagerConfig = secretsManagerConfig;
         initMetrics();
     }
 
@@ -35,10 +37,14 @@ public class CloudWatchConfigForLocalstack implements AutoCloseable {
         try {
             CloudWatchAsyncClient cloudWatchAsyncClient = localStackConfig.getCloudWatchAsyncClient();
 
+            String namespace = secretsManagerConfig.getSecret("CLOUDWATCH_NAMESPACE",
+                    "VoiceReminderApp");
+            String step = secretsManagerConfig.getSecret("METRICS_STEP", "PT1M");
+
             CloudWatchConfig cloudWatchConfig = new CloudWatchConfig() {
                 private final Map<String, String> configuration = Map.of(
-                        "cloudwatch.namespace", "VoiceReminderApp",
-                        "cloudwatch.step", Duration.ofMinutes(1).toString()
+                        "cloudwatch.namespace", namespace,
+                        "cloudwatch.step", step
                 );
 
                 @Override
@@ -53,18 +59,30 @@ public class CloudWatchConfigForLocalstack implements AutoCloseable {
                     cloudWatchAsyncClient
             );
 
-            new ClassLoaderMetrics().bindTo(meterRegistry);
-            new JvmMemoryMetrics().bindTo(meterRegistry);
-            new JvmGcMetrics().bindTo(meterRegistry);
-            new ProcessorMetrics().bindTo(meterRegistry);
-            new JvmThreadMetrics().bindTo(meterRegistry);
+            registerMetrics();
 
-            log.info("Micrometer CloudWatch registry initialized");
+            log.info("Micrometer CloudWatch registry initialized with namespace: {}", namespace);
 
         } catch (Exception e) {
             log.error("Failed to initialize CloudWatch metrics", e);
             meterRegistry = null;
         }
+    }
+
+    private void registerMetrics() {
+        new ClassLoaderMetrics().bindTo(meterRegistry);
+        new JvmMemoryMetrics().bindTo(meterRegistry);
+        new JvmGcMetrics().bindTo(meterRegistry);
+        new ProcessorMetrics().bindTo(meterRegistry);
+        new JvmThreadMetrics().bindTo(meterRegistry);
+    }
+
+    public MeterRegistry getMeterRegistry() {
+        return meterRegistry;
+    }
+
+    public boolean isMetricsEnabled() {
+        return meterRegistry != null;
     }
 
     @Override

@@ -41,6 +41,9 @@ dependencies {
     implementation 'software.amazon.awssdk:opensearch:2.34.9'
     implementation 'software.amazon.awssdk:ses:2.34.9'
     implementation 'software.amazon.awssdk:netty-nio-client'
+    implementation 'software.amazon.awssdk:secretsmanager:2.34.9'
+    implementation 'software.amazon.awssdk:kms:2.34.9'
+    implementation 'software.amazon.awssdk:acm:2.34.9'
 
     implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
     implementation 'com.amazonaws:aws-lambda-java-events:3.11.6'

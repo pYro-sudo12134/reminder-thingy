@@ -21,6 +21,8 @@ COPY . .
 RUN useradd -m -u 1000 nlpuser && \
     chown -R nlpuser:nlpuser /app
 
+RUN mkdir -p /run/secrets
+
 USER nlpuser
 
 EXPOSE 50051

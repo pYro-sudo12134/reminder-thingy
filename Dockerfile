@@ -36,10 +36,12 @@ RUN apk add --no-cache curl
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+RUN mkdir -p /run/secrets && chown appuser:appgroup /run/secrets
+
 COPY --from=builder /app/build/libs/*.jar app.jar
 
 USER appuser
 
-EXPOSE 8090
+EXPOSE 8090 8080
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
