@@ -52,20 +52,35 @@ services:
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_HOST=0.0.0.0
       - OPENSEARCH_PORT_EXTERNAL=4510
+      - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs
+      - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
+      - OPENSEARCH_ENABLE_SECURITY=true
+      - OPENSEARCH_ENABLE_SSL=true
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_PLUGINS_LIST=opensearch-security
+      - DISABLE_OPENSEARCH_SECURITY_PLUGIN=false
+      - OPENSEARCH_NODE_TO_NODE_ENCRYPTION=true
+      - OPENSEARCH_SSL_CERTIFICATE_PATH=/etc/localstack/opensearch/certs/node.pem
+      - OPENSEARCH_SSL_KEY_PATH=/etc/localstack/opensearch/certs/node-key.pem
+      - OPENSEARCH_ROOT_CA_PATH=/etc/localstack/opensearch/certs/root-ca.pem
+      - OPENSEARCH_ADMIN_CERTIFICATE_PATH=/etc/localstack/opensearch/certs/admin.pem
+      - OPENSEARCH_ADMIN_KEY_PATH=/etc/localstack/opensearch/certs/admin-key.pem
       - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"
       - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
       - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
+      - "./opensearch_certs:/etc/localstack/opensearch/certs:ro"
+      - "./secrets:/run/secrets:ro"
     mem_reservation: 2g
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health?expected-services=s3%2Copensearch%2Cses"]
-      interval: 30s
-      timeout: 10s
+      test: ["CMD", "sh", "-c", "curl -s -k http://localhost:4510/ > /dev/null"]
+      interval: 20s
+      timeout: 15s
       retries: 10
-      start_period: 30s
+      start_period: 90s
     networks:
       - localstack-network
     depends_on:
@@ -88,7 +103,12 @@ services:
       - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
-      - OPENSEARCH_DOMAIN=test-domain
+      - OPENSEARCH_USER=admin
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_USE_SSL=false
+      - OPENSEARCH_SSL_VERIFICATION_MODE=none
+      - OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
+      - OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
       - WS_PORT=8090
@@ -96,6 +116,7 @@ services:
       - "./web:/app/web"
       - "./secrets:/run/secrets:ro"
       - "./secrets/application.properties:/app/config/application.properties:ro"
+      - "./opensearch_certs:/app/certs:ro"
     networks:
       - localstack-network
     depends_on:
@@ -105,7 +126,7 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/api/health || exit 0"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
       retries: 5
       start_period: 90s

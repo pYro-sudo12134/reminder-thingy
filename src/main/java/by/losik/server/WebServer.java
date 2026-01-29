@@ -1,7 +1,7 @@
 package by.losik.server;
 
-import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.CorsFilter;
+import by.losik.filter.RateLimiterFilter;
 import by.losik.resource.ReminderResource;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -30,12 +30,15 @@ public class WebServer implements AutoCloseable {
     private Server server;
     private final int port;
     private final ReminderResource reminderResource;
+    private final RateLimiterFilter rateLimiterFilter;
 
     @Inject
     public WebServer(int port,
-                     ReminderResource reminderResource) {
+                     ReminderResource reminderResource,
+                     RateLimiterFilter rateLimiterFilter) {
         this.port = port;
         this.reminderResource = reminderResource;
+        this.rateLimiterFilter = rateLimiterFilter;
     }
 
     public void start() throws Exception {
@@ -86,6 +89,9 @@ public class WebServer implements AutoCloseable {
         FilterHolder corsFilter = new FilterHolder(new CorsFilter());
         apiContext.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
+        FilterHolder rateLimitFilter = new FilterHolder(rateLimiterFilter);
+        apiContext.addFilter(rateLimitFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+
         ResourceConfig apiConfig = new ResourceConfig();
         apiConfig.register(reminderResource);
         apiConfig.register(JacksonFeature.class);
@@ -105,6 +111,9 @@ public class WebServer implements AutoCloseable {
         FilterHolder staticCorsFilter = new FilterHolder(new CorsFilter());
         staticContext.addFilter(staticCorsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
+        FilterHolder staticRateLimitFilter = new FilterHolder(rateLimiterFilter);
+        staticContext.addFilter(staticRateLimitFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
+
         ServletHolder staticHolder = new ServletHolder("static", DefaultServlet.class);
         staticHolder.setInitParameter("resourceBase", webDir.toAbsolutePath().toString());
         staticHolder.setInitParameter("dirAllowed", "true");
@@ -121,7 +130,8 @@ public class WebServer implements AutoCloseable {
         log.info("Server started on port: {}", port);
         log.info("Static files: http://localhost:{}/", port);
         log.info("API base: http://localhost:{}/api", port);
-        log.info("Health check: http://localhost:{}/api/health", port);
+        log.info("Rate limiting: ENABLED");
+        log.info("CORS: ENABLED");
         log.info("========================================");
     }
 
