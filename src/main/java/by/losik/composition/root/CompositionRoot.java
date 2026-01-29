@@ -1,8 +1,9 @@
 package by.losik.composition.root;
 
-import by.losik.config.CloudWatchConfigForLocalstack;
+import by.losik.config.MonitoringConfig;
 import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
+import by.losik.config.SecretsManagerConfig;
 import by.losik.resource.ReminderResource;
 import by.losik.server.WebServer;
 import com.google.inject.AbstractModule;
@@ -20,8 +21,8 @@ public class CompositionRoot extends AbstractModule {
     @Provides
     @Singleton
     private LocalStackConfig createLocalStackConfig() {
-        String endpoint = Optional.ofNullable(System.getenv("LOCALSTACK_ENDPOINT"))
-                .or(() -> Optional.ofNullable(System.getProperty("LOCALSTACK_ENDPOINT")))
+        String endpoint = Optional.ofNullable(System.getenv("AWS_ENDPOINT_URL"))
+                .or(() -> Optional.ofNullable(System.getProperty("AWS_ENDPOINT_URL")))
                 .orElse("http://localhost:4566");
 
         String region = Optional.ofNullable(System.getenv("AWS_REGION"))
@@ -46,38 +47,41 @@ public class CompositionRoot extends AbstractModule {
 
         String openSearchHost = Optional.ofNullable(System.getenv("OPENSEARCH_HOST"))
                 .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_HOST")))
-                .orElse("localstack");
+                .orElse("localhost");
 
         return new LocalStackConfig(endpoint, region, accessKey, secretKey, email, openSearchPort, openSearchHost);
     }
 
     @Provides
     @Singleton
-    private GRPCConfig createGRPCConfig() {
-        String nlpServiceHost = Optional.ofNullable(System.getenv("NLP_SERVICE_HOST"))
-                .or(() -> Optional.ofNullable(System.getProperty("NLP_SERVICE_HOST")))
-                .orElse("localhost");
+    private SecretsManagerConfig createSecretsManagerConfig(LocalStackConfig localStackConfig) {
+        String environmentName = Optional.ofNullable(System.getenv("ENVIRONMENT_NAME"))
+                .or(() -> Optional.ofNullable(System.getProperty("ENVIRONMENT")))
+                .orElse("dev");
 
-        String portStr = Optional.ofNullable(System.getenv("NLP_SERVICE_PORT"))
-                .or(() -> Optional.ofNullable(System.getProperty("NLP_SERVICE_PORT")))
-                .orElse("50051");
-
-        int nlpServicePort;
-        try {
-            nlpServicePort = Integer.parseInt(portStr);
-        } catch (NumberFormatException e) {
-            nlpServicePort = 50051;
-        }
-
-        return new GRPCConfig(nlpServiceHost, nlpServicePort);
+        return new SecretsManagerConfig(
+                localStackConfig.getLocalstackEndpoint(),
+                localStackConfig.getRegion(),
+                localStackConfig.getAccessKeyId(),
+                localStackConfig.getSecretKey(),
+                environmentName
+        );
     }
 
     @Provides
     @Singleton
-    private WebServer createWebServer(ReminderResource reminderResource) {
-        String portStr = Optional.ofNullable(System.getenv("WS_PORT"))
-                .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
-                .orElse("8090");
+    private GRPCConfig createGRPCConfig(SecretsManagerConfig secretsManagerConfig) {
+        return new GRPCConfig(secretsManagerConfig);
+    }
+
+    @Provides
+    @Singleton
+    private WebServer createWebServer(ReminderResource reminderResource,
+                                      SecretsManagerConfig secretsManagerConfig) {
+        String portStr = secretsManagerConfig.getSecret("WS_PORT",
+                Optional.ofNullable(System.getenv("WS_PORT"))
+                        .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
+                        .orElse("8090"));
 
         int webServerPort;
         try {
@@ -91,7 +95,8 @@ public class CompositionRoot extends AbstractModule {
 
     @Provides
     @Singleton
-    private CloudWatchConfigForLocalstack createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig) {
-        return new CloudWatchConfigForLocalstack(localStackConfig);
+    private MonitoringConfig createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig,
+                                                                 SecretsManagerConfig secretsManagerConfig) {
+        return new MonitoringConfig(localStackConfig, secretsManagerConfig);
     }
 }

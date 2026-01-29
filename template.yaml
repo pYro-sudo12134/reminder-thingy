@@ -150,6 +150,19 @@ Resources:
                 Action: iam:PassRole
                 Resource: !GetAtt TranscribeServiceRole.Arn
 
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecrets
+                Resource: !Ref SecretsManagerSecret
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt KMSCustomerManagedKey.Arn
+
   ReminderDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -261,12 +274,6 @@ Resources:
       Name: !Sub ${EnvironmentName}-voice-reminder-api
       Description: API Gateway
 
-  ApiGatewayDeployment:
-    Type: AWS::ApiGateway::Deployment
-    Properties:
-      RestApiId: !Ref ApiGateway
-      StageName: !Ref EnvironmentName
-
   ReminderNotificationTopic:
     Type: AWS::SNS::Topic
     Properties:
@@ -300,6 +307,84 @@ Resources:
       RestApiId: !Ref ApiGateway
       ParentId: !GetAtt ApiGateway.RootResourceId
       PathPart: "health"
+
+  SecretsManagerSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}/voice-reminder/secrets
+      Description: Secrets for Voice Reminder application
+      GenerateSecretString:
+        SecretStringTemplate: '{"NLP_GRPC_KEY": "placeholder"}'
+        GenerateStringKey: "SERVICE_TOKEN"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  KMSCustomerManagedKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for Voice Reminder encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: Allow Secrets Manager to use the key
+            Effect: Allow
+            Principal:
+              Service: secretsmanager.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          - Sid: Allow Lambda to use the key
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub lambda.${AWS::Region}.amazonaws.com
+
+  KMSCustomerManagedKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${EnvironmentName}-voice-reminder-key
+      TargetKeyId: !Ref KMSCustomerManagedKey
+
+  SecretsManagerSecretKMSAssociation:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref SecretsManagerSecret
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt AppExecutionRole.Arn
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: "*"
+
+  CertificateManagerCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+          HostedZoneId: ZONE_ID_IF_NEEDED
 
 Outputs:
   AudioBucketName:

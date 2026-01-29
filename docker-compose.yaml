@@ -11,13 +11,23 @@ services:
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
+      - NLP_GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
+      - GRPC_USE_TLS=true
+      - GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
     volumes:
       - "./nlp/models:/app/models"
       - "./nlp/data:/app/data"
       - "./nlp/nlp_service:/app/nlp_service"
       - "./nlp/proto:/app/proto"
+      - "./secrets:/run/secrets:ro"
     networks:
       - localstack-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   localstack:
     image: localstack/localstack:4.12
@@ -27,7 +37,7 @@ services:
       - "4510:4510"
       - "4510-4559:4510-4559"
     environment:
-      - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,iam,cloudformation,cloudwatch,logs,eventbridge
+      - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
       - DEBUG=1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
@@ -72,14 +82,20 @@ services:
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack:4566
+      - ENVIRONMENT_NAME=dev
+      - USE_LOCAL_SECRETS=true
+      - SECRETS_PATH=/run/secrets
+      - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_DOMAIN=test-domain
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
-      - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8
+      - WS_PORT=8090
     volumes:
       - "./web:/app/web"
+      - "./secrets:/run/secrets:ro"
+      - "./secrets/application.properties:/app/config/application.properties:ro"
     networks:
       - localstack-network
     depends_on:
@@ -88,11 +104,21 @@ services:
       localstack:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/api/test || exit 0"]
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health || exit 0"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
+
+secrets:
+  nlp_grpc_key:
+    file: ./secrets/nlp_grpc_key.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
+  database_password:
+    file: ./secrets/database_password.txt
+  aws_secrets:
+    file: ./secrets/aws_credentials.json
 
 networks:
   localstack-network:
