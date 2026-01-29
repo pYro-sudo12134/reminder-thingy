@@ -31,7 +31,7 @@ native
 jdks
 daemon
 caches
-
+opensearch_certs
 gradle
 .gradle
 .idea
