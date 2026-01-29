@@ -89,7 +89,10 @@ class SecretLoader:
 
         api_key = (
                 secrets.get("NLP_GRPC_API_KEY") or
+                secrets.get("NLP_GRPC_KEY") or
                 os.getenv("NLP_GRPC_API_KEY") or
+                os.getenv("GRPC_API_KEY") or
+                secrets.get("GRPC_API_KEY") or
                 "default-insecure-key-for-development"
         )
 

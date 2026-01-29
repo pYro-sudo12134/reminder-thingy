@@ -13,6 +13,7 @@ services:
       - GRPC_PORT=50051
       - NLP_GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
       - GRPC_USE_TLS=true
+      - NLP_GRPC_API_KEY=QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=
       - GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
     volumes:
       - "./nlp/models:/app/models"
@@ -37,7 +38,7 @@ services:
       - "4510:4510"
       - "4510-4559:4510-4559"
     environment:
-      - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
+      - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
       - DEBUG=1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
