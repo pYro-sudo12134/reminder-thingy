@@ -6,10 +6,90 @@ echo "Waiting for LocalStack to be ready"
 
 sleep 15
 
-until curl -s http://localhost:4566/_localstack/health; do
+until curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; do
   echo "Waiting for LocalStack services to be available"
   sleep 5
 done
+
+create_api_gateway() {
+    echo "Creating API Gateway"
+
+    API_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-rest-api \
+      --name "voice-reminder-api" \
+      --region us-east-1 \
+      --query 'id' \
+      --output text)
+
+    echo "API created with ID: $API_ID"
+
+    ROOT_RESOURCE_ID=$(aws --endpoint-url=http://localhost:4566 apigateway get-resources \
+      --rest-api-id $API_ID \
+      --region us-east-1 \
+      --query 'items[?path=='\''/'\''].id' \
+      --output text)
+
+    echo "Root resource ID: $ROOT_RESOURCE_ID"
+
+    HEALTH_RESOURCE_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-resource \
+      --rest-api-id $API_ID \
+      --parent-id $ROOT_RESOURCE_ID \
+      --path-part "health" \
+      --region us-east-1 \
+      --query 'id' \
+      --output text)
+
+    echo "Health resource ID: $HEALTH_RESOURCE_ID"
+
+    aws --endpoint-url=http://localhost:4566 apigateway put-method \
+      --rest-api-id $API_ID \
+      --resource-id $HEALTH_RESOURCE_ID \
+      --http-method GET \
+      --authorization-type "NONE" \
+      --region us-east-1
+
+    aws --endpoint-url=http://localhost:4566 apigateway put-integration \
+      --rest-api-id $API_ID \
+      --resource-id $HEALTH_RESOURCE_ID \
+      --http-method GET \
+      --type MOCK \
+      --integration-http-method POST \
+      --request-templates '{"application/json":"{\"statusCode\": 200}"}' \
+      --region us-east-1
+
+    aws --endpoint-url=http://localhost:4566 apigateway put-method-response \
+      --rest-api-id $API_ID \
+      --resource-id $HEALTH_RESOURCE_ID \
+      --http-method GET \
+      --status-code 200 \
+      --response-models '{"application/json":"Empty"}' \
+      --region us-east-1
+
+    aws --endpoint-url=http://localhost:4566 apigateway put-integration-response \
+      --rest-api-id $API_ID \
+      --resource-id $HEALTH_RESOURCE_ID \
+      --http-method GET \
+      --status-code 200 \
+      --response-templates '{"application/json":"{\"status\": \"healthy\", \"timestamp\": \"$context.requestTime\"}"}' \
+      --region us-east-1
+
+    DEPLOYMENT_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-deployment \
+      --rest-api-id $API_ID \
+      --stage-name "dev" \
+      --region us-east-1 \
+      --query 'id' \
+      --output text)
+
+    echo "Deployment created with ID: $DEPLOYMENT_ID"
+
+    echo -e "\nTesting API Gateway health endpoint"
+    API_RESPONSE=$(curl -s -X GET "http://localhost:4566/restapis/$API_ID/dev/_user_request_/health")
+    echo "Response: $API_RESPONSE"
+
+    echo "API Gateway created successfully!"
+    echo "Test URL: http://localhost:4566/restapis/$API_ID/dev/_user_request_/health"
+
+    return 0
+}
 
 echo "Deploying CloudFormation stack"
 aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
@@ -70,6 +150,8 @@ if [[ "$STACK_STATUS" == "CREATE_COMPLETE" ]]; then
           --region us-east-1
     fi
 
+    create_api_gateway
+
     echo ""
     echo "=== Resource Summary ==="
     echo ""
@@ -97,15 +179,35 @@ if [[ "$STACK_STATUS" == "CREATE_COMPLETE" ]]; then
     aws --endpoint-url=http://localhost:4566 iam list-roles --region us-east-1 --query 'Roles[*].RoleName'
 
     echo ""
+    echo "API Gateway REST APIs:"
+    aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis --region us-east-1 --query 'items[*].[id,name]' --output table
+
+    echo ""
     echo "=== CloudFormation Outputs ==="
     aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
       --stack-name voice-reminder-stack \
       --region us-east-1 \
       --query 'Stacks[0].Outputs'
 
+    echo ""
+    echo "=== API Gateway Test URLs ==="
+    API_ID=$(aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis \
+      --region us-east-1 \
+      --query "items[?name=='voice-reminder-api'].id" \
+      --output text)
+
+    if [ ! -z "$API_ID" ] && [ "$API_ID" != "None" ]; then
+        echo "Health endpoint: http://localhost:4566/restapis/$API_ID/dev/_user_request_/health"
+        echo "Direct test: curl -X GET 'http://localhost:4566/restapis/$API_ID/dev/_user_request_/health'"
+    else
+        echo "Could not find API Gateway ID"
+        echo "Available APIs:"
+        aws --endpoint-url=http://localhost:4566 apigateway get-rest-apis --region us-east-1 --query 'items[*].[id,name]' --output table
+    fi
+
 else
     echo "WARNING: CloudFormation stack not in CREATE_COMPLETE state"
-    echo "Checking for errors..."
+    echo "Checking for errors"
     aws --endpoint-url=http://localhost:4566 cloudformation describe-stack-events \
       --stack-name voice-reminder-stack \
       --region us-east-1 \

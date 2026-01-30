@@ -272,7 +272,100 @@ Resources:
     Type: AWS::ApiGateway::RestApi
     Properties:
       Name: !Sub ${EnvironmentName}-voice-reminder-api
-      Description: API Gateway
+      Description: Voice Reminder API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      FailOnWarnings: true
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref EnvironmentName
+    DependsOn:
+      - HealthMethod
+
+  HealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: health
+
+  HealthMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref HealthResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationHttpMethod: POST
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseTemplates:
+              application/json: '{"status": "healthy", "timestamp": "$context.requestTime"}'
+      MethodResponses:
+        - StatusCode: 200
+          ResponseModels:
+            application/json: Empty
+
+  ApiGatewayUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGateway
+          Stage: !Ref EnvironmentName
+      UsagePlanName: !Sub ${EnvironmentName}-voice-reminder-usage-plan
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+      Quota:
+        Limit: 10000
+        Period: MONTH
+
+  ApiGatewayApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${EnvironmentName}-voice-reminder-api-key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref ApiGateway
+          StageName: !Ref EnvironmentName
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: api
+
+  ApiVersionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: v1
+
+  RemindersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiVersionResource
+      PathPart: reminders
+
+  ApiGatewayCors:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResponseType: DEFAULT_4XX
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
 
   ReminderNotificationTopic:
     Type: AWS::SNS::Topic
