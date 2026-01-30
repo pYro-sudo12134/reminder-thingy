@@ -38,6 +38,8 @@ gradle
 build
 lambda_functions
 localstack_data
+postgres-init
+db
 
 hs_err_pid*
 replay_pid*

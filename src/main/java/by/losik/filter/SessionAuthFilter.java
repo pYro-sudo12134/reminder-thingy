@@ -20,7 +20,6 @@ import java.util.Set;
 @Priority(Priorities.AUTHENTICATION)
 public class SessionAuthFilter implements ContainerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(SessionAuthFilter.class);
-
     @Context
     private HttpServletRequest httpRequest;
     private static final Set<String> PUBLIC_PATHS = new HashSet<>();
@@ -30,6 +29,7 @@ public class SessionAuthFilter implements ContainerRequestFilter {
         PUBLIC_PATHS.add("auth/login");
         PUBLIC_PATHS.add("auth/logout");
         PUBLIC_PATHS.add("auth/me");
+        PUBLIC_PATHS.add("auth/register");
         PUBLIC_PATHS.add("health");
     }
 
