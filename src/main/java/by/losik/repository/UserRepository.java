@@ -6,6 +6,8 @@ import com.google.inject.Singleton;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.NoResultException;
 import jakarta.persistence.PersistenceContext;
+import org.eclipse.persistence.config.HintValues;
+import org.eclipse.persistence.config.QueryHints;
 import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,8 +29,12 @@ public class UserRepository {
 
     public Optional<User> findByUsername(String username) {
         try {
-            User user = entityManager.createNamedQuery("User.findByUsername", User.class)
+            User user = entityManager
+                    .createNamedQuery("User.findByUsername", User.class)
                     .setParameter("username", username)
+                    .setHint(QueryHints.CACHE_USAGE,
+                            HintValues.TRUE)
+                    .setHint(QueryHints.REFRESH, HintValues.FALSE)
                     .getSingleResult();
             return Optional.of(user);
         } catch (NoResultException e) {
@@ -57,13 +63,6 @@ public class UserRepository {
         entityManager.persist(user);
         log.info("User created: {}", username);
         return user;
-    }
-
-    public void updateLastLogin(String username) {
-        findByUsername(username).ifPresent(user -> {
-            user.setLastLogin(LocalDateTime.now());
-            entityManager.merge(user);
-        });
     }
 
     public boolean userExists(String username) {

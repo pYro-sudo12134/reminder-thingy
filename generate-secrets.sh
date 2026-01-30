@@ -160,12 +160,28 @@ CREATE TABLE users (
 
     -- Ограничения
     CONSTRAINT chk_username_length CHECK (LENGTH(username) >= 3)
-);
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE users_2026q1 PARTITION OF users
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+
+CREATE TABLE users_2026q2 PARTITION OF users
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+
+CREATE TABLE users_2026q3 PARTITION OF users
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+
+CREATE TABLE users_2026q4 PARTITION OF users
+    FOR VALUES FROM ('2026-10-01') TO ('2026-01-01');
 
 -- Индексы
 CREATE INDEX idx_users_username ON voice_schema.users(username);
 CREATE INDEX idx_users_email ON voice_schema.users(email);
 CREATE INDEX idx_users_is_active ON voice_schema.users(is_active);
+CREATE INDEX idx_users_username_part ON voice_schema.users(username);
+CREATE INDEX idx_users_status_part ON voice_schema.users(status) WHERE status != 'ACTIVE';
+CREATE INDEX idx_users_created_at_part ON voice_schema.users(created_at DESC);
+CREATE INDEX idx_users_active_login ON voice_schema.users(is_active, last_login DESC);
 
 -- Комментарии
 COMMENT ON TABLE voice_schema.users IS 'Application users table';
@@ -195,7 +211,7 @@ SET search_path TO voice_schema;
 
 -- Вставка тестовых пользователей
 -- Пароли: admin123 и user123
-INSERT INTO users (username, password_hash, email, created_at)
+INSERT INTO voice_schema.users (username, password_hash, email, created_at)
 VALUES
     ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'admin@example.com', NOW()),
     ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'user@example.com', NOW())

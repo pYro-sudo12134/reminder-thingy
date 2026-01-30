@@ -10,6 +10,9 @@ import jakarta.persistence.NamedQuery;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import org.eclipse.persistence.annotations.Cache;
+import org.eclipse.persistence.annotations.CacheCoordinationType;
+import org.eclipse.persistence.annotations.CacheType;
 
 import java.time.LocalDateTime;
 
@@ -21,6 +24,14 @@ import java.time.LocalDateTime;
         @NamedQuery(name = "User.findAllActive",
                 query = "SELECT u FROM User u WHERE u.isActive = true")
 })
+@Cache(
+    type = CacheType.SOFT,
+    size = 1000,
+    expiry = 1800000,
+    alwaysRefresh = false,
+    disableHits = false,
+    coordinationType = CacheCoordinationType.SEND_NEW_OBJECTS_WITH_CHANGES
+)
 public class User {
 
     @Id
