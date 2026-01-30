@@ -40,6 +40,11 @@ public class DatabaseConfig {
         setPropertyFromEnv("FLYWAY_ENABLED", "flyway.enabled");
         setPropertyFromEnv("FLYWAY_BASELINE_VERSION", "flyway.baseline.version");
         setPropertyFromEnv("FLYWAY_LOCATIONS", "flyway.locations");
+        setPropertyFromEnv("JPA_CACHE_ENABLED", "jpa.cache.enabled");
+        setPropertyFromEnv("JPA_CACHE_TYPE", "jpa.cache.type");
+        setPropertyFromEnv("JPA_CACHE_SIZE", "jpa.cache.size");
+        setPropertyFromEnv("JPA_CACHE_EXPIRY", "jpa.cache.expiry");
+        setPropertyFromEnv("JPA_QUERY_CACHE_ENABLED", "jpa.query.cache.enabled");
     }
 
     private void setPropertyFromEnv(String envVar, String propertyKey) {
@@ -93,6 +98,11 @@ public class DatabaseConfig {
         properties.putIfAbsent("flyway.enabled", "true");
         properties.putIfAbsent("flyway.baseline.version", "1");
         properties.putIfAbsent("flyway.locations", "classpath:db/migration");
+        properties.putIfAbsent("jpa.cache.enabled", "true");
+        properties.putIfAbsent("jpa.cache.type", "SOFT");
+        properties.putIfAbsent("jpa.cache.size", "10000");
+        properties.putIfAbsent("jpa.cache.expiry", "3600000");
+        properties.putIfAbsent("jpa.query.cache.enabled", "true");
     }
 
     private void logConfiguration() {
@@ -152,12 +162,58 @@ public class DatabaseConfig {
     public String getFlywayLocations() {
         return properties.get("flyway.locations");
     }
+
+    public boolean isCacheEnabled() {
+        return Boolean.parseBoolean(
+                properties.getOrDefault("jpa.cache.enabled", "true")
+        );
+    }
+
+    public String getCacheType() {
+        return properties.getOrDefault("jpa.cache.type", "SOFT");
+    }
+
+    public int getCacheSize() {
+        return Integer.parseInt(
+                properties.getOrDefault("jpa.cache.size", "10000")
+        );
+    }
+
+    public long getCacheExpiry() {
+        return Long.parseLong(
+                properties.getOrDefault("jpa.cache.expiry", "3600000")
+        );
+    }
+
+    public boolean isQueryCacheEnabled() {
+        return Boolean.parseBoolean(
+                properties.getOrDefault("jpa.query.cache.enabled", "true")
+        );
+    }
     public Map<String, String> getJpaProperties() {
         Map<String, String> jpaProps = new HashMap<>();
         jpaProps.put("jakarta.persistence.jdbc.url", getUrl());
         jpaProps.put("jakarta.persistence.jdbc.user", getUsername());
         jpaProps.put("jakarta.persistence.jdbc.password", getPassword());
         jpaProps.put("jakarta.persistence.jdbc.driver", getDriver());
+
+        if (isCacheEnabled()) {
+            jpaProps.put("eclipselink.cache.shared.default", "true");
+            jpaProps.put("eclipselink.cache.type.default", getCacheType());
+            jpaProps.put("eclipselink.cache.size.default",
+                    String.valueOf(getCacheSize()));
+            jpaProps.put("eclipselink.cache.expiry.default",
+                    String.valueOf(getCacheExpiry()));
+
+            if (isQueryCacheEnabled()) {
+                jpaProps.put("eclipselink.query-results-cache", "true");
+                jpaProps.put("eclipselink.query-results-cache-size", "1000");
+            }
+        } else {
+            jpaProps.put("eclipselink.cache.shared.default", "false");
+            jpaProps.put("eclipselink.query-results-cache", "false");
+        }
+
         jpaProps.put("eclipselink.logging.level", isShowSql() ? "FINE" : "INFO");
         jpaProps.put("eclipselink.logging.parameters", "true");
         jpaProps.put("eclipselink.logging.timestamp", "false");
