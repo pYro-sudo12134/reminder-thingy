@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Reminder - Регистрация</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 400px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: bold;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        .secondary-btn {
+            background: #6c757d;
+        }
+
+        .secondary-btn:hover {
+            background: #545b62;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 5px;
+            margin: 15px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .links {
+            text-align: center;
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+
+        .links a {
+            color: #007bff;
+            text-decoration: none;
+            margin: 0 10px;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
+
+        .password-requirements {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .requirements-list {
+            margin: 5px 0 0 15px;
+            padding: 0;
+            list-style-type: none;
+        }
+
+        .requirements-list li {
+            margin-bottom: 3px;
+            position: relative;
+            padding-left: 20px;
+        }
+
+        .requirements-list li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: #666;
+        }
+
+        .password-strength {
+            height: 5px;
+            background: #eee;
+            border-radius: 3px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+
+        .password-strength-bar {
+            height: 100%;
+            width: 0;
+            border-radius: 3px;
+            transition: width 0.3s, background-color 0.3s;
+        }
+
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Регистрация в Voice Reminder</h2>
+
+    <div id="register-form">
+        <div class="form-group">
+            <label for="username">Имя пользователя *</label>
+            <input type="text" id="username" placeholder="Введите имя пользователя" required>
+            <div class="password-requirements">Минимум 3 символа</div>
+        </div>
+
+        <div class="form-group">
+            <label for="password">Пароль *</label>
+            <input type="password" id="password" placeholder="Введите пароль" required>
+            <div class="password-strength">
+                <div class="password-strength-bar" id="password-strength-bar"></div>
+            </div>
+            <div class="password-requirements">
+                Требования к паролю:
+                <ul class="requirements-list">
+                    <li id="req-length">Минимум 6 символов</li>
+                    <li id="req-uppercase">Заглавная буква</li>
+                    <li id="req-lowercase">Строчная буква</li>
+                    <li id="req-number">Цифра</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="confirm-password">Подтверждение пароля *</label>
+            <input type="password" id="confirm-password" placeholder="Повторите пароль" required>
+            <div id="password-match" class="password-requirements"></div>
+        </div>
+
+        <div id="message" class="message hidden"></div>
+
+        <button onclick="register()">Зарегистрироваться</button>
+        <button class="secondary-btn" onclick="window.location.href='/'">Назад к логину</button>
+    </div>
+
+    <div id="success-message" class="message success hidden">
+        <p>Регистрация успешна!</p>
+        <p>Вы будете перенаправлены на главную страницу через <span id="countdown">5</span> секунд...</p>
+        <button onclick="goToLogin()" style="margin-top: 10px;">Перейти к логину сейчас</button>
+    </div>
+
+    <div class="links">
+        <p>Уже есть аккаунт? <a href="/">Войти</a></p>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('password').addEventListener('input', validatePassword);
+        document.getElementById('confirm-password').addEventListener('input', validatePasswordMatch);
+    });
+
+    function validatePassword() {
+        const password = document.getElementById('password').value;
+        const strengthBar = document.getElementById('password-strength-bar');
+
+        strengthBar.className = 'password-strength-bar';
+
+        const hasMinLength = password.length >= 6;
+        const hasUpperCase = /[A-Z]/.test(password);
+        const hasLowerCase = /[a-z]/.test(password);
+        const hasNumber = /\d/.test(password);
+
+        updateRequirement('req-length', hasMinLength);
+        updateRequirement('req-uppercase', hasUpperCase);
+        updateRequirement('req-lowercase', hasLowerCase);
+        updateRequirement('req-number', hasNumber);
+
+        let strength = 0;
+        if (hasMinLength) strength++;
+        if (hasUpperCase) strength++;
+        if (hasLowerCase) strength++;
+        if (hasNumber) strength++;
+
+        if (password.length === 0) {
+            strengthBar.style.width = '0';
+        } else {
+            switch(strength) {
+                case 1:
+                    strengthBar.className = 'password-strength-bar strength-weak';
+                    break;
+                case 2:
+                    strengthBar.className = 'password-strength-bar strength-fair';
+                    break;
+                case 3:
+                    strengthBar.className = 'password-strength-bar strength-good';
+                    break;
+                case 4:
+                    strengthBar.className = 'password-strength-bar strength-strong';
+                    break;
+                default:
+                    strengthBar.className = 'password-strength-bar strength-weak';
+            }
+        }
+
+        validatePasswordMatch();
+    }
+
+    function validatePasswordMatch() {
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirm-password').value;
+        const matchElement = document.getElementById('password-match');
+
+        if (confirmPassword.length === 0) {
+            matchElement.textContent = '';
+            matchElement.className = 'password-requirements';
+        } else if (password === confirmPassword) {
+            matchElement.textContent = 'Пароли совпадают';
+            matchElement.className = 'password-requirements requirement-valid';
+        } else {
+            matchElement.textContent = 'Пароли не совпадают';
+            matchElement.className = 'password-requirements requirement-invalid';
+        }
+    }
+
+    function updateRequirement(elementId, isValid) {
+        const element = document.getElementById(elementId);
+        if (isValid) {
+            element.classList.add('requirement-valid');
+            element.classList.remove('requirement-invalid');
+        } else {
+            element.classList.add('requirement-invalid');
+            element.classList.remove('requirement-valid');
+        }
+    }
+
+    async function register() {
+        const username = document.getElementById('username').value.trim();
+        const password = document.getElementById('password').value;
+        const confirmPassword = document.getElementById('confirm-password').value;
+        const messageDiv = document.getElementById('message');
+
+        messageDiv.className = 'message hidden';
+        messageDiv.textContent = '';
+
+        if (!username || !password || !confirmPassword) {
+            showMessage('Все поля обязательны для заполнения', 'error');
+            return;
+        }
+
+        if (username.length < 3) {
+            showMessage('Имя пользователя должно быть не менее 3 символов', 'error');
+            return;
+        }
+
+        if (password.length < 6) {
+            showMessage('Пароль должен быть не менее 6 символов', 'error');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            showMessage('Пароли не совпадают', 'error');
+            return;
+        }
+
+        try {
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+
+            const response = await fetch('/api/auth/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: formData
+            });
+
+            const data = await response.json();
+
+            if (response.ok) {
+                showSuccessMessage(username);
+            } else {
+                showMessage(data.error || 'Ошибка регистрации', 'error');
+            }
+
+        } catch (error) {
+            console.error('Registration error:', error);
+            showMessage('Ошибка сети. Проверьте подключение к интернету.', 'error');
+        }
+    }
+
+    function showMessage(text, type) {
+        const messageDiv = document.getElementById('message');
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type}`;
+        messageDiv.classList.remove('hidden');
+
+        messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function showSuccessMessage(username) {
+        document.getElementById('register-form').classList.add('hidden');
+
+        const successDiv = document.getElementById('success-message');
+        successDiv.classList.remove('hidden');
+
+        let countdown = 5;
+        const countdownElement = document.getElementById('countdown');
+
+        const countdownInterval = setInterval(() => {
+            countdown--;
+            countdownElement.textContent = countdown;
+
+            if (countdown <= 0) {
+                clearInterval(countdownInterval);
+                goToLogin();
+            }
+        }, 1000);
+    }
+
+    function goToLogin() {
+        window.location.href = '/';
+    }
+
+    document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            register();
+        }
+    });
+</script>
+</body>
+</html>
