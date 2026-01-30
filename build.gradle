@@ -67,11 +67,6 @@ dependencies {
     implementation 'com.googlecode.soundlibs:mp3spi:1.9.5.4'
     implementation 'com.googlecode.soundlibs:tritonus-share:0.3.7.4'
 
-    implementation 'org.apache.commons:commons-lang3:3.14.0'
-    implementation 'commons-io:commons-io:2.15.1'
-    implementation 'com.typesafe:config:1.4.3'
-    implementation 'joda-time:joda-time:2.12.6'
-
     implementation 'io.grpc:grpc-netty-shaded:1.60.0'
     implementation 'io.grpc:grpc-protobuf:1.60.0'
     implementation 'io.grpc:grpc-stub:1.60.0'
