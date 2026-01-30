@@ -6,6 +6,7 @@ import by.losik.config.LocalStackConfig;
 import by.losik.config.RateLimitConfig;
 import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.RateLimiterFilter;
+import by.losik.resource.AuthResource;
 import by.losik.resource.ReminderResource;
 import by.losik.server.WebServer;
 import com.google.inject.AbstractModule;
@@ -97,6 +98,7 @@ public class CompositionRoot extends AbstractModule {
     @Provides
     @Singleton
     private WebServer createWebServer(ReminderResource reminderResource,
+                                      AuthResource authResource,
                                       RateLimiterFilter rateLimiterFilter,
                                       SecretsManagerConfig secretsManagerConfig) {
         String portStr = secretsManagerConfig.getSecret("WS_PORT",
@@ -111,7 +113,7 @@ public class CompositionRoot extends AbstractModule {
             webServerPort = 8090;
         }
 
-        return new WebServer(webServerPort, reminderResource, rateLimiterFilter);
+        return new WebServer(webServerPort, reminderResource, authResource, rateLimiterFilter);
     }
 
     @Provides

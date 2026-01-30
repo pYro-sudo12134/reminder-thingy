@@ -2,7 +2,9 @@ package by.losik.server;
 
 import by.losik.filter.CorsFilter;
 import by.losik.filter.RateLimiterFilter;
+import by.losik.filter.SessionAuthFilter;
 import by.losik.resource.ReminderResource;
+import by.losik.resource.AuthResource;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import jakarta.servlet.DispatcherType;
@@ -31,14 +33,17 @@ public class WebServer implements AutoCloseable {
     private final int port;
     private final ReminderResource reminderResource;
     private final RateLimiterFilter rateLimiterFilter;
+    private final AuthResource authResource;
 
     @Inject
     public WebServer(int port,
                      ReminderResource reminderResource,
+                     AuthResource authResource,
                      RateLimiterFilter rateLimiterFilter) {
         this.port = port;
         this.reminderResource = reminderResource;
         this.rateLimiterFilter = rateLimiterFilter;
+        this.authResource = authResource;
     }
 
     public void start() throws Exception {
@@ -94,6 +99,8 @@ public class WebServer implements AutoCloseable {
 
         ResourceConfig apiConfig = new ResourceConfig();
         apiConfig.register(reminderResource);
+        apiConfig.register(authResource);
+        apiConfig.register(SessionAuthFilter.class);
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);
 
@@ -130,8 +137,7 @@ public class WebServer implements AutoCloseable {
         log.info("Server started on port: {}", port);
         log.info("Static files: http://localhost:{}/", port);
         log.info("API base: http://localhost:{}/api", port);
-        log.info("Rate limiting: ENABLED");
-        log.info("CORS: ENABLED");
+        log.info("Session authentication enabled");
         log.info("========================================");
     }
 
