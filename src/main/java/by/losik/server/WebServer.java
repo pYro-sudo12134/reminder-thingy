@@ -133,12 +133,9 @@ public class WebServer implements AutoCloseable {
     }
 
     private void logServerInfo() {
-        log.info("========================================");
         log.info("Server started on port: {}", port);
         log.info("Static files: http://localhost:{}/", port);
         log.info("API base: http://localhost:{}/api", port);
-        log.info("Session authentication enabled");
-        log.info("========================================");
     }
 
     public void stop() throws Exception {
