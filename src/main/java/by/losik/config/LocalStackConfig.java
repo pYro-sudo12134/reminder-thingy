@@ -124,10 +124,6 @@ public class LocalStackConfig {
         return EMAIL;
     }
 
-    public String getAccessKeyId() {
-        return ACCESS_KEY;
-    }
-
     private SdkAsyncHttpClient createAsyncHttpClient() {
         return NettyNioAsyncHttpClient.builder()
                 .connectionTimeout(Duration.ofSeconds(10))
@@ -197,15 +193,6 @@ public class LocalStackConfig {
 
     private RestHighLevelClient createOpenSearchClient(SecretsManagerConfig secretsConfig) {
         try {
-            String host = secretsConfig.getSecret("OPENSEARCH_HOST",
-                    Optional.ofNullable(System.getenv("OPENSEARCH_HOST"))
-                            .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_HOST")))
-                            .orElse(OPENSEARCH_HOST));
-
-            String httpsPort = secretsConfig.getSecret("OPENSEARCH_HTTPS_PORT",
-                    Optional.ofNullable(System.getenv("OPENSEARCH_HTTPS_PORT"))
-                            .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_HTTPS_PORT")))
-                            .orElse(OPENSEARCH_PORT));
 
             String username = secretsConfig.getSecret("OPENSEARCH_USER",
                     Optional.ofNullable(System.getenv("OPENSEARCH_USER"))
@@ -229,7 +216,7 @@ public class LocalStackConfig {
                                     .orElse("true")));
 
             String protocol = useSsl ? "https" : "http";
-            String endpoint = protocol + "://" + host + ":" + httpsPort;
+            String endpoint = protocol + "://" + this.OPENSEARCH_HOST + ":" + this.OPENSEARCH_PORT;
 
             System.out.println("Creating OpenSearch client for endpoint: " + endpoint);
             System.out.println("Using truststore: " + TRUSTSTORE_PATH);
@@ -376,7 +363,4 @@ public class LocalStackConfig {
         return sesAsyncClient;
     }
 
-    public String getSecretKey() {
-        return SECRET_KEY;
-    }
 }

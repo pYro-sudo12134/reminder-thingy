@@ -7,40 +7,28 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
+            max-width: 600px;
+            margin: 50px auto;
             padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            text-align: center;
-            margin-bottom: 30px;
         }
         .nav {
             display: flex;
-            justify-content: center;
-            gap: 15px;
+            gap: 10px;
             margin-bottom: 30px;
         }
         .nav a {
+            flex: 1;
+            text-align: center;
             text-decoration: none;
-            padding: 10px 20px;
-            background: #4CAF50;
+            padding: 10px;
+            background: #007bff;
             color: white;
             border-radius: 5px;
-            transition: background 0.3s;
         }
         .nav a:hover {
-            background: #45a049;
+            background: #0056b3;
         }
-        .user-form {
+        .form-group {
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
@@ -54,51 +42,17 @@
         }
         button {
             padding: 10px 20px;
-            background: #4CAF50;
+            background: #007bff;
             color: white;
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            font-size: 16px;
         }
         button:hover {
-            background: #45a049;
+            background: #0056b3;
         }
-        .reminder {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
-            margin-bottom: 10px;
-            background: #f9f9f9;
-        }
-
-        .reminder-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .reminder-id {
-            font-size: 12px;
-            color: #666;
-        }
-        .reminder-action {
-            font-weight: bold;
-            margin: 10px 0;
-        }
-        .reminder-time {
-            color: #555;
-        }
-        .status-badge {
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 12px;
-            color: white;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #666;
+        .hidden {
+            display: none;
         }
         .error {
             color: #f44336;
@@ -107,16 +61,78 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+        .reminder {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: white;
+        }
+        .reminder-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .reminder-id {
+            font-size: 12px;
+            color: #666;
+        }
+        .status-badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            color: white;
+            font-weight: bold;
+        }
+        .reminder-action {
+            font-weight: bold;
+            margin: 10px 0;
+            color: #333;
+        }
+        .reminder-time {
+            color: #555;
+            margin: 10px 0;
+            font-size: 14px;
+        }
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .delete-btn {
+            background: #f44336;
+        }
+        .delete-btn:hover {
+            background: #d32f2f;
+        }
+        .details-btn {
+            background: #2196F3;
+        }
+        .details-btn:hover {
+            background: #1976D2;
+        }
+        .refresh-btn {
+            background: #9c27b0;
+        }
+        .refresh-btn:hover {
+            background: #7b1fa2;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
             margin-bottom: 20px;
         }
         .stat-card {
             background: #f8f9fa;
             padding: 15px;
-            border-radius: 8px;
+            border-radius: 5px;
             text-align: center;
             border: 1px solid #e9ecef;
         }
@@ -130,53 +146,55 @@
             color: #666;
             margin-top: 5px;
         }
-        .actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        .actions button {
-            padding: 5px 10px;
-            font-size: 14px;
-        }
-        .delete-btn {
-            background: #f44336;
-        }
-        .details-btn {
-            background: #2196F3;
-        }
-        .refresh-btn {
-            background: #9c27b0;
+        .empty-state {
+            text-align: center;
+            color: #666;
+            padding: 40px 20px;
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-<div class="container">
-    <h1>Мои напоминания</h1>
-
-    <div class="nav">
-        <a href="/">Запись</a>
-        <a href="/reminders.html">Мои напоминания</a>
-    </div>
-
-    <div class="user-form">
-        <input type="text" id="userId" placeholder="Введите ваш ID" value="">
-        <button onclick="loadReminders()">Загрузить</button>
-        <button class="refresh-btn" onclick="loadReminders()" title="Обновить">Обновить</button>
-    </div>
-
-    <div id="stats" class="stats" style="display: none;"></div>
-
-    <div id="loading" class="loading" style="display: none;">
-        Загружаю напоминания...
-    </div>
-
-    <div id="error" class="error" style="display: none;"></div>
-
-    <div id="remindersList"></div>
+<div class="nav">
+    <a href="/">Главная</a>
+    <a href="/record.html">Запись</a>
+    <a href="/reminders.html">Мои напоминания</a>
 </div>
 
+<h2 style="text-align: center; color: #333; margin-bottom: 20px;">Мои напоминания</h2>
+
+<div class="form-group">
+    <input type="text" id="userId" placeholder="Введите ваш ID" value="">
+    <button onclick="loadReminders()">Загрузить</button>
+    <button class="refresh-btn" onclick="loadReminders()" title="Обновить">↻</button>
+</div>
+
+<div id="stats" class="stats hidden"></div>
+
+<div id="loading" class="loading hidden">Загружаю напоминания...</div>
+
+<div id="error" class="error hidden"></div>
+
+<div id="remindersList"></div>
+
 <script>
+    async function checkAuthAndRedirect() {
+        try {
+            const response = await fetch('/api/auth/me');
+            if (!response.ok) {
+                window.location.href = '/';
+            }
+        } catch (error) {
+            window.location.href = '/';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        checkAuthAndRedirect();
+    });
+
     function loadReminders() {
         const userId = document.getElementById('userId').value.trim();
         if (!userId) {
@@ -231,7 +249,7 @@
         const statsDiv = document.getElementById('stats');
 
         if (!stats || stats.error) {
-            statsDiv.style.display = 'none';
+            statsDiv.classList.add('hidden');
             return;
         }
 
@@ -239,82 +257,97 @@
 
         if (stats.total !== undefined) {
             html += `
-                <div class="stat-card">
-                    <div class="stat-value">${stats.total}</div>
-                    <div class="stat-label">Всего</div>
-                </div>`;
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.total}</div>
+                        <div class="stat-label">Всего</div>
+                    </div>`;
         }
 
         if (stats.scheduled !== undefined) {
             html += `
-                <div class="stat-card">
-                    <div class="stat-value">${stats.scheduled}</div>
-                    <div class="stat-label">Запланировано</div>
-                </div>`;
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.scheduled}</div>
+                        <div class="stat-label">Запланировано</div>
+                    </div>`;
         }
 
         if (stats.completed !== undefined) {
             html += `
-                <div class="stat-card">
-                    <div class="stat-value">${stats.completed}</div>
-                    <div class="stat-label">Выполнено</div>
-                </div>`;
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.completed}</div>
+                        <div class="stat-label">Выполнено</div>
+                    </div>`;
         }
 
         if (stats.cancelled !== undefined) {
             html += `
-                <div class="stat-card">
-                    <div class="stat-value">${stats.cancelled}</div>
-                    <div class="stat-label">Отменено</div>
-                </div>`;
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.cancelled}</div>
+                        <div class="stat-label">Отменено</div>
+                    </div>`;
         }
 
         statsDiv.innerHTML = html;
-        statsDiv.style.display = 'grid';
+        statsDiv.classList.remove('hidden');
     }
 
     function displayReminders(data) {
         const listDiv = document.getElementById('remindersList');
 
         if (!data.reminders || data.reminders.length === 0) {
-            listDiv.innerHTML = '<p style="text-align: center; color: #666;">Напоминаний нет</p>';
+            listDiv.innerHTML = `
+                    <div class="empty-state">
+                        <p>Напоминаний нет</p>
+                        <p><a href="/" style="color: #007bff;">Создать первое напоминание</a></p>
+                    </div>`;
             return;
         }
 
-        let html = `<h3>Напоминания (${data.total})</h3>`;
+        let html = `<h3 style="margin-bottom: 15px;">Напоминания (${data.total})</h3>`;
 
         data.reminders.forEach(reminder => {
-            const statusClass = `status-${reminder.status.toLowerCase()}`;
-            const reminderClass = reminder.status.toLowerCase();
+            const statusColor = getStatusColor(reminder.status);
             const scheduledTime = new Date(reminder.scheduledTime);
             const createdAt = new Date(reminder.createdAt);
 
             html += `
-                <div class="reminder ${reminderClass}" id="reminder-${reminder.reminderId}">
-                    <div class="reminder-header">
-                        <span class="reminder-id">ID: ${reminder.reminderId}</span>
-                        <span class="status-badge ${statusClass}">${reminder.status}</span>
+                    <div class="reminder">
+                        <div class="reminder-header">
+                            <span class="reminder-id">ID: ${reminder.reminderId}</span>
+                            <span class="status-badge" style="background: ${statusColor}">
+                                ${reminder.status}
+                            </span>
+                        </div>
+                        <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
+                        <div class="reminder-time">
+                            <strong>Когда:</strong> ${scheduledTime.toLocaleString('ru-RU')}
+                            <br>
+                            <strong>Создано:</strong> ${createdAt.toLocaleString('ru-RU')}
+                            ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
+                        </div>
+                        <div class="actions">
+                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')">
+                                Удалить
+                            </button>
+                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')">
+                                Подробности
+                            </button>
+                        </div>
                     </div>
-                    <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
-                    <div class="reminder-time">
-                        <strong>Когда:</strong> ${scheduledTime.toLocaleString('ru-RU')}
-                        <br>
-                        <strong>Создано:</strong> ${createdAt.toLocaleString('ru-RU')}
-                        ${reminder.notificationSent ? '<br><strong>Уведомление отправлено</strong>' : ''}
-                    </div>
-                    <div class="actions">
-                        <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')">
-                            Удалить
-                        </button>
-                        <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')">
-                            Подробности
-                        </button>
-                    </div>
-                </div>
                 `;
         });
 
         listDiv.innerHTML = html;
+    }
+
+    function getStatusColor(status) {
+        switch(status.toLowerCase()) {
+            case 'scheduled': return '#4CAF50';
+            case 'completed': return '#2196F3';
+            case 'cancelled': return '#f44336';
+            case 'processing': return '#FF9800';
+            default: return '#9E9E9E';
+        }
     }
 
     function deleteReminder(reminderId) {
@@ -366,17 +399,17 @@
     }
 
     function showLoading(show) {
-        document.getElementById('loading').style.display = show ? 'block' : 'none';
+        document.getElementById('loading').classList.toggle('hidden', !show);
     }
 
     function showError(message) {
         const errorDiv = document.getElementById('error');
         errorDiv.textContent = message;
-        errorDiv.style.display = 'block';
+        errorDiv.classList.remove('hidden');
     }
 
     function hideError() {
-        document.getElementById('error').style.display = 'none';
+        document.getElementById('error').classList.add('hidden');
     }
 
     document.getElementById('userId').addEventListener('keypress', (e) => {
