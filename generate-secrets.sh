@@ -6,8 +6,6 @@ mkdir -p opensearch_certs
 mkdir -p opensearch_security
 
 openssl rand -base64 32 > secrets/nlp_grpc_key.txt
-openssl rand -base64 32 > secrets/jwt_secret.txt
-openssl rand -base64 24 > secrets/service_token.txt
 openssl rand -base64 16 > secrets/opensearch_password.txt
 
 echo "test" > secrets/aws_access_key.txt
@@ -113,8 +111,6 @@ rm -f opensearch_certs/*.csr opensearch_certs/*.srl opensearch_certs/*.cnf
 cat > secrets/secrets.json << EOF
 {
   "NLP_GRPC_API_KEY": "$(cat secrets/nlp_grpc_key.txt)",
-  "JWT_SECRET": "$(cat secrets/jwt_secret.txt)",
-  "SERVICE_TOKEN": "$(cat secrets/service_token.txt)",
   "OPENSEARCH_PASSWORD": "$(cat secrets/opensearch_password.txt)",
   "OPENSEARCH_USER": "admin",
   "OPENSEARCH_HOST": "localstack",
@@ -175,10 +171,7 @@ server.port=8080
 ws.port=\${WS_PORT:8090}
 aws.region=\${AWS_REGION:us-east-1}
 aws.endpoint=\${AWS_ENDPOINT_URL:http://localhost:4566}
-aws.use-localstack=true
-security.jwt.secret=\${JWT_SECRET}
 security.grpc.api-key=\${NLP_GRPC_API_KEY}
-security.service.token=\${SERVICE_TOKEN}
 EOF
 
 chmod 600 secrets/*.txt
@@ -190,8 +183,6 @@ chmod 600 opensearch_certs/*.jks
 chmod 600 opensearch_certs/*.p12
 
 echo "secrets/nlp_grpc_key.txt         - NLP gRPC API"
-echo "secrets/jwt_secret.txt           - JWT"
-echo "secrets/service_token.txt        - Service tokens"
 echo "secrets/opensearch_password.txt  - OpenSearch admin password"
 echo "opensearch_certs/truststore.jks  - SSL truststore (password: changeit)"
 echo "opensearch_certs/truststore.p12  - SSL truststore (PKCS12)"
