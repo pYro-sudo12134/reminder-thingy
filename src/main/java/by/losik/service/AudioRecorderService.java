@@ -4,7 +4,6 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.services.s3.S3AsyncClientBuilder;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
@@ -23,7 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Singleton
-public class AudioRecorderService {
+public class AudioRecorderService { // I used to test with it when there was no web
     private static final Logger log = LoggerFactory.getLogger(AudioRecorderService.class);
     private final VoiceReminderService voiceReminderService;
     private TargetDataLine line;
