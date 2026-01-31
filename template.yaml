@@ -76,12 +76,12 @@ Resources:
                   - s3:GetObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub arn:aws:s3:::${AudioBucket}
-                  - !Sub arn:aws:s3:::${AudioBucket}/*
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
               - Effect: Allow
                 Action:
                   - s3:PutObject
-                Resource: !Sub arn:aws:s3:::${AudioBucket}/transcriptions/*
+                Resource: !Sub arn:aws:s3:::${S3BucketName}/transcriptions/*
 
   AppExecutionRole:
     Type: AWS::IAM::Role
@@ -106,8 +106,8 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub arn:aws:s3:::${AudioBucket}
-                  - !Sub arn:aws:s3:::${AudioBucket}/*
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
 
               - Effect: Allow
                 Action:
@@ -131,7 +131,7 @@ Resources:
                   - es:ESHttpGet
                   - es:ESHttpPut
                   - es:ESHttpDelete
-                Resource: !Sub arn:aws:es:*:*:domain/${OpenSearchDomain}/*
+                Resource: !Sub arn:aws:es:*:*:domain/${OpenSearchDomainName}/*
 
               - Effect: Allow
                 Action:
@@ -502,7 +502,7 @@ Outputs:
 
   S3BucketUrl:
     Description: S3 Bucket URL
-    Value: !Sub s3://${AudioBucket}
+    Value: !Sub s3://${S3BucketName}
 
   ApiGatewayUrl:
     Description: API Gateway URL
