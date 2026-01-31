@@ -28,7 +28,7 @@ curl http://localhost:8090/api/test
 
 Or you can visit `http://localhost:8090/`
 
-### Stack:
+### Stack (main):
 
 ### Backend
 - Java 17
