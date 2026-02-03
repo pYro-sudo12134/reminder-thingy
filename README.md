@@ -47,7 +47,7 @@ Or you can visit `http://localhost:8090/`
 
 ### Infrastructure
 - AWS CloudFormation
-- Docker, Docker Compose
+- Docker, Docker Compose, Docker Swarm
 - PostgreSQL, OpenSearch
 - SQS (as DLQ)
 - Transcribe
