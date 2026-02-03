@@ -3,25 +3,46 @@ version: '3.8'
 services:
   nlp-service:
     image: pyrodocker1/reminder-nlp:1.0
-    container_name: nlp-service
-    ports:
-      - "50051:50051"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
     environment:
       - MODEL_DIR=/app/models
       - INTENT_MODEL_PATH=/app/models/intent_classifier
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
-      - NLP_GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
       - GRPC_USE_TLS=true
       - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY:-QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=}
-      - GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
+    secrets:
+      - source: nlp_grpc_key
+        target: /run/secrets/nlp_grpc_key.txt
     volumes:
-      - "./nlp/models:/app/models"
-      - "./nlp/data:/app/data"
-      - "./nlp/nlp_service:/app/nlp_service"
-      - "./nlp/proto:/app/proto"
-      - "./secrets:/run/secrets:ro"
+      - type: bind
+        source: ./nlp/models
+        target: /app/models
+      - type: bind
+        source: ./nlp/data
+        target: /app/data
+      - type: bind
+        source: ./nlp/nlp_service
+        target: /app/nlp_service
+      - type: bind
+        source: ./nlp/proto
+        target: /app/proto
     networks:
       - reminder-network
     healthcheck:
@@ -33,11 +54,22 @@ services:
 
   localstack:
     image: localstack/localstack:4.12
-    container_name: localstack
-    ports:
-      - "4566:4566"
-      - "4510:4510"
-      - "4510-4559:4510-4559"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 3G
+        reservations:
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 5
+        window: 300s
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
       - DEBUG=1
@@ -67,41 +99,67 @@ services:
       - OPENSEARCH_ROOT_CA_PATH=/etc/localstack/opensearch/certs/root-ca.pem
       - OPENSEARCH_ADMIN_CERTIFICATE_PATH=/etc/localstack/opensearch/certs/admin.pem
       - OPENSEARCH_ADMIN_KEY_PATH=/etc/localstack/opensearch/certs/admin-key.pem
-      - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
     volumes:
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./localstack_data:/var/lib/localstack"
-      - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
-      - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
-      - "./opensearch_certs:/etc/localstack/opensearch/certs:ro"
-      - "./secrets:/run/secrets:ro"
-    mem_reservation: 2g
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ./localstack_data
+        target: /var/lib/localstack
+      - type: bind
+        source: ./aws-init.sh
+        target: /etc/localstack/init/ready.d/init.sh
+      - type: bind
+        source: ./template.yaml
+        target: /etc/localstack/init/ready.d/template.yaml
+      - type: bind
+        source: ./opensearch_certs
+        target: /etc/localstack/opensearch/certs
+        read_only: true
+    networks:
+      - reminder-network
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -s -k http://localhost:4510/ > /dev/null"]
       interval: 20s
       timeout: 15s
       retries: 10
       start_period: 90s
-    networks:
-      - reminder-network
 
   postgres:
     image: postgres:15-alpine
-    container_name: postgres-reminder
-    restart: unless-stopped
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
     environment:
       POSTGRES_DB: voice_reminder
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password.txt
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8"
       POSTGRES_INITDB_WALDIR: /var/lib/postgresql/pg_wal
       TZ: UTC
-    ports:
-      - "5432:5432"
+    secrets:
+      - source: postgres_password
+        target: /run/secrets/postgres_password.txt
+        mode: 0440
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./postgres-init:/docker-entrypoint-initdb.d
-      - ./secrets:/run/secrets:ro
+      - type: volume
+        source: postgres_data
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: ./postgres-init
+        target: /docker-entrypoint-initdb.d
     networks:
       - reminder-network
     healthcheck:
@@ -127,9 +185,26 @@ services:
 
   reminder-app:
     image: pyrodocker1/reminder-backend:1.0
-    container_name: reminder-app
-    ports:
-      - "8090:8090"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          memory: 768M
+        reservations:
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
     environment:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
@@ -155,7 +230,6 @@ services:
       - DB_PORT=5432
       - DB_NAME=voice_reminder
       - DB_USER=${POSTGRES_USER:-postgres}
-      - DB_PASSWORD_FILE=/run/secrets/postgres_password.txt
       - DB_SCHEMA=voice_schema
       - DB_POOL_SIZE=10
       - DB_POOL_MIN_IDLE=5
@@ -164,21 +238,32 @@ services:
       - FLYWAY_LOCATIONS=classpath:db/migration,filesystem:/app/db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
+    secrets:
+      - source: postgres_password
+        target: /run/secrets/postgres_password.txt
+        mode: 0440
     volumes:
-      - "./web:/app/web"
-      - "./secrets:/run/secrets:ro"
-      - "./secrets/application.properties:/app/config/application.properties:ro"
-      - "./opensearch_certs:/app/certs:ro"
-      - "./db/migration:/app/db/migration:ro"
+      - type: bind
+        source: ./web
+        target: /app/web
+      - type: bind
+        source: ./secrets/application.properties
+        target: /app/config/application.properties
+        read_only: true
+      - type: bind
+        source: ./opensearch_certs
+        target: /app/certs
+        read_only: true
+      - type: bind
+        source: ./db/migration
+        target: /app/db/migration
+        read_only: true
     networks:
       - reminder-network
     depends_on:
-      nlp-service:
-        condition: service_healthy
-      localstack:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
+      - nlp-service
+      - localstack
+      - postgres
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/api/health || exit 0"]
       interval: 60s
@@ -194,11 +279,13 @@ secrets:
 
 networks:
   reminder-network:
-    driver: bridge
+    driver: overlay
+    attachable: true
 
 volumes:
   postgres_data:
-    name: reminder-postgres-data
-
-
-# aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}' --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./postgres_data
