@@ -55,7 +55,6 @@ services:
       - OPENSEARCH_PORT_EXTERNAL=4510
       - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs
-      - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
       - OPENSEARCH_ENABLE_SECURITY=true
       - OPENSEARCH_ENABLE_SSL=true
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
