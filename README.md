@@ -1,6 +1,6 @@
 ### Description
 
-That is a thigy for writing the reminders.
+That is a thingy for writing the reminders.
 
 Processing flow:
 
