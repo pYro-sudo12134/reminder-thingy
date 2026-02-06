@@ -1,6 +1,95 @@
 version: '3.8'
 
 services:
+  traefik:
+    image: traefik:v3.0
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.swarmmode=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+    networks:
+      - reminder-network
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  nfs-server:
+    image: itsthenetwork/nfs-server-alpine:latest
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 30s
+    ports:
+      - "2049:2049"
+      - "111:111"
+      - "32765:32765"
+      - "32767:32767"
+    volumes:
+      - type: bind
+        source: /nfs-storage
+        target: /exports
+    environment:
+      - SHARED_DIRECTORY=/exports
+    networks:
+      - reminder-network
+    privileged: true
+    healthcheck:
+      test: ["CMD", "rpcinfo", "-p", "localhost"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=false"
+
   nlp-service:
     image: pyrodocker1/reminder-nlp:1.0
     deploy:
@@ -16,7 +105,7 @@ services:
           memory: 256M
       restart_policy:
         condition: on-failure
-        delay: 10s
+        delay: 30s
         max_attempts: 3
         window: 120s
     environment:
@@ -31,11 +120,11 @@ services:
       - source: nlp_grpc_key
         target: /run/secrets/nlp_grpc_key.txt
     volumes:
-      - type: bind
-        source: ./nlp/models
+      - type: volume
+        source: nfs_nlp_models
         target: /app/models
-      - type: bind
-        source: ./nlp/data
+      - type: volume
+        source: nfs_nlp_data
         target: /app/data
       - type: bind
         source: ./nlp/nlp_service
@@ -51,6 +140,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    depends_on:
+      - nfs-server
+    labels:
+      - "traefik.enable=false"
 
   localstack:
     image: localstack/localstack:4.12
@@ -75,7 +168,7 @@ services:
       - DEBUG=1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
-      - PERSISTENCE=0
+      - PERSISTENCE=1
       - LAMBDA_EXECUTOR=docker
       - DOCKER_HOST=unix:///var/run/docker.sock
       - AWS_DEFAULT_REGION=us-east-1
@@ -103,8 +196,8 @@ services:
       - type: bind
         source: /var/run/docker.sock
         target: /var/run/docker.sock
-      - type: bind
-        source: ./localstack_data
+      - type: volume
+        source: nfs_localstack_data
         target: /var/lib/localstack
       - type: bind
         source: ./aws-init.sh
@@ -124,6 +217,14 @@ services:
       timeout: 15s
       retries: 10
       start_period: 90s
+    depends_on:
+      - nfs-server
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.localstack.rule=Host(`localstack.reminder.local`)"
+      - "traefik.http.routers.localstack.entrypoints=web"
+      - "traefik.http.services.localstack.loadbalancer.server.port=4566"
+      - "traefik.http.routers.localstack.service=localstack"
 
   postgres:
     image: postgres:15-alpine
@@ -140,7 +241,7 @@ services:
           memory: 512M
       restart_policy:
         condition: on-failure
-        delay: 10s
+        delay: 30s
         max_attempts: 3
         window: 120s
     environment:
@@ -158,6 +259,9 @@ services:
       - type: volume
         source: postgres_data
         target: /var/lib/postgresql/data
+      - type: volume
+        source: nfs_postgres_backup
+        target: /backup
       - type: bind
         source: ./postgres-init
         target: /docker-entrypoint-initdb.d
@@ -183,6 +287,10 @@ services:
       -c work_mem=4MB 
       -c min_wal_size=1GB 
       -c max_wal_size=4GB
+    depends_on:
+      - nfs-server
+    labels:
+      - "traefik.enable=false"
 
   reminder-app:
     image: pyrodocker1/reminder-backend:1.0
@@ -199,7 +307,7 @@ services:
           memory: 512M
       restart_policy:
         condition: on-failure
-        delay: 10s
+        delay: 30s
         max_attempts: 3
         window: 120s
       update_config:
@@ -245,9 +353,9 @@ services:
         target: /run/secrets/postgres_password.txt
         mode: 0440
     volumes:
-      - type: bind
-        source: ./web
-        target: /app/web
+      - type: volume
+        source: nfs_app_static
+        target: /app/web/static
       - type: bind
         source: ./secrets/application.properties
         target: /app/config/application.properties
@@ -266,12 +374,21 @@ services:
       - nlp-service
       - localstack
       - postgres
+      - nfs-server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
       interval: 60s
       timeout: 10s
       retries: 5
       start_period: 120s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.reminder-app.rule=Host(`reminder.local`) || Host(`app.reminder.local`)"
+      - "traefik.http.routers.reminder-app.entrypoints=web"
+      - "traefik.http.services.reminder-app.loadbalancer.server.port=8090"
+      - "traefik.http.services.reminder-app.loadbalancer.healthcheck.path=/api/test"
+      - "traefik.http.services.reminder-app.loadbalancer.healthcheck.interval=30s"
+      - "traefik.http.routers.reminder-app.service=reminder-app"
 
   portainer:
     image: portainer/portainer-ce:alpine-sts
@@ -287,6 +404,10 @@ services:
         target: /data
     networks:
       - reminder-network
+    depends_on:
+      - nfs-server
+    labels:
+      - "traefik.enable=false"
 
 secrets:
   nlp_grpc_key:
@@ -302,9 +423,40 @@ networks:
 volumes:
   postgres_data:
     driver: local
-  nlp_models:
-    driver: local
-  nlp_data:
-    driver: local
   portainer_data:
     driver: local
+
+  nfs_nlp_models:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2
+      device: ":/exports/nlp_models"
+
+  nfs_nlp_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2
+      device: ":/exports/nlp_data"
+
+  nfs_localstack_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2
+      device: ":/exports/localstack_data"
+
+  nfs_postgres_backup:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2
+      device: ":/exports/postgres_backup"
+
+  nfs_app_static:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2
+      device: ":/exports/app_static"
