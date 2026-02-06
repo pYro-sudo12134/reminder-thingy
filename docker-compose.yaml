@@ -184,6 +184,17 @@ services:
       retries: 5
       start_period: 120s
 
+  portainer:
+    image: portainer/portainer-ce:alpine-sts
+    container_name: portainer
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - reminder-network
+
 secrets:
   nlp_grpc_key:
     file: ./secrets/nlp_grpc_key.txt
@@ -197,6 +208,8 @@ networks:
 volumes:
   postgres_data:
     name: postgres-data
+  portainer_data:
+    name: portainer-data
 
 
 # aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}' --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'

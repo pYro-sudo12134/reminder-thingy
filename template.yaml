@@ -163,6 +163,57 @@ Resources:
                   - kms:GenerateDataKey
                 Resource: !GetAtt KMSCustomerManagedKey.Arn
 
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutSubscriptionFilter
+                  - logs:DeleteSubscriptionFilter
+                Resource: "*"
+
+        - PolicyName: EventBridgeSQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:DescribeRule
+                Resource: "*"
+
+        - PolicyName: DirectSQSAccessForLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt ReminderProcessingQueue.Arn
+
+  SQSAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-sqs-access-policy
+      Roles:
+        - !Ref AppExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - AppExecutionRole
+      - ReminderProcessingQueue
+
   ReminderDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
@@ -394,13 +445,6 @@ Resources:
       LogGroupName: !Sub /aws/transcribe/${EnvironmentName}
       RetentionInDays: 7
 
-  ApiGatewayHealthResource:
-    Type: AWS::ApiGateway::Resource
-    Properties:
-      RestApiId: !Ref ApiGateway
-      ParentId: !GetAtt ApiGateway.RootResourceId
-      PathPart: "health"
-
   SecretsManagerSecret:
     Type: AWS::SecretsManager::Secret
     Properties:
@@ -479,6 +523,175 @@ Resources:
         - DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
           HostedZoneId: ZONE_ID_IF_NEEDED
 
+  TranscribeFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-transcribe-failure-rule
+      Description: "Capture Transcribe job failures"
+      EventPattern:
+        source:
+          - "aws.transcribe"
+        detail-type:
+          - "Transcribe Job State Change"
+        detail:
+          TranscriptionJobStatus:
+            - "FAILED"
+      State: "ENABLED"
+      Targets:
+        - Id: "TranscribeFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+          SqsParameters:
+            MessageGroupId: "transcribe-failures"
+
+  LambdaFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - "aws.lambda"
+        detail-type:
+          - "Lambda Function Invocation Result - Failure"
+      Targets:
+        - Id: "LambdaFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - ReminderProcessingQueue
+      - LambdaLogGroup
+
+  OpenSearchFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-opensearch-failure-rule
+      Description: "Capture OpenSearch domain issues"
+      EventPattern:
+        source:
+          - "aws.opensearch"
+        detail-type:
+          - "OpenSearch Service Event"
+        detail:
+          eventType:
+            - "error"
+            - "warning"
+      Targets:
+        - Id: "OpenSearchFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - ReminderProcessingQueue
+      - OpenSearchDomain
+
+  ServiceMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-voice-reminder-monitoring
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${ProcessingQueueName}"],
+                      [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", { "label": "Messages In Flight" }],
+                      [".", "ApproximateNumberOfMessagesDelayed", ".", ".", { "label": "Delayed Messages" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "SQS: Reminder Processing Queue",
+                    "period": 300,
+                    "stat": "Sum"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${DLQName}", { "label": "DLQ Messages" }],
+                      [".", "ApproximateAgeOfOldestMessage", ".", ".", { "label": "Oldest Message Age (seconds)" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "SQS: Dead Letter Queue",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/Lambda", "Errors", "FunctionName", "${LambdaFuncName}", { "stat": "Sum", "color": "#FF0000" }],
+                      [".", "Invocations", ".", ".", { "stat": "Sum", "color": "#2E86C1" }],
+                      [".", "Duration", ".", ".", { "stat": "Average", "color": "#28B463", "label": "Avg Duration" }],
+                      [".", "Throttles", ".", ".", { "stat": "Sum", "color": "#F39C12" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "Lambda: Send Reminder Function",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/ES", "CPUUtilization", "DomainName", "${OSDomainName}", "ClientId", "${AWSAccountId}", { "label": "CPU %" }],
+                      [".", "FreeStorageSpace", ".", ".", ".", ".", { "label": "Free Storage (GB)", "yAxis": "right" }],
+                      [".", "JVMMemoryPressure", ".", ".", ".", ".", { "label": "JVM Memory %" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "OpenSearch Domain",
+                    "period": 300,
+                    "yAxis": {
+                      "left": { "min": 0, "max": 100 },
+                      "right": { "min": 0 }
+                    }
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/S3", "NumberOfObjects", "StorageType", "AllStorageTypes", "BucketName", "${S3Bucket}"],
+                      [".", "BucketSizeBytes", ".", "StandardStorage", ".", ".", { "label": "Bucket Size (Bytes)", "yAxis": "right" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "S3: Audio Bucket",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "log",
+                  "x": 12, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "query": "SOURCE '/aws/lambda/${LambdaFuncName}' | fields @timestamp, @message\n| filter @message like /ERROR|Exception/\n| sort @timestamp desc\n| limit 20",
+                    "region": "${AWSRegion}",
+                    "title": "Recent Lambda Errors",
+                    "view": "table"
+                  }
+                }
+              ]
+            }
+          - ProcessingQueueName: !GetAtt ReminderProcessingQueue.QueueName
+            DLQName: !GetAtt ReminderDeadLetterQueue.QueueName
+            LambdaFuncName: !Ref LambdaFunctionName
+            OSDomainName: !Ref OpenSearchDomainName
+            S3Bucket: !Ref S3BucketName
+            AWSRegion: !Ref AWS::Region
+            AWSAccountId: !Ref AWS::AccountId
+
 Outputs:
   AudioBucketName:
     Description: S3 Bucket for audio files
@@ -507,3 +720,18 @@ Outputs:
   ApiGatewayUrl:
     Description: API Gateway URL
     Value: !Sub https://${ApiGateway}.execute-api.localhost.localstack.cloud:4566/${EnvironmentName}
+
+  ReminderQueueUrl:
+    Description: SQS Queue URL for reminder processing
+    Value: !Ref ReminderProcessingQueue
+
+  ReminderQueueArn:
+    Description: SQS Queue ARN for reminder processing
+    Value: !GetAtt ReminderProcessingQueue.Arn
+
+  EventBridgeRuleArns:
+    Description: EventBridge Rule ARNs for service monitoring
+    Value: !Sub |
+      Transcribe: ${TranscribeFailureRule.Arn}
+      Lambda: ${LambdaFailureRule.Arn}
+      OpenSearch: ${OpenSearchFailureRule.Arn}
