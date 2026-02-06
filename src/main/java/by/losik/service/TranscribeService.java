@@ -9,12 +9,16 @@ import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.transcribe.TranscribeAsyncClient;
-import software.amazon.awssdk.services.transcribe.model.*;
+import software.amazon.awssdk.services.transcribe.model.GetTranscriptionJobRequest;
+import software.amazon.awssdk.services.transcribe.model.GetTranscriptionJobResponse;
+import software.amazon.awssdk.services.transcribe.model.Media;
+import software.amazon.awssdk.services.transcribe.model.StartTranscriptionJobRequest;
+import software.amazon.awssdk.services.transcribe.model.TranscriptionJob;
+import software.amazon.awssdk.services.transcribe.model.TranscriptionJobStatus;
 
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
@@ -29,7 +33,6 @@ public class TranscribeService {
     private final TranscribeAsyncClient transcribeAsyncClient;
     private final S3Service s3Service;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
     private final ScheduledExecutorService scheduler;
 
     @Inject
@@ -38,7 +41,6 @@ public class TranscribeService {
         this.s3Service = s3Service;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
-        this.httpClient = HttpClient.newHttpClient();
         this.scheduler = Executors.newScheduledThreadPool(2);
     }
 
@@ -158,54 +160,77 @@ public class TranscribeService {
     private CompletableFuture<String> downloadTranscriptionText(String transcriptUri) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                HttpRequest request = HttpRequest.newBuilder()
-                        .uri(URI.create(transcriptUri))
-                        .GET()
-                        .build();
+                log.info("Attempting to download transcription from: {}", transcriptUri);
 
-                HttpResponse<String> response = httpClient.send(
-                        request, HttpResponse.BodyHandlers.ofString());
+                URI uri = URI.create(transcriptUri);
+                String path = uri.getPath();
 
-                JsonNode root = objectMapper.readTree(response.body());
-                String transcript = null;
-
-                if (root.has("results") && root.get("results").has("transcripts")) {
-                    JsonNode transcripts = root.get("results").get("transcripts");
-                    if (transcripts.isArray() && transcripts.size() > 0) {
-                        transcript = transcripts.get(0).path("transcript").asText();
-                    }
+                if (path.startsWith("/")) {
+                    path = path.substring(1);
                 }
 
-                if (transcript == null && root.has("text")) {
-                    transcript = root.get("text").asText();
+                int questionMarkIndex = path.indexOf('?');
+                if (questionMarkIndex != -1) {
+                    path = path.substring(0, questionMarkIndex);
                 }
 
-                if (transcript == null && root.has("result")) {
-                    JsonNode resultArray = root.get("result");
-                    if (resultArray.isArray()) {
-                        StringBuilder sb = new StringBuilder();
-                        for (JsonNode item : resultArray) {
-                            if (item.has("text")) {
-                                if (sb.length() > 0) sb.append(" ");
-                                sb.append(item.get("text").asText());
-                            }
-                        }
-                        transcript = sb.toString();
-                    }
+                int firstSlash = path.indexOf('/');
+                if (firstSlash == -1) {
+                    throw new RuntimeException("Invalid S3 path in transcript URI: " + path);
                 }
 
-                if (transcript == null) {
-                    log.warn("Unexpected transcription format: {}", response.body());
-                    transcript = "Transcription completed, but format unexpected. Raw: " + response.body();
-                } else {
-                    log.info("Transcription downloaded successfully: {}", transcript);
+                String bucketName = path.substring(0, firstSlash);
+                String key = path.substring(firstSlash + 1);
+
+                log.info("Parsed S3 location - bucket: {}, key: {}", bucketName, key);
+
+                Path tempFile = Files.createTempFile("transcription", ".json");
+
+                try {
+                    s3Service.downloadFileAsync(key, tempFile, bucketName)
+                            .get(30, TimeUnit.SECONDS);
+
+                    String jsonContent = Files.readString(tempFile);
+                    log.info("Downloaded transcription JSON, size: {} bytes", jsonContent.length());
+
+                    return parseTranscriptionJson(jsonContent);
+
+                } finally {
+                    Files.deleteIfExists(tempFile);
                 }
 
-                return transcript;
             } catch (Exception e) {
-                log.error("Failed to download transcription text", e);
-                throw new RuntimeException("Failed to download transcription", e);
+                log.error("Failed to download transcription text from URI: {}", transcriptUri, e);
+                throw new RuntimeException("Failed to download transcription from: " + transcriptUri, e);
             }
         });
+    }
+
+    private String parseTranscriptionJson(String jsonContent) throws Exception {
+        JsonNode root = objectMapper.readTree(jsonContent);
+        String transcript = null;
+
+        if (root.has("results") && root.get("results").has("transcripts")) {
+            JsonNode transcripts = root.get("results").get("transcripts");
+            if (transcripts.isArray() && transcripts.size() > 0) {
+                transcript = transcripts.get(0).path("transcript").asText();
+            }
+        }
+
+        if (transcript == null && root.has("text")) {
+            transcript = root.get("text").asText();
+        }
+
+        if (transcript == null && root.has("transcript")) {
+            transcript = root.get("transcript").asText();
+        }
+
+        if (transcript == null) {
+            log.warn("Unexpected transcription format: {}", jsonContent);
+            throw new RuntimeException("Could not parse transcription from JSON");
+        }
+
+        log.info("Parsed transcription: {}", transcript);
+        return transcript;
     }
 }

@@ -183,6 +183,23 @@ public class S3Service {
                 });
     }
 
+    public CompletableFuture<java.io.File> downloadFileAsync(String key, Path targetPath, String bucketName) {
+        GetObjectRequest request = GetObjectRequest.builder()
+                .bucket(bucketName)
+                .key(key)
+                .build();
+
+        return s3AsyncClient.getObject(request, AsyncResponseTransformer.toFile(targetPath))
+                .thenApply(response -> {
+                    log.info("File downloaded successfully: {} from bucket {}", key, bucketName);
+                    return targetPath.toFile();
+                })
+                .exceptionally(ex -> {
+                    log.error("Failed to download file: {} from bucket {}", key, bucketName, ex);
+                    throw new RuntimeException("Failed to download file: " + key + " from bucket: " + bucketName, ex);
+                });
+    }
+
     private String generateAudioKey(String userId, String originalFileName) {
         String timestamp = LocalDateTime.now()
                 .format(DateTimeFormatter.ofPattern("yyyy/MM/dd/HH-mm-ss"));

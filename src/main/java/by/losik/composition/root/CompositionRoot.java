@@ -18,7 +18,7 @@ import java.util.Optional;
 public class CompositionRoot extends AbstractModule {
     String endpoint = Optional.ofNullable(System.getenv("AWS_ENDPOINT_URL"))
             .or(() -> Optional.ofNullable(System.getProperty("AWS_ENDPOINT_URL")))
-            .orElse("http://localhost:4566");
+            .orElse("http://localstack:4566");
 
     String region = Optional.ofNullable(System.getenv("AWS_REGION"))
             .or(() -> Optional.ofNullable(System.getProperty("AWS_REGION")))
@@ -42,7 +42,7 @@ public class CompositionRoot extends AbstractModule {
 
     String openSearchHost = Optional.ofNullable(System.getenv("OPENSEARCH_HOST"))
             .or(() -> Optional.ofNullable(System.getProperty("OPENSEARCH_HOST")))
-            .orElse("localhost");
+            .orElse("localstack");
 
     String environmentName = Optional.ofNullable(System.getenv("ENVIRONMENT_NAME"))
             .or(() -> Optional.ofNullable(System.getProperty("ENVIRONMENT")))
@@ -99,12 +99,10 @@ public class CompositionRoot extends AbstractModule {
     @Singleton
     private WebServer createWebServer(ReminderResource reminderResource,
                                       AuthResource authResource,
-                                      RateLimiterFilter rateLimiterFilter,
-                                      SecretsManagerConfig secretsManagerConfig) {
-        String portStr = secretsManagerConfig.getSecret("WS_PORT",
-                Optional.ofNullable(System.getenv("WS_PORT"))
-                        .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
-                        .orElse("8090"));
+                                      RateLimiterFilter rateLimiterFilter) {
+        String portStr = Optional.ofNullable(System.getenv("WS_PORT"))
+                .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
+                .orElse("8090");
 
         int webServerPort;
         try {

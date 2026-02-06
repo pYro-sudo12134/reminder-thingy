@@ -8,7 +8,6 @@ import com.google.inject.Singleton;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Persistence;
-import org.eclipse.persistence.config.PersistenceUnitProperties;
 import org.flywaydb.core.Flyway;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,12 +27,18 @@ public class JpaModule extends AbstractModule {
     @Provides
     @Singleton
     public DatabaseConfig provideDatabaseConfig() {
-        return new DatabaseConfig();
+        DatabaseConfig config = new DatabaseConfig();
+        log.info("DatabaseConfig initialized. Flyway enabled: {}", config.isFlywayEnabled());
+        log.info("Flyway locations: {}", config.getFlywayLocations());
+        return config;
     }
 
     @Provides
     @Singleton
     public DataSource provideDataSource(DatabaseConfig config) {
+        log.info("Creating DataSource for database: {}", config.getDatabaseName());
+        log.info("Database URL: {}", config.getUrl());
+
         com.zaxxer.hikari.HikariDataSource ds = new com.zaxxer.hikari.HikariDataSource();
         ds.setJdbcUrl(config.getUrl());
         ds.setUsername(config.getUsername());
@@ -43,80 +48,109 @@ public class JpaModule extends AbstractModule {
         ds.setMinimumIdle(config.getPoolMinIdle());
         ds.setConnectionTimeout(config.getConnectionTimeout());
         ds.setMaxLifetime(config.getPoolMaxLifetime());
-        ds.setPoolName("VoiceReminderPool");
-        ds.addDataSourceProperty("cachePrepStmts", "true");
-        ds.addDataSourceProperty("prepStmtCacheSize", "250");
-        ds.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-        ds.addDataSourceProperty("useServerPrepStmts", "true");
-        ds.addDataSourceProperty("useLocalSessionState", "true");
-        ds.addDataSourceProperty("rewriteBatchedStatements", "true");
-        ds.addDataSourceProperty("cacheResultSetMetadata", "true");
-        ds.addDataSourceProperty("cacheServerConfiguration", "true");
-        ds.addDataSourceProperty("elideSetAutoCommits", "true");
-        ds.addDataSourceProperty("maintainTimeStats", "false");
 
-        log.info("DataSource initialized for database: {}", config.getDatabaseName());
+        log.info("DataSource initialized successfully");
         return ds;
     }
 
     @Provides
     @Singleton
     public Flyway provideFlyway(DataSource dataSource, DatabaseConfig config) {
-        Flyway flyway = Flyway.configure()
-                .dataSource(dataSource)
-                .locations(config.getFlywayLocations())
-                .baselineOnMigrate(true)
-                .baselineVersion(config.getFlywayBaselineVersion())
-                .validateOnMigrate(true)
-                .outOfOrder(false)
-                .placeholderReplacement(true)
-                .sqlMigrationPrefix("V")
-                .sqlMigrationSeparator("__")
-                .sqlMigrationSuffixes(".sql")
-                .table("flyway_schema_history")
-                .load();
+        log.info("Initializing Flyway...");
+        log.info("Flyway enabled: {}", config.isFlywayEnabled());
+        log.info("Flyway locations: {}", config.getFlywayLocations());
+        log.info("Flyway baseline version: {}", config.getFlywayBaselineVersion());
 
-        if (config.isFlywayEnabled()) {
-            log.info("Running Flyway database migrations...");
-            try {
-                flyway.migrate();
-                log.info("Database migrations completed successfully");
-            } catch (Exception e) {
-                log.error("Failed to run database migrations", e);
-                throw new RuntimeException("Database migration failed", e);
-            }
-        } else {
-            log.info("Flyway migrations are disabled");
+        if (!config.isFlywayEnabled()) {
+            log.warn("Flyway migrations are DISABLED in configuration!");
+            return null;
         }
 
-        return flyway;
+        try {
+            Flyway flyway = Flyway.configure()
+                    .dataSource(dataSource)
+                    .locations(config.getFlywayLocations())
+                    .baselineOnMigrate(true)
+                    .baselineVersion(config.getFlywayBaselineVersion())
+                    .loggers("slf4j")
+                    .load();
+
+            log.info("Flyway configured. Checking migration status...");
+
+            var info = flyway.info();
+            log.info("Current migration: {}", info.current());
+            log.info("Pending migrations: {}", info.pending().length);
+
+            if (info.pending().length > 0) {
+                log.info("Pending migrations to apply:");
+                for (var migration : info.pending()) {
+                    log.info("  - {}: {}", migration.getVersion(), migration.getDescription());
+                }
+            }
+
+            log.info("Starting Flyway migrations...");
+            flyway.migrate();
+            log.info("Flyway migrations COMPLETED successfully!");
+
+            return flyway;
+        } catch (Exception e) {
+            log.error("Flyway migration FAILED!", e);
+            throw new RuntimeException("Flyway migration failed", e);
+        }
     }
 
     @Provides
     @Singleton
     public EntityManagerFactory provideEntityManagerFactory(
             DatabaseConfig config,
-            DataSource dataSource) {
+            DataSource dataSource,
+            Flyway flyway
+    ) {
+        try {
+            log.info("Creating EntityManagerFactory...");
 
-        Map<String, Object> properties = new HashMap<>();
-        properties.put(PersistenceUnitProperties.NON_JTA_DATASOURCE, dataSource);
-        properties.putAll(config.getJpaProperties());
-        EntityManagerFactory emf = Persistence.createEntityManagerFactory(
-                "voice_reminder_pu", properties);
+            if (config.isFlywayEnabled() && flyway != null) {
+                log.info("Flyway migrations have been executed");
+            } else if (config.isFlywayEnabled()) {
+                log.warn("Flyway is enabled but Flyway instance is null!");
+            }
 
-        log.info("EntityManagerFactory created successfully");
-        log.debug("JPA properties: {}",
-                properties.entrySet().stream()
-                        .filter(e -> !e.getKey().toString().contains("password"))
-                        .toList());
+            Map<String, String> properties = new HashMap<>();
+            properties.put("jakarta.persistence.jdbc.url", config.getUrl());
+            properties.put("jakarta.persistence.jdbc.user", config.getUsername());
+            properties.put("jakarta.persistence.jdbc.password", config.getPassword());
+            properties.put("jakarta.persistence.jdbc.driver", config.getDriver());
+            properties.putAll(config.getJpaProperties());
 
-        return emf;
+            log.debug("Creating EntityManagerFactory with properties:");
+            properties.forEach((k, v) -> {
+                if (k.contains("password")) {
+                    log.debug("  {} = ***", k);
+                } else {
+                    log.debug("  {} = {}", k, v);
+                }
+            });
+
+            EntityManagerFactory emf = Persistence.createEntityManagerFactory(
+                    "voice_reminder_pu", properties);
+
+            log.info("EntityManagerFactory created successfully");
+            return emf;
+        } catch (Exception e) {
+            log.error("Failed to create EntityManagerFactory: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to initialize JPA", e);
+        }
     }
 
     @Provides
     public EntityManager provideEntityManager(EntityManagerFactory emf) {
-        EntityManager em = emf.createEntityManager();
-        log.debug("Created EntityManager: {}", em);
-        return em;
+        try {
+            EntityManager em = emf.createEntityManager();
+            log.info("EntityManager created successfully");
+            return em;
+        } catch (Exception e) {
+            log.error("FAILED to create EntityManager: {}", e.getMessage(), e);
+            throw new RuntimeException("Failed to create EntityManager", e);
+        }
     }
 }
