@@ -146,7 +146,7 @@
 </div>
 
 <div class="info">
-    💡 <strong>Важно:</strong> Используется формат записи как в старом рабочем AudioRecorderService (16kHz, 16-bit, mono)
+    <strong>Важно:</strong> Используется формат записи как в старом рабочем AudioRecorderService (16kHz, 16-bit, mono)
 </div>
 
 <h2 style="text-align: center; color: #333; margin-bottom: 30px;">Запись голосового напоминания</h2>
@@ -231,7 +231,6 @@
         debug('Начинаю запись...');
 
         try {
-            // Пробуем получить аудио с параметрами как в AudioRecorderService
             const constraints = {
                 audio: {
                     sampleRate: 16000, // как в AudioRecorderService
@@ -239,7 +238,7 @@
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true,
-                    sampleSize: 16      // 16-bit как в AudioRecorderService
+                    sampleSize: 16
                 }
             };
 
