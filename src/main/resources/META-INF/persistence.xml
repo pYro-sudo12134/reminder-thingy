@@ -6,7 +6,32 @@
 
     <persistence-unit name="voice_reminder_pu" transaction-type="RESOURCE_LOCAL">
         <provider>org.eclipse.persistence.jpa.PersistenceProvider</provider>
-
         <class>by.losik.entity.User</class>
+
+        <properties>
+            <property name="jakarta.persistence.jdbc.url" value="jdbc:postgresql://postgres:5432/voice_reminder"/>
+            <property name="jakarta.persistence.jdbc.user" value="postgres"/>
+            <property name="jakarta.persistence.jdbc.password" value="password"/>
+            <property name="jakarta.persistence.jdbc.driver" value="org.postgresql.Driver"/>
+
+            <property name="eclipselink.connection-pool.default.initial" value="1"/>
+            <property name="eclipselink.connection-pool.default.min" value="1"/>
+            <property name="eclipselink.connection-pool.default.max" value="10"/>
+            <property name="eclipselink.connection-pool.default.wait" value="true"/>
+
+            <property name="eclipselink.cache.shared.default" value="false"/>
+            <property name="eclipselink.query-results-cache" value="false"/>
+
+            <property name="eclipselink.logging.level" value="INFO"/>
+            <property name="eclipselink.logging.parameters" value="true"/>
+
+            <property name="eclipselink.ddl-generation" value="none"/>
+            <property name="eclipselink.ddl-generation.output-mode" value="database"/>
+
+            <property name="eclipselink.target-database" value="PostgreSQL"/>
+
+            <property name="eclipselink.weaving" value="false"/>
+            <property name="eclipselink.weaving.internal" value="false"/>
+        </properties>
     </persistence-unit>
 </persistence>

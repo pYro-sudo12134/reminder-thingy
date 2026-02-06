@@ -17,7 +17,7 @@ import org.eclipse.persistence.annotations.CacheType;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "users")
+@Table(name = "users", schema = "voice_schema")
 @NamedQueries({
         @NamedQuery(name = "User.findByUsername",
                 query = "SELECT u FROM User u WHERE u.username = :username"),
@@ -44,9 +44,6 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
-    @Column(unique = true, length = 100)
-    private String email;
-
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -61,10 +58,9 @@ public class User {
 
     public User() {}
 
-    public User(String username, String passwordHash, String email) {
+    public User(String username, String passwordHash) {
         this.username = username;
         this.passwordHash = passwordHash;
-        this.email = email;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
     }
@@ -83,10 +79,7 @@ public class User {
         this.passwordHash = passwordHash;
         this.updatedAt = LocalDateTime.now();
     }
-
-    public String getEmail() { return email; }
     public void setEmail(String email) {
-        this.email = email;
         this.updatedAt = LocalDateTime.now();
     }
 

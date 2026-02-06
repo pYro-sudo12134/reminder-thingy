@@ -91,7 +91,7 @@ services:
     environment:
       POSTGRES_DB: voice_reminder
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password.txt
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8"
       POSTGRES_INITDB_WALDIR: /var/lib/postgresql/pg_wal
       TZ: UTC
@@ -154,13 +154,13 @@ services:
       - DB_PORT=5432
       - DB_NAME=voice_reminder
       - DB_USER=${POSTGRES_USER:-postgres}
-      - DB_PASSWORD_FILE=/run/secrets/postgres_password.txt
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_SCHEMA=voice_schema
       - DB_POOL_SIZE=10
       - DB_POOL_MIN_IDLE=5
       - FLYWAY_ENABLED=true
       - FLYWAY_BASELINE_VERSION=1
-      - FLYWAY_LOCATIONS=classpath:db/migration,filesystem:/app/db/migration
+      - FLYWAY_LOCATIONS=classpath:db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
     volumes:
@@ -168,7 +168,6 @@ services:
       - "./secrets:/run/secrets:ro"
       - "./secrets/application.properties:/app/config/application.properties:ro"
       - "./opensearch_certs:/app/certs:ro"
-      - "./db/migration:/app/db/migration:ro"
     networks:
       - reminder-network
     depends_on:
@@ -179,7 +178,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
       interval: 60s
       timeout: 10s
       retries: 5
@@ -197,7 +196,7 @@ networks:
 
 volumes:
   postgres_data:
-    name: reminder-postgres-data
+    name: postgres-data
 
 
 # aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}' --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'

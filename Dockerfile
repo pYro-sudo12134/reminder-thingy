@@ -11,6 +11,8 @@ COPY build.gradle .
 COPY settings.gradle .
 
 COPY src/main/proto src/main/proto
+COPY db/migration db/migration
+COPY src/main/resources src/main/resources
 
 COPY src src
 COPY web web

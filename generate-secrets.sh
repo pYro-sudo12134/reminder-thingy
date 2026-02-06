@@ -4,7 +4,7 @@ set -e
 mkdir -p secrets
 mkdir -p opensearch_certs
 mkdir -p postgres-init
-mkdir -p db/migration
+mkdir -p src/main/resources/db/migration
 
 openssl rand -base64 32 > secrets/nlp_grpc_key.txt
 openssl rand -base64 16 > secrets/opensearch_password.txt
@@ -142,7 +142,7 @@ COMMENT ON EXTENSION "pgcrypto" IS 'Cryptographic functions';
 COMMENT ON EXTENSION "citext" IS 'Case-insensitive text type';
 EOF
 
-cat > db/migration/V1__create_users_table.sql << 'EOF'
+cat > src/main/resources/db/migration/V1__create_users_table.sql << 'EOF'
 -- Flyway migration: V1__create_users_table.sql
 -- Создание таблицы пользователей
 
@@ -150,13 +150,17 @@ SET search_path TO voice_schema;
 
 -- Таблица пользователей
 CREATE TABLE users (
-    id BIGSERIAL PRIMARY KEY,
-    username VARCHAR(50) UNIQUE NOT NULL,
+    id BIGSERIAL,
+    username VARCHAR(50) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
-    last_login TIMESTAMPTZ,
+    last_login TIMESTAMP,
+
+    PRIMARY KEY (id, created_at),
+
+    CONSTRAINT users_username_unique UNIQUE (username, created_at),
 
     -- Ограничения
     CONSTRAINT chk_username_length CHECK (LENGTH(username) >= 3)
@@ -172,14 +176,12 @@ CREATE TABLE users_2026q3 PARTITION OF users
     FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
 
 CREATE TABLE users_2026q4 PARTITION OF users
-    FOR VALUES FROM ('2026-10-01') TO ('2026-01-01');
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 
 -- Индексы
 CREATE INDEX idx_users_username ON voice_schema.users(username);
-CREATE INDEX idx_users_email ON voice_schema.users(email);
 CREATE INDEX idx_users_is_active ON voice_schema.users(is_active);
 CREATE INDEX idx_users_username_part ON voice_schema.users(username);
-CREATE INDEX idx_users_status_part ON voice_schema.users(status) WHERE status != 'ACTIVE';
 CREATE INDEX idx_users_created_at_part ON voice_schema.users(created_at DESC);
 CREATE INDEX idx_users_active_login ON voice_schema.users(is_active, last_login DESC);
 
@@ -187,7 +189,6 @@ CREATE INDEX idx_users_active_login ON voice_schema.users(is_active, last_login 
 COMMENT ON TABLE voice_schema.users IS 'Application users table';
 COMMENT ON COLUMN voice_schema.users.username IS 'Unique username for login';
 COMMENT ON COLUMN voice_schema.users.password_hash IS 'BCrypt hashed password';
-COMMENT ON COLUMN voice_schema.users.email IS 'User email address';
 COMMENT ON COLUMN voice_schema.users.is_active IS 'Is user account active';
 
 -- Триггер для автоматического обновления updated_at
@@ -203,7 +204,7 @@ CREATE TRIGGER update_users_updated_at BEFORE UPDATE
     ON voice_schema.users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 EOF
 
-cat > db/migration/V2__insert_default_users.sql << 'EOF'
+cat > src/main/resources/db/migration/V2__insert_default_users.sql << 'EOF'
 -- Flyway migration: V2__insert_default_users.sql
 -- Вставка тестовых пользователей
 
@@ -211,11 +212,11 @@ SET search_path TO voice_schema;
 
 -- Вставка тестовых пользователей
 -- Пароли: admin123 и user123
-INSERT INTO voice_schema.users (username, password_hash, email, created_at)
+INSERT INTO voice_schema.users (username, password_hash, created_at)
 VALUES
-    ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'admin@example.com', NOW()),
-    ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'user@example.com', NOW())
-ON CONFLICT (username) DO NOTHING;
+    ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', NOW()),
+    ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', NOW())
+ON CONFLICT (username, created_at) DO NOTHING;
 EOF
 
 cat > secrets/secrets.json << EOF

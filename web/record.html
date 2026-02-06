@@ -44,6 +44,7 @@
         }
         button.recording {
             background: #f44336;
+            animation: pulse 1.5s infinite;
         }
         .hidden {
             display: none;
@@ -110,6 +111,31 @@
             70% { box-shadow: 0 0 0 10px rgba(244, 67, 54, 0); }
             100% { box-shadow: 0 0 0 0 rgba(244, 67, 54, 0); }
         }
+        audio {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            color: #1565c0;
+            border: 1px solid #bbdefb;
+        }
+        .debug {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-family: monospace;
+            font-size: 12px;
+            color: #666;
+            border: 1px solid #ddd;
+            max-height: 150px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -119,21 +145,27 @@
     <a href="/reminders.html">Мои напоминания</a>
 </div>
 
+<div class="info">
+    💡 <strong>Важно:</strong> Используется формат записи как в старом рабочем AudioRecorderService (16kHz, 16-bit, mono)
+</div>
+
 <h2 style="text-align: center; color: #333; margin-bottom: 30px;">Запись голосового напоминания</h2>
 
 <div class="form-group">
     <label for="userId">ID пользователя:</label>
-    <input type="text" id="userId" placeholder="Введите ваш ID" required>
+    <input type="text" id="userId" placeholder="Введите ваш ID" required value="test-user-123">
 </div>
 
 <div class="form-group">
     <label for="userEmail">Email:</label>
-    <input type="email" id="userEmail" placeholder="Ваш email для напоминаний" required>
+    <input type="email" id="userEmail" placeholder="Ваш email для напоминаний" required value="test@example.com">
 </div>
 
 <div class="timer" id="timer">00:00</div>
 
-<button id="recordButton">Начать запись</button>
+<audio id="audioPreview" controls class="hidden"></audio>
+
+<button id="recordButton">🎤 Начать запись</button>
 
 <div class="status" id="status"></div>
 
@@ -142,11 +174,19 @@
     <p><strong>ID напоминания:</strong> <span id="reminderId"></span></p>
     <p><strong>Статус:</strong> <span id="reminderStatus">обрабатывается...</span></p>
     <a href="/reminders.html" id="viewRemindersLink" style="color: #007bff; text-decoration: none; font-weight: bold;">
-        Посмотреть все напоминания →
+        Посмотреть все напоминания
     </a>
 </div>
 
+<div class="debug hidden" id="debug">
+    <strong>Отладка:</strong>
+    <div id="debugLog"></div>
+</div>
+
 <script>
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioContext;
+
     let mediaRecorder;
     let audioChunks = [];
     let isRecording = false;
@@ -158,23 +198,18 @@
     const timerElement = document.getElementById('timer');
     const statusElement = document.getElementById('status');
     const resultElement = document.getElementById('result');
+    const audioPreview = document.getElementById('audioPreview');
+    const debugElement = document.getElementById('debug');
+    const debugLog = document.getElementById('debugLog');
 
     recordButton.addEventListener('click', toggleRecording);
 
-    async function checkAuthAndRedirect() {
-        try {
-            const response = await fetch('/api/auth/me');
-            if (!response.ok) {
-                window.location.href = '/';
-            }
-        } catch (error) {
-            window.location.href = '/';
-        }
+    function debug(message) {
+        console.log(message);
+        debugLog.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+        debugElement.classList.remove('hidden');
+        debugElement.scrollTop = debugElement.scrollHeight;
     }
-
-    document.addEventListener('DOMContentLoaded', function() {
-        checkAuthAndRedirect();
-    });
 
     async function toggleRecording() {
         if (!isRecording) {
@@ -193,51 +228,221 @@
             return;
         }
 
+        debug('Начинаю запись...');
+
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
+            // Пробуем получить аудио с параметрами как в AudioRecorderService
+            const constraints = {
                 audio: {
-                    sampleRate: 16000,
-                    channelCount: 1,
+                    sampleRate: 16000, // как в AudioRecorderService
+                    channelCount: 1,    // mono как в AudioRecorderService
                     echoCancellation: true,
-                    noiseSuppression: true
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                    sampleSize: 16      // 16-bit как в AudioRecorderService
                 }
+            };
+
+            debug('Запрашиваю микрофон с параметрами: sampleRate=16000, channels=1, sampleSize=16');
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            const audioTrack = stream.getAudioTracks()[0];
+            const settings = audioTrack.getSettings();
+
+            debug(`Получен поток: sampleRate=${settings.sampleRate}, channels=${settings.channelCount}, sampleSize=${settings.sampleSize}`);
+
+            // Создаем AudioContext с нужными параметрами
+            audioContext = new AudioContext({
+                sampleRate: 16000 // Фиксируем 16kHz как в AudioRecorderService
             });
 
-            mediaRecorder = new MediaRecorder(stream, {
-                mimeType: 'audio/webm;codecs=opus'
-            });
+            debug(`AudioContext создан с sampleRate=${audioContext.sampleRate}`);
+
+            // Используем MediaRecorder для записи
+            const options = {
+                mimeType: 'audio/webm;codecs=opus',
+                audioBitsPerSecond: 64000
+            };
+
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+                debug(`MediaRecorder создан с mimeType: ${options.mimeType}`);
+            } catch (e) {
+                debug(`WebM не поддерживается, ошибка: ${e.message}`);
+                mediaRecorder = new MediaRecorder(stream);
+                debug('Использую стандартный MediaRecorder');
+            }
 
             audioChunks = [];
 
             mediaRecorder.ondataavailable = (event) => {
                 if (event.data.size > 0) {
                     audioChunks.push(event.data);
+                    debug(`Получен аудио чанк: ${event.data.size} байт`);
                 }
             };
 
-            mediaRecorder.onstop = () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                sendAudioToServer(audioBlob, userId, userEmail);
-                stream.getTracks().forEach(track => track.stop());
+            mediaRecorder.onstop = async () => {
+                try {
+                    showStatus('Создаю WAV файл...', 'processing');
+                    debug('Запись остановлена, создаю WAV файл');
+
+                    // Создаем Blob из записанных данных
+                    const audioBlob = new Blob(audioChunks, {
+                        type: mediaRecorder.mimeType || 'audio/webm'
+                    });
+
+                    debug(`Исходный аудио Blob: ${audioBlob.size} байт, type: ${audioBlob.type}`);
+
+                    // Конвертируем в WAV как в AudioRecorderService
+                    const wavBlob = await convertToWav(audioBlob);
+
+                    debug(`WAV файл создан: ${wavBlob.size} байт`);
+
+                    // Показываем превью
+                    audioPreview.src = URL.createObjectURL(wavBlob);
+                    audioPreview.classList.remove('hidden');
+
+                    showStatus('Отправляю на сервер...', 'processing');
+                    debug('Отправляю WAV файл на сервер');
+
+                    await sendAudioToServer(wavBlob, userId, userEmail);
+
+                } catch (error) {
+                    console.error('Ошибка обработки аудио:', error);
+                    debug(`Ошибка обработки аудио: ${error.message}`);
+                    showStatus('Ошибка обработки аудио', 'error');
+                } finally {
+                    stream.getTracks().forEach(track => track.stop());
+                    if (audioContext) {
+                        await audioContext.close();
+                        debug('AudioContext закрыт');
+                    }
+                }
             };
 
-            mediaRecorder.start(1000);
+            mediaRecorder.start(1000); // Собираем данные каждую секунду
             isRecording = true;
-            recordButton.textContent = 'Остановить запись';
+            recordButton.textContent = '⏹️ Остановить запись';
             recordButton.classList.add('recording');
             startTimer();
+
+            debug('Запись начата');
             showStatus('Записываю... Говорите ваше напоминание', 'processing');
 
         } catch (error) {
-            showStatus(`Ошибка доступа к микрофону: ${error.message}`, 'error');
+            console.error('Ошибка доступа к микрофону:', error);
+            debug(`Ошибка: ${error.message}`);
+            showStatus(`Ошибка: ${error.message}`, 'error');
+        }
+    }
+
+    async function convertToWav(audioBlob) {
+        debug('Начинаю конвертацию в WAV...');
+
+        try {
+            // Читаем аудио данные
+            const arrayBuffer = await audioBlob.arrayBuffer();
+            debug(`Прочитан arrayBuffer: ${arrayBuffer.byteLength} байт`);
+
+            // Декодируем аудио
+            const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+            debug(`Декодировано аудио: sampleRate=${audioBuffer.sampleRate}, duration=${audioBuffer.duration}s, channels=${audioBuffer.numberOfChannels}`);
+
+            // Ресемплируем до 16kHz если нужно
+            let sourceBuffer = audioBuffer;
+            if (Math.abs(audioBuffer.sampleRate - 16000) > 100) {
+                debug(`Ресемплируем с ${audioBuffer.sampleRate}Hz до 16000Hz`);
+                const offlineContext = new OfflineAudioContext(
+                    1, // каналы (mono)
+                    audioBuffer.duration * 16000,
+                    16000
+                );
+
+                const source = offlineContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(offlineContext.destination);
+                source.start(0);
+
+                sourceBuffer = await offlineContext.startRendering();
+                debug(`Ресемплирование завершено: sampleRate=${sourceBuffer.sampleRate}`);
+            }
+
+            // Конвертируем в WAV
+            const wavBlob = createWavBlob(sourceBuffer);
+            debug(`WAV создан успешно`);
+
+            return wavBlob;
+
+        } catch (error) {
+            debug(`Ошибка конвертации: ${error.message}`);
+            throw error;
+        }
+    }
+
+    function createWavBlob(audioBuffer) {
+        // Параметры как в AudioRecorderService
+        const sampleRate = audioBuffer.sampleRate;
+        const channels = 1; // Всегда моно как в AudioRecorderService
+        const bitDepth = 16; // 16-bit как в AudioRecorderService
+        const format = 1; // PCM
+
+        debug(`Создаю WAV: sampleRate=${sampleRate}, channels=${channels}, bitDepth=${bitDepth}`);
+
+        // Берем только первый канал (делаем моно)
+        const channelData = audioBuffer.getChannelData(0);
+        const numSamples = channelData.length;
+
+        const bytesPerSample = bitDepth / 8;
+        const blockAlign = channels * bytesPerSample;
+        const byteRate = sampleRate * blockAlign;
+        const dataSize = numSamples * blockAlign;
+        const bufferSize = 44 + dataSize;
+
+        // Создаем буфер для WAV данных
+        const buffer = new ArrayBuffer(bufferSize);
+        const view = new DataView(buffer);
+
+        // Записываем WAV заголовок
+        writeString(view, 0, 'RIFF');
+        view.setUint32(4, bufferSize - 8, true);
+        writeString(view, 8, 'WAVE');
+        writeString(view, 12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, format, true);
+        view.setUint16(22, channels, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, byteRate, true);
+        view.setUint16(32, blockAlign, true);
+        view.setUint16(34, bitDepth, true);
+        writeString(view, 36, 'data');
+        view.setUint32(40, dataSize, true);
+
+        // Записываем аудио данные
+        let offset = 44;
+        for (let i = 0; i < numSamples; i++) {
+            const sample = Math.max(-1, Math.min(1, channelData[i]));
+            const intSample = sample < 0 ? sample * 32768 : sample * 32767;
+            view.setInt16(offset, intSample, true);
+            offset += 2;
+        }
+
+        debug(`WAV заголовок записан, аудио данных: ${numSamples} сэмплов`);
+        return new Blob([buffer], { type: 'audio/wav' });
+    }
+
+    function writeString(view, offset, string) {
+        for (let i = 0; i < string.length; i++) {
+            view.setUint8(offset + i, string.charCodeAt(i));
         }
     }
 
     function stopRecording() {
         if (mediaRecorder && isRecording) {
+            debug('Останавливаю запись...');
             mediaRecorder.stop();
             isRecording = false;
-            recordButton.textContent = 'Начать запись';
+            recordButton.textContent = '🎤 Начать запись';
             recordButton.classList.remove('recording');
             stopTimer();
             showStatus('Обработка записи...', 'processing');
@@ -252,6 +457,7 @@
             updateTimer();
 
             if (seconds >= maxDuration) {
+                debug(`Достигнут лимит времени (${maxDuration} сек)`);
                 stopRecording();
             }
         }, 1000);
@@ -270,29 +476,37 @@
     async function sendAudioToServer(audioBlob, userId, userEmail) {
         try {
             showStatus('Отправляю аудио на сервер...', 'processing');
+            debug('Начинаю отправку на сервер...');
 
             const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('audio', audioBlob, 'recording.wav');
             formData.append('userId', userId);
             formData.append('userEmail', userEmail);
+
+            debug(`Отправляю FormData: userId=${userId}, userEmail=${userEmail}, размер файла=${audioBlob.size}`);
 
             const response = await fetch('/api/reminder/record', {
                 method: 'POST',
                 body: formData
             });
 
+            debug(`Получен ответ: ${response.status} ${response.statusText}`);
+
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.message || `HTTP error ${response.status}`);
+                const errorText = await response.text();
+                debug(`Ошибка сервера: ${errorText}`);
+                throw new Error(`HTTP error ${response.status}: ${errorText}`);
             }
 
             const result = await response.json();
+            debug(`Успешно: reminderId=${result.reminderId}`);
 
             showStatus('Напоминание успешно создано!', 'success');
             displayResult(result);
 
         } catch (error) {
             console.error('Error:', error);
+            debug(`Ошибка отправки: ${error.message}`);
             showStatus(`Ошибка: ${error.message}`, 'error');
         }
     }
@@ -321,6 +535,7 @@
         resultElement.scrollIntoView({ behavior: 'smooth' });
     }
 
+    // Заполняем тестовые данные для удобства
     const urlParams = new URLSearchParams(window.location.search);
     const userIdFromUrl = urlParams.get('userId');
     if (userIdFromUrl) {

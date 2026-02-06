@@ -6,6 +6,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -25,11 +27,13 @@ public class DatabaseConfig {
 
     private void loadFromEnvironment() {
         setPropertyFromEnv("DB_URL", "db.url");
+        setPropertyFromEnv("DB_SCHEMA", "db.schema");
         setPropertyFromEnv("DB_USERNAME", "db.username");
         setPropertyFromEnv("DB_PASSWORD", "db.password");
         setPropertyFromEnv("DB_HOST", "db.host");
         setPropertyFromEnv("DB_PORT", "db.port");
         setPropertyFromEnv("DB_NAME", "db.name");
+        setPropertyFromEnv("DB_PASSWORD", "db.password");
         setPropertyFromEnv("DB_POOL_SIZE", "db.pool.size");
         setPropertyFromEnv("DB_POOL_MIN_IDLE", "db.pool.minIdle");
         setPropertyFromEnv("DB_POOL_MAX_LIFETIME", "db.pool.maxLifetime");
@@ -77,7 +81,7 @@ public class DatabaseConfig {
     }
 
     private void setDefaults() {
-        properties.putIfAbsent("db.host", "localhost");
+        properties.putIfAbsent("db.host", "postgres");
         properties.putIfAbsent("db.port", "5432");
         properties.putIfAbsent("db.name", "voice_reminder");
         properties.putIfAbsent("db.url",
@@ -87,6 +91,7 @@ public class DatabaseConfig {
                         properties.get("db.name")));
         properties.putIfAbsent("db.username", "postgres");
         properties.putIfAbsent("db.password", "password");
+        properties.putIfAbsent("db.schema", "voice_schema");
         properties.putIfAbsent("db.driver", "org.postgresql.Driver");
         properties.putIfAbsent("db.pool.size", "10");
         properties.putIfAbsent("db.pool.minIdle", "5");
@@ -115,6 +120,9 @@ public class DatabaseConfig {
         log.info("==============================");
     }
 
+    public String getSchema() {
+        return properties.get("db.schema");
+    }
     public String getUrl() { return properties.get("db.url"); }
     public String getUsername() { return properties.get("db.username"); }
     public String getPassword() { return properties.get("db.password"); }
@@ -196,7 +204,6 @@ public class DatabaseConfig {
         jpaProps.put("jakarta.persistence.jdbc.user", getUsername());
         jpaProps.put("jakarta.persistence.jdbc.password", getPassword());
         jpaProps.put("jakarta.persistence.jdbc.driver", getDriver());
-
         if (isCacheEnabled()) {
             jpaProps.put("eclipselink.cache.shared.default", "true");
             jpaProps.put("eclipselink.cache.type.default", getCacheType());
@@ -222,8 +229,7 @@ public class DatabaseConfig {
         jpaProps.put("eclipselink.ddl-generation", getDdlGeneration());
         jpaProps.put("eclipselink.ddl-generation.output-mode", "database");
         jpaProps.put("eclipselink.target-database", "PostgreSQL");
-        jpaProps.put("eclipselink.cache.shared.default", "false");
-        jpaProps.put("eclipselink.query-results-cache", "false");
+
         jpaProps.put("eclipselink.connection-pool.default.initial",
                 String.valueOf(getPoolMinIdle()));
         jpaProps.put("eclipselink.connection-pool.default.min",
@@ -234,6 +240,10 @@ public class DatabaseConfig {
         if (isShowSql() && isFormatSql()) {
             jpaProps.put("eclipselink.logging.sql", "true");
         }
+
+        jpaProps.put("eclipselink.connection-pool.default.wait", "30000");
+        jpaProps.put("eclipselink.jdbc.connections.wait", "true");
+        jpaProps.put("eclipselink.jdbc.connections.retry", "3");
 
         return jpaProps;
     }
