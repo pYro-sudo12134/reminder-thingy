@@ -52,6 +52,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.nfs == true
       resources:
         limits:
           memory: 512M
@@ -65,8 +66,22 @@ services:
         parallelism: 1
         delay: 30s
     ports:
-      - "2049:2049"
-      - "111:111"
+      - target: 2049
+        published: 2049
+        protocol: tcp
+        mode: host
+      - target: 111
+        published: 111
+        protocol: tcp
+        mode: host
+      - target: 2049
+        published: 2049
+        protocol: udp
+        mode: host
+      - target: 111
+        published: 111
+        protocol: udp
+        mode: host
     volumes:
       - type: bind
         source: /nfs-storage
@@ -82,7 +97,6 @@ services:
       reminder-network:
         aliases:
           - nfs.internal
-        ipv4_address: 10.10.0.100
     healthcheck:
       test: ["CMD", "rpcinfo", "-p", "localhost"]
       interval: 30s
@@ -457,35 +471,35 @@ volumes:
     driver: local
     driver_opts:
       type: nfs4
-      o: addr=10.10.0.100,nolock,soft,rw,timeo=600,retrans=2
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/nlp_models"
 
   nfs_nlp_data:
     driver: local
     driver_opts:
       type: nfs4
-      o: addr=10.10.0.100,nolock,soft,rw,timeo=600,retrans=2
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/nlp_data"
 
   nfs_localstack_data:
     driver: local
     driver_opts:
       type: nfs4
-      o: addr=10.10.0.100,nolock,soft,rw,timeo=600,retrans=2
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/localstack_data"
 
   nfs_postgres_backup:
     driver: local
     driver_opts:
       type: nfs4
-      o: addr=10.10.0.100,nolock,soft,rw,timeo=600,retrans=2
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/postgres_backup"
 
   nfs_app_static:
     driver: local
     driver_opts:
       type: nfs4
-      o: addr=10.10.0.100,nolock,soft,rw,timeo=600,retrans=2
+      o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/app_static"
 
 # export $(cat .env | xargs) && docker stack deploy -c docker-stack.yml swarm
