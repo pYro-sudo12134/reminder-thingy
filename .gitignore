@@ -40,6 +40,8 @@ lambda_functions
 localstack_data
 postgres-init
 db
+nfs-storage
+data
 
 hs_err_pid*
 replay_pid*
