@@ -41,6 +41,7 @@ localstack_data
 postgres-init
 db
 nfs-storage
+nfs-config
 data
 
 hs_err_pid*
