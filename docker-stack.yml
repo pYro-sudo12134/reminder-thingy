@@ -52,7 +52,7 @@ services:
       placement:
         constraints:
           - node.role == manager
-          - node.nfs == true
+          - node.labels.nfs == true
       resources:
         limits:
           memory: 512M
@@ -155,8 +155,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    depends_on:
-      - nfs-server
     labels:
       - "traefik.enable=false"
 
@@ -232,8 +230,6 @@ services:
       timeout: 15s
       retries: 10
       start_period: 90s
-    depends_on:
-      - nfs-server
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.localstack.rule=Host(`localstack.reminder.local`)"
@@ -302,8 +298,6 @@ services:
       -c work_mem=4MB 
       -c min_wal_size=1GB 
       -c max_wal_size=4GB
-    depends_on:
-      - nfs-server
     labels:
       - "traefik.enable=false"
 
@@ -385,11 +379,6 @@ services:
         read_only: true
     networks:
       - reminder-network
-    depends_on:
-      - nlp-service
-      - localstack
-      - postgres
-      - nfs-server
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
       interval: 60s
@@ -440,8 +429,6 @@ services:
         target: /data
     networks:
       - reminder-network
-    depends_on:
-      - nfs-server
     labels:
       - "traefik.enable=false"
       - "traefik.docker.lbswarm=false"
