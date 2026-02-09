@@ -361,9 +361,9 @@ services:
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
       - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_PASSWORD=${SMTP_PASSOWRD:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_SSL=true
+      - SMTP_SSL=false
       - SMTP_TLS=true
     secrets:
       - source: postgres_password
