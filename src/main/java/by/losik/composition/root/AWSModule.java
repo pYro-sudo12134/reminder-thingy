@@ -15,7 +15,7 @@ import com.google.inject.Singleton;
 
 import java.util.Optional;
 
-public class CompositionRoot extends AbstractModule {
+public class AWSModule extends AbstractModule {
     String endpoint = Optional.ofNullable(System.getenv("AWS_ENDPOINT_URL"))
             .or(() -> Optional.ofNullable(System.getProperty("AWS_ENDPOINT_URL")))
             .orElse("http://localstack:4566");

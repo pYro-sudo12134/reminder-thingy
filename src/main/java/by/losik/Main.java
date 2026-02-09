@@ -1,7 +1,8 @@
 package by.losik;
 
-import by.losik.composition.root.CompositionRoot;
+import by.losik.composition.root.AWSModule;
 import by.losik.composition.root.JpaModule;
+import by.losik.composition.root.MailModule;
 import by.losik.service.OpenSearchService;
 import by.losik.server.WebServer;
 import com.google.inject.Guice;
@@ -13,7 +14,7 @@ public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
     public static void main(String[] args) {
         try {
-            Injector injector = Guice.createInjector(new CompositionRoot(), new JpaModule());
+            Injector injector = Guice.createInjector(new AWSModule(), new JpaModule(), new MailModule());
             OpenSearchService openSearchService = injector.getInstance(OpenSearchService.class);
             openSearchService.initializeIndices().join();
             log.info("OpenSearch indices initialized");

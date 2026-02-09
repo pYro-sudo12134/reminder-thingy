@@ -1,6 +1,7 @@
 package by.losik.lambda;
 
-import by.losik.composition.root.CompositionRoot;
+import by.losik.composition.root.AWSModule;
+import by.losik.composition.root.MailModule;
 import by.losik.service.VoiceReminderService;
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
@@ -19,7 +20,7 @@ public class SendReminderLambda implements RequestHandler<ScheduledEvent, String
     private final ObjectMapper objectMapper;
 
     public SendReminderLambda() {
-        Injector injector = Guice.createInjector(new CompositionRoot());
+        Injector injector = Guice.createInjector(new AWSModule(), new MailModule());
         this.reminderService = injector.getInstance(VoiceReminderService.class);
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
