@@ -36,7 +36,7 @@ import java.time.Duration;
 import java.util.Optional;
 
 @Singleton
-public class LocalStackConfig {
+public class LocalStackConfig implements AutoCloseable {
     private final String TRUSTSTORE_PATH;
     private final String TRUSTSTORE_PASSWORD;
     private final String LOCALSTACK_ENDPOINT;
@@ -53,7 +53,6 @@ public class LocalStackConfig {
     private final RestHighLevelClient openSearchClient;
     private final OpenSearchAsyncClient openSearchAsyncClient;
     private final SdkAsyncHttpClient asyncHttpClient;
-    //private final SesAsyncClient sesAsyncClient;
     private final CloudWatchAsyncClient cloudWatchAsyncClient;
 
     @Inject
@@ -320,7 +319,8 @@ public class LocalStackConfig {
         return "http://" + host + ":" + port;
     }
 
-    public void shutdown() {
+    @Override
+    public void close() {
         if (eventBridgeAsyncClient != null) {
             eventBridgeAsyncClient.close();
         }
@@ -344,5 +344,4 @@ public class LocalStackConfig {
             openSearchAsyncClient.close();
         }
     }
-
 }

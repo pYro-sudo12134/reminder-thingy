@@ -4,8 +4,7 @@ services:
   traefik:
     image: traefik:v3
     deploy:
-      mode: replicated
-      replicas: 1
+      mode: global
       placement:
         constraints:
           - node.role == manager
@@ -131,10 +130,10 @@ services:
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
       - GRPC_USE_TLS=true
-      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY:-QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=}
     secrets:
       - source: nlp_grpc_key
         target: /run/secrets/nlp_grpc_key.txt
+        mode: 0440
     volumes:
       - type: volume
         source: nfs_nlp_models
@@ -197,7 +196,7 @@ services:
       - INIT_SCRIPTS_PATH=/etc/localstack/init/ready.d/
       - OPENSEARCH_ENABLE_SECURITY=true
       - OPENSEARCH_ENABLE_SSL=true
-      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD_FILE=/run/secrets/opensearch_password.txt
       - OPENSEARCH_PLUGINS_LIST=opensearch-security
       - DISABLE_OPENSEARCH_SECURITY_PLUGIN=false
       - OPENSEARCH_NODE_TO_NODE_ENCRYPTION=true
@@ -206,6 +205,10 @@ services:
       - OPENSEARCH_ROOT_CA_PATH=/etc/localstack/opensearch/certs/root-ca.pem
       - OPENSEARCH_ADMIN_CERTIFICATE_PATH=/etc/localstack/opensearch/certs/admin.pem
       - OPENSEARCH_ADMIN_KEY_PATH=/etc/localstack/opensearch/certs/admin-key.pem
+    secrets:
+      - source: opensearch_password
+        target: /run/secrets/opensearch_password.txt
+        mode: 0440
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -246,6 +249,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.labels.postgres == true
       resources:
         limits:
           memory: 2G
@@ -259,7 +263,7 @@ services:
     environment:
       POSTGRES_DB: voice_reminder
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password.txt
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8"
       POSTGRES_INITDB_WALDIR: /var/lib/postgresql/pg_wal
       TZ: UTC
@@ -303,7 +307,7 @@ services:
       - "traefik.enable=false"
 
   reminder-app:
-    image: pyrodocker1/reminder-backend:1.0
+    image: pyrodocker1/reminder-backend:1.1
     deploy:
       mode: replicated
       replicas: 2
@@ -335,9 +339,10 @@ services:
       - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx512m -Xms256m
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
+      - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_USER=admin
-      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
-      - OPENSEARCH_USE_SSL=false
+      - OPENSEARCH_ADMIN_PASSWORD_FILE=/run/secrets/opensearch_password.txt
+      - OPENSEARCH_USE_SSL=true
       - OPENSEARCH_SSL_VERIFICATION_MODE=none
       - OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
       - OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
@@ -349,7 +354,7 @@ services:
       - DB_PORT=5432
       - DB_NAME=voice_reminder
       - DB_USER=${POSTGRES_USER:-postgres}
-      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_PASSWORD_FILE=/run/secrets/postgres_password.txt
       - DB_SCHEMA=voice_schema
       - DB_POOL_SIZE=10
       - DB_POOL_MIN_IDLE=5
@@ -365,9 +370,32 @@ services:
       - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
       - SMTP_SSL=false
       - SMTP_TLS=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password.txt
+      - REDIS_TIMEOUT=2000
+      - REDIS_MAX_TOTAL=50
+      - REDIS_MAX_IDLE=10
+      - REDIS_MIN_IDLE=5
+      - REDIS_USE_SSL=true
+      - REDIS_SSL_TRUSTSTORE_PATH=/app/certs/redis/redis_truststore.jks
+      - REDIS_SSL_TRUSTSTORE_PASSWORD=changeit
+      - REDIS_SSL_KEYSTORE_PATH=/app/certs/redis/redis_keystore.jks
+      - REDIS_SSL_KEYSTORE_PASSWORD=changeit
+      - REDIS_SSL_VERIFY_MODE=full
+      - REDIS_SSL_PROTOCOL=TLSv1.2
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password.txt
+        mode: 0440
+      - source: opensearch_password
+        target: /run/secrets/opensearch_password.txt
+        mode: 0440
+      - source: redis_password
+        target: /run/secrets/redis_password.txt
+        mode: 0440
+      - source: nlp_grpc_key
+        target: /run/secrets/nlp_grpc_key.txt
         mode: 0440
     volumes:
       - type: volume
@@ -384,6 +412,10 @@ services:
       - type: bind
         source: ./db/migration
         target: /app/db/migration
+        read_only: true
+      - type: bind
+        source: ./redis/certs
+        target: /app/certs/redis
         read_only: true
     networks:
       - reminder-network
@@ -442,11 +474,61 @@ services:
       - "traefik.docker.lbswarm=false"
       - "traefik.tags=exclude"
 
+  redis:
+    image: redis:7-alpine
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+      - --requirepass
+      - "$$(cat /run/secrets/redis_password.txt)"
+    secrets:
+      - source: redis_password
+        target: /run/secrets/redis_password.txt
+        mode: 0440
+    volumes:
+      - type: bind
+        source: ./redis/config/redis.conf
+        target: /usr/local/etc/redis/redis.conf
+        read_only: true
+      - type: bind
+        source: ./redis/certs
+        target: /usr/local/etc/redis/certs
+        read_only: true
+    networks:
+      - reminder-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=false"
+
 secrets:
   nlp_grpc_key:
     file: ./secrets/nlp_grpc_key.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
+  opensearch_password:
+    file: ./secrets/opensearch_password.txt
 
 networks:
   reminder-network:
