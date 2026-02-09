@@ -2,7 +2,11 @@
 mkdir -p nfs-config
 
 cat > nfs-config/exports << EOF
-/exports 10.10.0.0/24(rw,sync,fsid=0,no_subtree_check,no_root_squash,insecure,crossmnt)
+/exports/nlp_models *(rw,sync,no_subtree_check,no_root_squash,nohide)
+/exports/nlp_data *(rw,sync,no_subtree_check,no_root_squash,nohide)
+/exports/localstack_data *(rw,sync,no_subtree_check,no_root_squash,nohide)
+/exports/postgres_backup *(rw,sync,no_subtree_check,no_root_squash,nohide)
+/exports/app_static *(rw,sync,no_subtree_check,no_root_squash,nohide)
 EOF
 
 mkdir -p /nfs-storage

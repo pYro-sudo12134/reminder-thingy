@@ -26,7 +26,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Singleton
-public class GRPCService {
+public class GRPCService implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(GRPCService.class);
     private final GRPCConfig grpcConfig;
     private final ReminderParserServiceGrpc.ReminderParserServiceBlockingStub blockingStub;
@@ -215,7 +215,8 @@ public class GRPCService {
         return time.format(DateTimeFormatter.ofPattern("HH:mm"));
     }
 
-    public void shutdown() {
+    @Override
+    public void close() {
         grpcConfig.shutdown();
     }
 }

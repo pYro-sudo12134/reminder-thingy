@@ -1,6 +1,8 @@
 package by.losik.filter;
 
 import by.losik.config.RateLimitConfig;
+import by.losik.config.RedisConnectionFactory;
+import by.losik.config.RedisRateLimitConfig;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import jakarta.servlet.Filter;
@@ -13,30 +15,54 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.exceptions.JedisConnectionException;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 @Singleton
 public class RateLimiterFilter implements Filter {
     private static final Logger log = LoggerFactory.getLogger(RateLimiterFilter.class);
 
     private final RateLimitConfig rateLimitConfig;
-    private final Map<String, AtomicRequestLimiter> requestLimiters = new ConcurrentHashMap<>();
+    private final RedisRateLimitConfig redisConfig;
+    private final RedisConnectionFactory redisConnectionFactory;
     private final String[] whitelistedIps;
+    private JedisPool jedisPool;
 
     @Inject
-    public RateLimiterFilter(RateLimitConfig rateLimitConfig) {
+    public RateLimiterFilter(RateLimitConfig rateLimitConfig,
+                             RedisRateLimitConfig redisConfig,
+                             RedisConnectionFactory redisConnectionFactory) {
         this.rateLimitConfig = rateLimitConfig;
+        this.redisConfig = redisConfig;
+        this.redisConnectionFactory = redisConnectionFactory;
         this.whitelistedIps = rateLimitConfig.getWhitelistedIps();
         log.info("RateLimiterFilter initialized. Whitelisted IPs: {}",
                 Arrays.toString(whitelistedIps));
+    }
+
+    @Override
+    public void init(FilterConfig filterConfig) {
+        try {
+            this.jedisPool = redisConnectionFactory.createJedisPool();
+            log.info("RateLimiterFilter initialized with Redis");
+            log.info("Rate limiting enabled: {}", rateLimitConfig.isEnabled());
+            log.info("Redis enabled: {}", rateLimitConfig.isEnabled());
+            log.info("Redis: {}:{}", redisConfig.getHost(), redisConfig.getPort());
+            log.info("Default limits: {}/min, {}/hour, {}/day",
+                    rateLimitConfig.getMaxRequestsPerMinute(),
+                    rateLimitConfig.getMaxRequestsPerHour(),
+                    rateLimitConfig.getMaxRequestsPerDay());
+        } catch (Exception e) {
+            log.error("Failed to initialize Redis pool in RateLimiterFilter", e);
+            throw new RuntimeException("RateLimiterFilter initialization failed", e);
+        }
     }
 
     @Override
@@ -61,19 +87,22 @@ public class RateLimiterFilter implements Filter {
         }
 
         String endpoint = httpRequest.getRequestURI();
-        AtomicRequestLimiter limiter = getLimiterForEndpoint(clientId, endpoint);
+        String endpointCategory = getEndpointCategory(endpoint);
+        String redisKey = clientId + ":" + endpointCategory;
 
-        RateLimitResult result = limiter.tryAcquire();
+        EndpointLimit limit = getLimitForEndpointCategory(endpoint);
+
+        RateLimitResult result = checkRateLimit(redisKey, limit);
 
         if (!result.isAllowed()) {
             log.warn("Rate limit exceeded - Client: {}, IP: {}, Endpoint: {}, Reason: {}",
                     clientId, clientIp, endpoint, result.getReason());
 
-            sendRateLimitResponse(httpResponse, limiter, result);
+            sendRateLimitResponse(httpResponse, redisKey, limit, result);
             return;
         }
 
-        addRateLimitHeaders(httpResponse, limiter);
+        addRateLimitHeaders(httpResponse, redisKey, limit);
         chain.doFilter(request, response);
     }
 
@@ -142,18 +171,6 @@ public class RateLimiterFilter implements Filter {
         return ip;
     }
 
-    private AtomicRequestLimiter getLimiterForEndpoint(String clientId, String endpoint) {
-        String key = clientId + ":" + getEndpointCategory(endpoint);
-        return requestLimiters.computeIfAbsent(key, k -> {
-            EndpointLimit endpointLimit = getLimitForEndpointCategory(endpoint);
-            return new AtomicRequestLimiter(
-                    endpointLimit.getMaxRequestsPerMinute(),
-                    endpointLimit.getMaxRequestsPerHour(),
-                    endpointLimit.getMaxRequestsPerDay()
-            );
-        });
-    }
-
     private EndpointLimit getLimitForEndpointCategory(String endpoint) {
         if (endpoint.contains("/reminder/record")) {
             return new EndpointLimit(
@@ -212,17 +229,63 @@ public class RateLimiterFilter implements Filter {
         return false;
     }
 
+    private RateLimitResult checkRateLimit(String redisKey, EndpointLimit limit) {
+        if (!rateLimitConfig.isEnabled()) {
+            return RateLimitResult.allowed();
+        }
+
+        try (Jedis jedis = jedisPool.getResource()) {
+            String minuteKey = "rl:min:" + redisKey;
+            String hourKey = "rl:hour:" + redisKey;
+            String dayKey = "rl:day:" + redisKey;
+
+            String script =
+                    "local minute = redis.call('INCR', KEYS[1]) " +
+                            "if minute == 1 then redis.call('EXPIRE', KEYS[1], 60) end " +
+                            "local hour = redis.call('INCR', KEYS[2]) " +
+                            "if hour == 1 then redis.call('EXPIRE', KEYS[2], 3600) end " +
+                            "local day = redis.call('INCR', KEYS[3]) " +
+                            "if day == 1 then redis.call('EXPIRE', KEYS[3], 86400) end " +
+                            "local limits = {ARGV[1], ARGV[2], ARGV[3]} " +
+                            "if minute > tonumber(limits[1]) then return 'minute' end " +
+                            "if hour > tonumber(limits[2]) then return 'hour' end " +
+                            "if day > tonumber(limits[3]) then return 'day' end " +
+                            "return 'ok'";
+
+            String result = (String) jedis.eval(script,
+                    3, minuteKey, hourKey, dayKey,
+                    String.valueOf(limit.getMaxRequestsPerMinute()),
+                    String.valueOf(limit.getMaxRequestsPerHour()),
+                    String.valueOf(limit.getMaxRequestsPerDay())
+            );
+
+            return switch (result) {
+                case "minute" -> RateLimitResult.minuteLimitExceeded();
+                case "hour" -> RateLimitResult.hourLimitExceeded();
+                case "day" -> RateLimitResult.dayLimitExceeded();
+                default -> RateLimitResult.allowed();
+            };
+        } catch (JedisConnectionException e) {
+            log.error("Redis connection failed, allowing request: {}", e.getMessage());
+            return RateLimitResult.allowed();
+        } catch (Exception e) {
+            log.error("Redis rate limit error: {}", e.getMessage());
+            return RateLimitResult.allowed();
+        }
+    }
+
     private void sendRateLimitResponse(HttpServletResponse response,
-                                       AtomicRequestLimiter limiter,
+                                       String redisKey,
+                                       EndpointLimit limit,
                                        RateLimitResult result) throws IOException {
         response.setStatus(429);
         response.setContentType("application/json; charset=UTF-8");
         response.setCharacterEncoding("UTF-8");
 
-        int retryAfter = limiter.getRetryAfterSeconds();
-        response.setHeader("Retry-After", String.valueOf(retryAfter));
+        Map<String, Object> stats = getStatsFromRedis(redisKey, limit);
+        int retryAfter = getRetryAfterSeconds(redisKey, result);
 
-        Map<String, Object> stats = limiter.getStats();
+        response.setHeader("Retry-After", String.valueOf(retryAfter));
 
         try (PrintWriter writer = response.getWriter()) {
             writer.write("{\n");
@@ -251,8 +314,91 @@ public class RateLimiterFilter implements Filter {
         }
     }
 
-    private void addRateLimitHeaders(HttpServletResponse response, AtomicRequestLimiter limiter) {
-        Map<String, Object> stats = limiter.getStats();
+    private Map<String, Object> getStatsFromRedis(String redisKey, EndpointLimit limit) {
+        Map<String, Object> stats = new HashMap<>();
+
+        if (!rateLimitConfig.isEnabled()) {
+            stats.put("minuteLimit", limit.getMaxRequestsPerMinute());
+            stats.put("minuteRemaining", limit.getMaxRequestsPerMinute());
+            stats.put("minuteResetIn", 0);
+            stats.put("hourLimit", limit.getMaxRequestsPerHour());
+            stats.put("hourRemaining", limit.getMaxRequestsPerHour());
+            stats.put("hourResetIn", 0);
+            stats.put("dayLimit", limit.getMaxRequestsPerDay());
+            stats.put("dayRemaining", limit.getMaxRequestsPerDay());
+            stats.put("dayResetIn", 0);
+            return stats;
+        }
+
+        try (Jedis jedis = jedisPool.getResource()) {
+            String minuteKey = "rl:min:" + redisKey;
+            String hourKey = "rl:hour:" + redisKey;
+            String dayKey = "rl:day:" + redisKey;
+
+            long minuteCount = getCount(jedis, minuteKey);
+            long hourCount = getCount(jedis, hourKey);
+            long dayCount = getCount(jedis, dayKey);
+
+            long minuteTtl = jedis.ttl(minuteKey);
+            long hourTtl = jedis.ttl(hourKey);
+            long dayTtl = jedis.ttl(dayKey);
+
+            stats.put("minuteLimit", limit.getMaxRequestsPerMinute());
+            stats.put("minuteUsed", minuteCount);
+            stats.put("minuteRemaining", Math.max(0, limit.getMaxRequestsPerMinute() - minuteCount));
+            stats.put("minuteResetIn", minuteTtl > 0 ? minuteTtl : 0);
+            stats.put("hourLimit", limit.getMaxRequestsPerHour());
+            stats.put("hourUsed", hourCount);
+            stats.put("hourRemaining", Math.max(0, limit.getMaxRequestsPerHour() - hourCount));
+            stats.put("hourResetIn", hourTtl > 0 ? hourTtl : 0);
+            stats.put("dayLimit", limit.getMaxRequestsPerDay());
+            stats.put("dayUsed", dayCount);
+            stats.put("dayRemaining", Math.max(0, limit.getMaxRequestsPerDay() - dayCount));
+            stats.put("dayResetIn", dayTtl > 0 ? dayTtl : 0);
+
+        } catch (Exception e) {
+            log.error("Failed to get stats from Redis: {}", e.getMessage());
+        }
+
+        return stats;
+    }
+
+    private long getCount(Jedis jedis, String key) {
+        String value = jedis.get(key);
+        return value != null ? Long.parseLong(value) : 0;
+    }
+
+    private int getRetryAfterSeconds(String redisKey, RateLimitResult result) {
+        if (!rateLimitConfig.isEnabled()) {
+            return 60;
+        }
+
+        try (Jedis jedis = jedisPool.getResource()) {
+            String minuteKey = "rl:min:" + redisKey;
+            String hourKey = "rl:hour:" + redisKey;
+            String dayKey = "rl:day:" + redisKey;
+
+            switch(result.getReason()) {
+                case "minute_limit_exceeded":
+                    long minuteTtl = jedis.ttl(minuteKey);
+                    return Math.max(1, (int) minuteTtl);
+                case "hour_limit_exceeded":
+                    long hourTtl = jedis.ttl(hourKey);
+                    return Math.max(1, (int) hourTtl);
+                case "day_limit_exceeded":
+                    long dayTtl = jedis.ttl(dayKey);
+                    return Math.max(1, (int) dayTtl);
+                default:
+                    return 60;
+            }
+        } catch (Exception e) {
+            log.error("Failed to get retry after: {}", e.getMessage());
+            return 60;
+        }
+    }
+
+    private void addRateLimitHeaders(HttpServletResponse response, String redisKey, EndpointLimit limit) {
+        Map<String, Object> stats = getStatsFromRedis(redisKey, limit);
 
         response.setHeader("X-RateLimit-Limit-Minute",
                 String.valueOf(stats.get("minuteLimit")));
@@ -277,229 +423,11 @@ public class RateLimiterFilter implements Filter {
     }
 
     @Override
-    public void init(FilterConfig filterConfig) {
-        log.info("RateLimiterFilter initialized with configuration");
-        log.info("Rate limiting enabled: {}", rateLimitConfig.isEnabled());
-        log.info("Default limits: {}/min, {}/hour, {}/day",
-                rateLimitConfig.getMaxRequestsPerMinute(),
-                rateLimitConfig.getMaxRequestsPerHour(),
-                rateLimitConfig.getMaxRequestsPerDay());
-    }
-
-    @Override
     public void destroy() {
-        requestLimiters.clear();
+        if (jedisPool != null) {
+            jedisPool.close();
+            log.info("Redis pool closed");
+        }
         log.info("RateLimiterFilter destroyed");
-    }
-
-    private static class RateLimitResult {
-        private final boolean allowed;
-        private final String reason;
-
-        private RateLimitResult(boolean allowed, String reason) {
-            this.allowed = allowed;
-            this.reason = reason;
-        }
-
-        public static RateLimitResult allowed() {
-            return new RateLimitResult(true, "allowed");
-        }
-
-        public static RateLimitResult minuteLimitExceeded() {
-            return new RateLimitResult(false, "minute_limit_exceeded");
-        }
-
-        public static RateLimitResult hourLimitExceeded() {
-            return new RateLimitResult(false, "hour_limit_exceeded");
-        }
-
-        public static RateLimitResult dayLimitExceeded() {
-            return new RateLimitResult(false, "day_limit_exceeded");
-        }
-
-        public boolean isAllowed() { return allowed; }
-        public String getReason() { return reason; }
-    }
-
-    private static class AtomicRequestLimiter {
-        private final int maxPerMinute;
-        private final int maxPerHour;
-        private final int maxPerDay;
-        private final AtomicInteger minuteCount = new AtomicInteger(0);
-        private final AtomicInteger hourCount = new AtomicInteger(0);
-        private final AtomicInteger dayCount = new AtomicInteger(0);
-        private final AtomicLong minuteWindowStart = new AtomicLong(System.currentTimeMillis());
-        private final AtomicLong hourWindowStart = new AtomicLong(System.currentTimeMillis());
-        private final AtomicLong dayWindowStart = new AtomicLong(System.currentTimeMillis());
-
-        public AtomicRequestLimiter(int maxPerMinute, int maxPerHour, int maxPerDay) {
-            this.maxPerMinute = maxPerMinute;
-            this.maxPerHour = maxPerHour;
-            this.maxPerDay = maxPerDay;
-        }
-
-        public RateLimitResult tryAcquire() {
-            long now = System.currentTimeMillis();
-
-            resetIfNeeded(now);
-
-            int currentMinute = minuteCount.get();
-            int currentHour = hourCount.get();
-            int currentDay = dayCount.get();
-
-            if (currentMinute >= maxPerMinute) {
-                return RateLimitResult.minuteLimitExceeded();
-            }
-
-            if (currentHour >= maxPerHour) {
-                return RateLimitResult.hourLimitExceeded();
-            }
-
-            if (currentDay >= maxPerDay) {
-                return RateLimitResult.dayLimitExceeded();
-            }
-
-            boolean minuteUpdated = false;
-            boolean hourUpdated = false;
-            boolean dayUpdated = false;
-
-            while (!minuteUpdated) {
-                int current = minuteCount.get();
-                if (current >= maxPerMinute) {
-                    return RateLimitResult.minuteLimitExceeded();
-                }
-                minuteUpdated = minuteCount.compareAndSet(current, current + 1);
-            }
-
-            while (!hourUpdated) {
-                int current = hourCount.get();
-                if (current >= maxPerHour) {
-                    minuteCount.decrementAndGet();
-                    return RateLimitResult.hourLimitExceeded();
-                }
-                hourUpdated = hourCount.compareAndSet(current, current + 1);
-            }
-
-            while (!dayUpdated) {
-                int current = dayCount.get();
-                if (current >= maxPerDay) {
-                    minuteCount.decrementAndGet();
-                    hourCount.decrementAndGet();
-                    return RateLimitResult.dayLimitExceeded();
-                }
-                dayUpdated = dayCount.compareAndSet(current, current + 1);
-            }
-
-            return RateLimitResult.allowed();
-        }
-
-        private void resetIfNeeded(long now) {
-            long minuteStart = minuteWindowStart.get();
-            if (now - minuteStart > TimeUnit.MINUTES.toMillis(1)) {
-                if (minuteWindowStart.compareAndSet(minuteStart, now)) {
-                    minuteCount.set(0);
-                }
-            }
-
-            long hourStart = hourWindowStart.get();
-            if (now - hourStart > TimeUnit.HOURS.toMillis(1)) {
-                if (hourWindowStart.compareAndSet(hourStart, now)) {
-                    hourCount.set(0);
-                }
-            }
-
-            long dayStart = dayWindowStart.get();
-            if (now - dayStart > TimeUnit.DAYS.toMillis(1)) {
-                if (dayWindowStart.compareAndSet(dayStart, now)) {
-                    dayCount.set(0);
-                }
-            }
-        }
-
-        public int getRetryAfterSeconds() {
-            long now = System.currentTimeMillis();
-
-            int currentMinute = minuteCount.get();
-            int currentHour = hourCount.get();
-            int currentDay = dayCount.get();
-
-            if (currentMinute >= maxPerMinute) {
-                long minuteStart = minuteWindowStart.get();
-                long minuteRemaining = TimeUnit.MINUTES.toMillis(1) - (now - minuteStart);
-                return (int) Math.max(1, TimeUnit.MILLISECONDS.toSeconds(minuteRemaining));
-            }
-
-            if (currentHour >= maxPerHour) {
-                long hourStart = hourWindowStart.get();
-                long hourRemaining = TimeUnit.HOURS.toMillis(1) - (now - hourStart);
-                return (int) Math.max(1, TimeUnit.MILLISECONDS.toSeconds(hourRemaining));
-            }
-
-            if (currentDay >= maxPerDay) {
-                long dayStart = dayWindowStart.get();
-                long dayRemaining = TimeUnit.DAYS.toMillis(1) - (now - dayStart);
-                return (int) Math.max(1, TimeUnit.MILLISECONDS.toSeconds(dayRemaining));
-            }
-
-            return 60;
-        }
-
-        public Map<String, Object> getStats() {
-            long now = System.currentTimeMillis();
-
-            long minuteStart = minuteWindowStart.get();
-            long hourStart = hourWindowStart.get();
-            long dayStart = dayWindowStart.get();
-
-            long minuteResetIn = Math.max(0, TimeUnit.MINUTES.toMillis(1) - (now - minuteStart));
-            long hourResetIn = Math.max(0, TimeUnit.HOURS.toMillis(1) - (now - hourStart));
-            long dayResetIn = Math.max(0, TimeUnit.DAYS.toMillis(1) - (now - dayStart));
-
-            int currentMinute = minuteCount.get();
-            int currentHour = hourCount.get();
-            int currentDay = dayCount.get();
-
-            Map<String, Object> stats = new ConcurrentHashMap<>();
-            stats.put("minuteLimit", maxPerMinute);
-            stats.put("minuteUsed", currentMinute);
-            stats.put("minuteRemaining", Math.max(0, maxPerMinute - currentMinute));
-            stats.put("minuteResetIn", TimeUnit.MILLISECONDS.toSeconds(minuteResetIn));
-            stats.put("hourLimit", maxPerHour);
-            stats.put("hourUsed", currentHour);
-            stats.put("hourRemaining", Math.max(0, maxPerHour - currentHour));
-            stats.put("hourResetIn", TimeUnit.MILLISECONDS.toSeconds(hourResetIn));
-            stats.put("dayLimit", maxPerDay);
-            stats.put("dayUsed", currentDay);
-            stats.put("dayRemaining", Math.max(0, maxPerDay - currentDay));
-            stats.put("dayResetIn", TimeUnit.MILLISECONDS.toSeconds(dayResetIn));
-
-            return stats;
-        }
-
-        public void reset() {
-            long now = System.currentTimeMillis();
-            minuteWindowStart.set(now);
-            hourWindowStart.set(now);
-            dayWindowStart.set(now);
-            minuteCount.set(0);
-            hourCount.set(0);
-            dayCount.set(0);
-        }
-    }
-
-    private static class EndpointLimit {
-        private final int maxRequestsPerMinute;
-        private final int maxRequestsPerHour;
-        private final int maxRequestsPerDay;
-
-        public EndpointLimit(int perMinute, int perHour, int perDay) {
-            this.maxRequestsPerMinute = perMinute;
-            this.maxRequestsPerHour = perHour;
-            this.maxRequestsPerDay = perDay;
-        }
-
-        public int getMaxRequestsPerMinute() { return maxRequestsPerMinute; }
-        public int getMaxRequestsPerHour() { return maxRequestsPerHour; }
-        public int getMaxRequestsPerDay() { return maxRequestsPerDay; }
     }
 }

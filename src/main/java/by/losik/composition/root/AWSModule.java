@@ -1,9 +1,8 @@
 package by.losik.composition.root;
 
-import by.losik.config.MonitoringConfig;
 import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
-import by.losik.config.RateLimitConfig;
+import by.losik.config.MonitoringConfig;
 import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.resource.AuthResource;
@@ -62,7 +61,7 @@ public class AWSModule extends AbstractModule {
 
     @Provides
     @Singleton
-    private LocalStackConfig createLocalStackConfig(SecretsManagerConfig secretsManagerConfig) {
+    public LocalStackConfig createLocalStackConfig(SecretsManagerConfig secretsManagerConfig) {
 
         return new LocalStackConfig(endpoint, region, accessKey, secretKey,
                 email, openSearchPort, openSearchHost,
@@ -72,7 +71,7 @@ public class AWSModule extends AbstractModule {
 
     @Provides
     @Singleton
-    private SecretsManagerConfig createSecretsManagerConfig() {
+    public SecretsManagerConfig createSecretsManagerConfig() {
 
         return new SecretsManagerConfig(
                 endpoint,
@@ -85,19 +84,13 @@ public class AWSModule extends AbstractModule {
 
     @Provides
     @Singleton
-    private GRPCConfig createGRPCConfig(SecretsManagerConfig secretsManagerConfig) {
+    public GRPCConfig createGRPCConfig(SecretsManagerConfig secretsManagerConfig) {
         return new GRPCConfig(secretsManagerConfig);
     }
 
     @Provides
     @Singleton
-    private RateLimiterFilter createRateLimiterFilter(RateLimitConfig rateLimitConfig) {
-        return new RateLimiterFilter(rateLimitConfig);
-    }
-
-    @Provides
-    @Singleton
-    private WebServer createWebServer(ReminderResource reminderResource,
+    public WebServer createWebServer(ReminderResource reminderResource,
                                       AuthResource authResource,
                                       RateLimiterFilter rateLimiterFilter) {
         String portStr = Optional.ofNullable(System.getenv("WS_PORT"))
@@ -116,14 +109,10 @@ public class AWSModule extends AbstractModule {
 
     @Provides
     @Singleton
-    private MonitoringConfig createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig,
+    public MonitoringConfig createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig,
                                                                  SecretsManagerConfig secretsManagerConfig) {
         return new MonitoringConfig(localStackConfig, secretsManagerConfig);
     }
 
-    @Provides
-    @Singleton
-    private RateLimitConfig crateRateLimitConfig(SecretsManagerConfig secretsManagerConfig) {
-        return new RateLimitConfig(secretsManagerConfig);
-    }
+
 }

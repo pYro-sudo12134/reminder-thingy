@@ -5,10 +5,13 @@ mkdir -p secrets
 mkdir -p opensearch_certs
 mkdir -p postgres-init
 mkdir -p src/main/resources/db/migration
+mkdir -p redis/certs
+mkdir -p redis/config
 
 openssl rand -base64 32 > secrets/nlp_grpc_key.txt
 openssl rand -base64 16 > secrets/opensearch_password.txt
 openssl rand -base64 32 > secrets/postgres_password.txt
+openssl rand -base64 16 > secrets/redis_password.txt
 
 echo "test" > secrets/aws_access_key.txt
 echo "test" > secrets/aws_secret_key.txt
@@ -113,30 +116,107 @@ keytool -importkeystore -srckeystore opensearch_certs/truststore.jks \
 
 cat opensearch_certs/root-ca.pem > opensearch_certs/ca-chain.pem
 
-rm -f opensearch_certs/*.csr opensearch_certs/*.srl opensearch_certs/*.cnf
+openssl genrsa -out redis/certs/root-ca-key.pem 2048
+
+cat > redis/certs/root-ca.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = Redis LocalStack Root CA
+
+[v3_req]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, keyCertSign
+subjectKeyIdentifier = hash
+EOF
+
+openssl req -new -x509 -key redis/certs/root-ca-key.pem \
+  -out redis/certs/root-ca.pem -days 3650 \
+  -config redis/certs/root-ca.cnf
+
+openssl genrsa -out redis/certs/redis-key.pem 2048
+
+cat > redis/certs/redis.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = redis.localhost
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = redis.localhost
+DNS.3 = redis
+IP.1 = 127.0.0.1
+EOF
+
+openssl req -new -key redis/certs/redis-key.pem \
+  -out redis/certs/redis.csr -config redis/certs/redis.cnf
+
+openssl x509 -req -in redis/certs/redis.csr \
+  -CA redis/certs/root-ca.pem -CAkey redis/certs/root-ca-key.pem \
+  -CAcreateserial -out redis/certs/redis.pem -days 3650 \
+  -extensions v3_req -extfile redis/certs/redis.cnf
+
+if [ -f "redis/certs/redis_truststore.jks" ]; then
+    keytool -delete -alias redis-root-ca \
+      -keystore redis/certs/redis_truststore.jks -storepass changeit -noprompt 2>/dev/null || true
+fi
+
+keytool -import -trustcacerts -alias redis-root-ca -file redis/certs/root-ca.pem \
+  -keystore redis/certs/redis_truststore.jks -storepass changeit -noprompt
+
+openssl pkcs12 -export \
+  -in redis/certs/redis.pem \
+  -inkey redis/certs/redis-key.pem \
+  -out redis/certs/redis_keystore.p12 \
+  -name "redis-client" \
+  -password pass:changeit
+
+keytool -importkeystore \
+  -srckeystore redis/certs/redis_keystore.p12 \
+  -srcstoretype PKCS12 \
+  -srcstorepass changeit \
+  -destkeystore redis/certs/redis_keystore.jks \
+  -deststoretype JKS \
+  -deststorepass changeit \
+  -noprompt
 
 cat > postgres-init/01-create-schema.sql << 'EOF'
--- Создание схемы
 CREATE SCHEMA IF NOT EXISTS voice_schema;
 
--- Даем права на схему
 GRANT USAGE ON SCHEMA voice_schema TO postgres;
 GRANT CREATE ON SCHEMA voice_schema TO postgres;
 
--- Устанавливаем поисковый путь по умолчанию для базы
 ALTER DATABASE voice_reminder SET search_path TO voice_schema, public;
 
--- Комментарии
 COMMENT ON SCHEMA voice_schema IS 'Main schema for Voice Reminder Application';
 EOF
 
 cat > postgres-init/02-create-extensions.sql << 'EOF'
--- Создание полезных расширений
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "citext";
 
--- Комментарии к расширениям
 COMMENT ON EXTENSION "uuid-ossp" IS 'Generate UUIDs';
 COMMENT ON EXTENSION "pgcrypto" IS 'Cryptographic functions';
 COMMENT ON EXTENSION "citext" IS 'Case-insensitive text type';
@@ -144,11 +224,9 @@ EOF
 
 cat > src/main/resources/db/migration/V1__create_users_table.sql << 'EOF'
 -- Flyway migration: V1__create_users_table.sql
--- Создание таблицы пользователей
 
 SET search_path TO voice_schema;
 
--- Таблица пользователей
 CREATE TABLE users (
     id BIGSERIAL,
     username VARCHAR(50) NOT NULL,
@@ -161,8 +239,6 @@ CREATE TABLE users (
     PRIMARY KEY (id, created_at),
 
     CONSTRAINT users_username_unique UNIQUE (username, created_at),
-
-    -- Ограничения
     CONSTRAINT chk_username_length CHECK (LENGTH(username) >= 3)
 ) PARTITION BY RANGE (created_at);
 
@@ -178,20 +254,17 @@ CREATE TABLE users_2026q3 PARTITION OF users
 CREATE TABLE users_2026q4 PARTITION OF users
     FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
 
--- Индексы
 CREATE INDEX idx_users_username ON voice_schema.users(username);
 CREATE INDEX idx_users_is_active ON voice_schema.users(is_active);
 CREATE INDEX idx_users_username_part ON voice_schema.users(username);
 CREATE INDEX idx_users_created_at_part ON voice_schema.users(created_at DESC);
 CREATE INDEX idx_users_active_login ON voice_schema.users(is_active, last_login DESC);
 
--- Комментарии
 COMMENT ON TABLE voice_schema.users IS 'Application users table';
 COMMENT ON COLUMN voice_schema.users.username IS 'Unique username for login';
 COMMENT ON COLUMN voice_schema.users.password_hash IS 'BCrypt hashed password';
 COMMENT ON COLUMN voice_schema.users.is_active IS 'Is user account active';
 
--- Триггер для автоматического обновления updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -206,11 +279,9 @@ EOF
 
 cat > src/main/resources/db/migration/V2__insert_default_users.sql << 'EOF'
 -- Flyway migration: V2__insert_default_users.sql
--- Вставка тестовых пользователей
 
 SET search_path TO voice_schema;
 
--- Вставка тестовых пользователей
 -- Пароли: admin123 и user123
 INSERT INTO voice_schema.users (username, password_hash, created_at)
 VALUES
@@ -219,24 +290,26 @@ VALUES
 ON CONFLICT (username, created_at) DO NOTHING;
 EOF
 
-cat > secrets/secrets.json << EOF
-{
-  "NLP_GRPC_API_KEY": "$(cat secrets/nlp_grpc_key.txt)",
-  "OPENSEARCH_PASSWORD": "$(cat secrets/opensearch_password.txt)",
-  "OPENSEARCH_USER": "admin",
-  "OPENSEARCH_HOST": "localstack",
-  "OPENSEARCH_HTTPS_PORT": "9200",
-  "OPENSEARCH_USE_SSL": "true",
-  "OPENSEARCH_TRUSTSTORE_PATH": "/app/certs/truststore.jks",
-  "OPENSEARCH_TRUSTSTORE_PASSWORD": "changeit",
-  "NLP_SERVICE_HOST": "nlp-service",
-  "NLP_SERVICE_PORT": "50051",
-  "GRPC_USE_TLS": "true",
-  "WS_PORT": "8090",
-  "AWS_ACCESS_KEY_ID": "test",
-  "AWS_SECRET_ACCESS_KEY": "test",
-  "POSTGRES_PASSWORD": "$(cat secrets/postgres_password.txt)"
-}
+cat > redis/config/redis.conf << 'EOF'
+bind 0.0.0.0
+port 0
+tls-port 6379
+
+tls-cert-file /usr/local/etc/redis/certs/redis.pem
+tls-key-file /usr/local/etc/redis/certs/redis-key.pem
+tls-ca-cert-file /usr/local/etc/redis/certs/root-ca.pem
+tls-auth-clients optional
+
+requirepass ${REDIS_PASSWORD}
+
+save 60 1
+appendonly yes
+appendfsync everysec
+
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+
+loglevel warning
 EOF
 
 cat > .env << EOF
@@ -283,6 +356,35 @@ FLYWAY_ENABLED=true
 FLYWAY_BASELINE_VERSION=1
 JPA_DDL_GENERATION=none
 JPA_SHOW_SQL=false
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_PASSWORD=$(cat secrets/redis_password.txt)
+REDIS_USE_SSL=true
+REDIS_SSL_VERIFY_MODE=full
+REDIS_SSL_PROTOCOL=TLSv1.2
+EOF
+
+cat > secrets/secrets.json << EOF
+{
+  "NLP_GRPC_API_KEY": "$(cat secrets/nlp_grpc_key.txt)",
+  "OPENSEARCH_PASSWORD": "$(cat secrets/opensearch_password.txt)",
+  "POSTGRES_PASSWORD": "$(cat secrets/postgres_password.txt)",
+  "REDIS_PASSWORD": "$(cat secrets/redis_password.txt)",
+  "OPENSEARCH_USER": "admin",
+  "OPENSEARCH_HOST": "localstack",
+  "OPENSEARCH_HTTPS_PORT": "9200",
+  "OPENSEARCH_USE_SSL": "true",
+  "OPENSEARCH_TRUSTSTORE_PATH": "/app/certs/truststore.jks",
+  "OPENSEARCH_TRUSTSTORE_PASSWORD": "changeit",
+  "NLP_SERVICE_HOST": "nlp-service",
+  "NLP_SERVICE_PORT": "50051",
+  "GRPC_USE_TLS": "true",
+  "WS_PORT": "8090",
+  "AWS_ACCESS_KEY_ID": "test",
+  "AWS_SECRET_ACCESS_KEY": "test"
+}
 EOF
 
 cat > secrets/application.properties << EOF
@@ -306,6 +408,22 @@ opensearch.use_ssl=\${OPENSEARCH_USE_SSL:true}
 opensearch.disable_ssl_verification=\${OPENSEARCH_DISABLE_SSL_VERIFICATION:true}
 opensearch.truststore.path=\${OPENSEARCH_TRUSTSTORE_PATH:/app/certs/truststore.jks}
 opensearch.truststore.password=\${OPENSEARCH_TRUSTSTORE_PASSWORD:changeit}
+
+# Redis
+redis.host=\${REDIS_HOST:redis}
+redis.port=\${REDIS_PORT:6379}
+redis.password=\${REDIS_PASSWORD}
+redis.use_ssl=\${REDIS_USE_SSL:true}
+redis.ssl.truststore.path=/app/certs/redis_truststore.jks
+redis.ssl.truststore.password=changeit
+redis.ssl.keystore.path=/app/certs/redis_keystore.jks
+redis.ssl.keystore.password=changeit
+redis.ssl.verify_mode=\${REDIS_SSL_VERIFY_MODE:full}
+redis.ssl.protocol=\${REDIS_SSL_PROTOCOL:TLSv1.2}
+redis.timeout=\${REDIS_TIMEOUT:2000}
+redis.max.total=\${REDIS_MAX_TOTAL:50}
+redis.max.idle=\${REDIS_MAX_IDLE:10}
+redis.min.idle=\${REDIS_MIN_IDLE:5}
 
 # Server
 server.port=8090
@@ -344,6 +462,9 @@ flyway.validate-on-migrate=true
 flyway.baseline-on-migrate=true
 EOF
 
+rm -f opensearch_certs/*.csr opensearch_certs/*.srl opensearch_certs/*.cnf
+rm -f redis/certs/*.csr redis/certs/*.srl redis/certs/*.cnf
+
 chmod 600 secrets/*.txt
 chmod 644 secrets/*.json
 chmod 644 secrets/*.properties
@@ -351,5 +472,9 @@ chmod 644 .env
 chmod 600 opensearch_certs/*.pem
 chmod 600 opensearch_certs/*.jks
 chmod 600 opensearch_certs/*.p12
+chmod 600 redis/certs/*.pem
+chmod 600 redis/certs/*.jks
+chmod 600 redis/certs/*.p12
 chmod 644 postgres-init/*.sql
-chmod 644 db/migration/*.sql
+chmod 644 src/main/resources/db/migration/*.sql
+chmod 644 redis/config/*.conf

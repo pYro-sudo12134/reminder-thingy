@@ -42,6 +42,7 @@ postgres-init
 db
 nfs-storage
 nfs-config
+redis
 data
 
 hs_err_pid*

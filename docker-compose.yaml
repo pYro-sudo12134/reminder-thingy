@@ -12,16 +12,12 @@ services:
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
-      - NLP_GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
       - GRPC_USE_TLS=true
-      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY:-QxqNj6thFFqzWQe7xPEmynIjjdnkP4bf44RP0dZKbYE=}
-      - GRPC_API_KEY_FILE=/run/secrets/nlp_grpc_key.txt
     volumes:
       - "./nlp/models:/app/models"
       - "./nlp/data:/app/data"
       - "./nlp/nlp_service:/app/nlp_service"
       - "./nlp/proto:/app/proto"
-      - "./secrets:/run/secrets:ro"
     networks:
       - reminder-network
     healthcheck:
@@ -38,6 +34,7 @@ services:
       - "4566:4566"
       - "4510:4510"
       - "4510-4559:4510-4559"
+      - "9200:9200"
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
       - DEBUG=1
@@ -124,8 +121,32 @@ services:
       -c min_wal_size=1GB 
       -c max_wal_size=4GB
 
+  redis:
+    image: redis:7-alpine
+    container_name: redis-reminder
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+      - --requirepass
+      - "${REDIS_PASSWORD}"
+    volumes:
+      - "./redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro"
+      - "./redis/certs:/usr/local/etc/redis/certs:ro"
+      - "./secrets:/run/secrets:ro"
+    networks:
+      - reminder-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   reminder-app:
-    image: pyrodocker1/reminder-backend:1.0
+    image: pyrodocker1/reminder-backend:1.1
     container_name: reminder-app
     ports:
       - "8090:8090"
@@ -140,6 +161,7 @@ services:
       - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx512m -Xms256m
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
+      - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_USER=admin
       - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
       - OPENSEARCH_USE_SSL=false
@@ -170,11 +192,26 @@ services:
       - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
       - SMTP_SSL=false
       - SMTP_TLS=true
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TIMEOUT=2000
+      - REDIS_MAX_TOTAL=50
+      - REDIS_MAX_IDLE=10
+      - REDIS_MIN_IDLE=5
+      - REDIS_USE_SSL=true
+      - REDIS_SSL_TRUSTSTORE_PASSWORD=changeit
+      - REDIS_SSL_KEYSTORE_PASSWORD=changeit
+      - REDIS_SSL_TRUSTSTORE_PATH=/app/redis_certs/redis_truststore.jks
+      - REDIS_SSL_KEYSTORE_PATH=/app/redis_certs/redis_keystore.jks
+      - REDIS_SSL_VERIFY_MODE=full
+      - REDIS_SSL_PROTOCOL=TLSv1.2
     volumes:
       - "./web:/app/web"
-      - "./secrets:/run/secrets:ro"
       - "./secrets/application.properties:/app/config/application.properties:ro"
       - "./opensearch_certs:/app/certs:ro"
+      - "./db/migration:/app/db/migration:ro"
+      - "./redis/certs:/app/redis_certs:ro"
     networks:
       - reminder-network
     depends_on:
@@ -184,29 +221,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
       interval: 60s
       timeout: 10s
       retries: 5
       start_period: 120s
-
-  portainer:
-    image: portainer/portainer-ce:alpine-sts
-    container_name: portainer
-    ports:
-      - "9000:9000"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
-    networks:
-      - reminder-network
-
-secrets:
-  nlp_grpc_key:
-    file: ./secrets/nlp_grpc_key.txt
-  postgres_password:
-    file: ./secrets/postgres_password.txt
 
 networks:
   reminder-network:
@@ -215,8 +237,11 @@ networks:
 volumes:
   postgres_data:
     name: postgres-data
-  portainer_data:
-    name: portainer-data
 
-
-# aws --endpoint-url=http://localhost:4566 opensearch create-domain   --domain-name test-domain --engine-version OpenSearch_2.5   --cluster-config '{"InstanceType":"m3.medium.search","InstanceCount":1}' --ebs-options '{"EBSEnabled":true,"VolumeType":"gp2","VolumeSize":10}'
+secrets:
+  nlp_grpc_key:
+    file: ./secrets/nlp_grpc_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  redis_password:
+    file: ./secrets/redis_password.txt
