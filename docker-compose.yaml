@@ -163,6 +163,13 @@ services:
       - FLYWAY_LOCATIONS=classpath:db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSOWRD:-}
+      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_SSL=true
+      - SMTP_TLS=true
     volumes:
       - "./web:/app/web"
       - "./secrets:/run/secrets:ro"

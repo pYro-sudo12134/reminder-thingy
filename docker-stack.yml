@@ -93,6 +93,7 @@ services:
     environment:
       - SHARED_DIRECTORY=/exports
       - NFS_VERSION=4
+      - DISABLE_ACCESS_CONTROL=true
     networks:
       reminder-network:
         aliases:
@@ -357,6 +358,13 @@ services:
       - FLYWAY_LOCATIONS=classpath:db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSOWRD:-}
+      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_SSL=true
+      - SMTP_TLS=true
     secrets:
       - source: postgres_password
         target: /run/secrets/postgres_password.txt

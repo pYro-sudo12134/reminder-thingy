@@ -24,7 +24,6 @@ import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 import software.amazon.awssdk.services.opensearch.OpenSearchAsyncClient;
 import software.amazon.awssdk.services.s3.S3AsyncClient;
-import software.amazon.awssdk.services.ses.SesAsyncClient;
 import software.amazon.awssdk.services.transcribe.TranscribeAsyncClient;
 
 import javax.net.ssl.SSLContext;
@@ -54,7 +53,7 @@ public class LocalStackConfig {
     private final RestHighLevelClient openSearchClient;
     private final OpenSearchAsyncClient openSearchAsyncClient;
     private final SdkAsyncHttpClient asyncHttpClient;
-    private final SesAsyncClient sesAsyncClient;
+    //private final SesAsyncClient sesAsyncClient;
     private final CloudWatchAsyncClient cloudWatchAsyncClient;
 
     @Inject
@@ -79,7 +78,6 @@ public class LocalStackConfig {
         this.lambdaAsyncClient = createLambdaAsyncClient();
         this.openSearchClient = createOpenSearchClient(secretsManagerConfig);
         this.openSearchAsyncClient = createOpenSearchAsyncClient();
-        this.sesAsyncClient = createSesAsyncClient();
         this.cloudWatchAsyncClient = createCloudWatchAsyncClient();
     }
 
@@ -158,18 +156,6 @@ public class LocalStackConfig {
                         .pathStyleAccessEnabled(true)
                 )
                 .httpClient(asyncHttpClient)
-                .build();
-    }
-
-    private SesAsyncClient createSesAsyncClient() {
-        return SesAsyncClient.builder()
-                .endpointOverride(java.net.URI.create(LOCALSTACK_ENDPOINT))
-                .region(software.amazon.awssdk.regions.Region.of(REGION))
-                .credentialsProvider(software.amazon.awssdk.auth.credentials.StaticCredentialsProvider.create(
-                        software.amazon.awssdk.auth.credentials.AwsBasicCredentials.create(
-                                ACCESS_KEY, SECRET_KEY
-                        )
-                ))
                 .build();
     }
 
@@ -357,10 +343,6 @@ public class LocalStackConfig {
         if (openSearchAsyncClient != null) {
             openSearchAsyncClient.close();
         }
-    }
-
-    public SesAsyncClient getSesAsyncClient() {
-        return sesAsyncClient;
     }
 
 }
