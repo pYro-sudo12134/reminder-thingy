@@ -378,10 +378,10 @@ services:
       - REDIS_MAX_IDLE=10
       - REDIS_MIN_IDLE=5
       - REDIS_USE_SSL=true
-      - REDIS_SSL_TRUSTSTORE_PATH=/app/certs/redis/redis_truststore.jks
       - REDIS_SSL_TRUSTSTORE_PASSWORD=changeit
-      - REDIS_SSL_KEYSTORE_PATH=/app/certs/redis/redis_keystore.jks
       - REDIS_SSL_KEYSTORE_PASSWORD=changeit
+      - REDIS_SSL_TRUSTSTORE_PATH=/app/redis_certs/redis_truststore.jks
+      - REDIS_SSL_KEYSTORE_PATH=/app/redis_certs/redis_keystore.jks
       - REDIS_SSL_VERIFY_MODE=full
       - REDIS_SSL_PROTOCOL=TLSv1.2
     secrets:
@@ -415,7 +415,7 @@ services:
         read_only: true
       - type: bind
         source: ./redis/certs
-        target: /app/certs/redis
+        target: /app/redis_certs
         read_only: true
     networks:
       - reminder-network
