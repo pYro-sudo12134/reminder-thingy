@@ -2,13 +2,14 @@ package by.losik.config;
 
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import org.apache.http.conn.ssl.DefaultHostnameVerifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
 
-import javax.net.ssl.*;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSocketFactory;
+import javax.net.ssl.TrustManagerFactory;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 import java.time.Duration;
@@ -25,11 +26,17 @@ public class RedisConnectionFactory {
 
     public JedisPool createJedisPool() {
         try {
+            System.setProperty("javax.net.debug", "ssl");
+
             JedisPoolConfig poolConfig = createPoolConfig();
 
             if (redisConfig.isUseSsl()) {
+                log.info("Creating SSL JedisPool to {}:{}",
+                        redisConfig.getHost(), redisConfig.getPort());
                 return createSslJedisPool(poolConfig);
             } else {
+                log.info("Creating non-SSL JedisPool to {}:{}",
+                        redisConfig.getHost(), redisConfig.getPort());
                 return createNonSslJedisPool(poolConfig);
             }
         } catch (Exception e) {
@@ -47,104 +54,84 @@ public class RedisConnectionFactory {
         poolConfig.setTestWhileIdle(true);
         poolConfig.setMinEvictableIdleTime(Duration.ofMinutes(5));
         poolConfig.setTimeBetweenEvictionRuns(Duration.ofSeconds(30));
+
         return poolConfig;
     }
 
     private JedisPool createSslJedisPool(JedisPoolConfig poolConfig) throws Exception {
-        SSLParameters sslParameters = new SSLParameters();
-        sslParameters.setProtocols(new String[]{redisConfig.getSslProtocol()});
+        String truststorePath = redisConfig.getSslTruststorePath();
+        String truststorePassword = redisConfig.getSslTruststorePassword();
 
-        HostnameVerifier hostnameVerifier = getHostnameVerifier(redisConfig.getSslVerifyMode());
-        SSLContext sslContext = createSslContext();
-        SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+        log.info("Loading truststore from: {}", truststorePath);
 
-        if (redisConfig.getPassword() != null && !redisConfig.getPassword().isEmpty()) {
-            return new JedisPool(poolConfig,
-                    redisConfig.getHost(),
-                    redisConfig.getPort(),
-                    redisConfig.getTimeout(),
-                    redisConfig.getPassword(),
-                    true,
-                    sslSocketFactory,
-                    sslParameters,
-                    hostnameVerifier);
-        } else {
-            return new JedisPool(poolConfig,
-                    redisConfig.getHost(),
-                    redisConfig.getPort(),
-                    redisConfig.getTimeout(),
-                    true,
-                    sslSocketFactory,
-                    sslParameters,
-                    hostnameVerifier);
-        }
-    }
-
-    private JedisPool createNonSslJedisPool(JedisPoolConfig poolConfig) {
-        if (redisConfig.getPassword() != null && !redisConfig.getPassword().isEmpty()) {
-            return new JedisPool(poolConfig,
-                    redisConfig.getHost(),
-                    redisConfig.getPort(),
-                    redisConfig.getTimeout(),
-                    redisConfig.getPassword());
-        } else {
-            return new JedisPool(poolConfig,
-                    redisConfig.getHost(),
-                    redisConfig.getPort(),
-                    redisConfig.getTimeout());
-        }
-    }
-
-    private SSLContext createSslContext() throws Exception {
-        SSLContext sslContext = SSLContext.getInstance(redisConfig.getSslProtocol());
-
-        TrustManager[] trustManagers = createTrustManagers(
-                redisConfig.getSslTruststorePath(),
-                redisConfig.getSslTruststorePassword());
-
-        KeyManager[] keyManagers = null;
-        if (redisConfig.getSslKeystorePath() != null &&
-                !redisConfig.getSslKeystorePath().isEmpty()) {
-            keyManagers = createKeyManagers(
-                    redisConfig.getSslKeystorePath(),
-                    redisConfig.getSslKeystorePassword());
-        }
-
-        sslContext.init(keyManagers, trustManagers, null);
-        return sslContext;
-    }
-
-    private TrustManager[] createTrustManagers(String truststorePath, String password) throws Exception {
         KeyStore trustStore = KeyStore.getInstance("JKS");
         try (FileInputStream fis = new FileInputStream(truststorePath)) {
-            trustStore.load(fis, password.toCharArray());
+            trustStore.load(fis, truststorePassword.toCharArray());
+            log.info("Truststore loaded successfully");
         }
 
         TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(
                 TrustManagerFactory.getDefaultAlgorithm());
         trustManagerFactory.init(trustStore);
+        log.info("TrustManagerFactory initialized");
 
-        return trustManagerFactory.getTrustManagers();
-    }
+        SSLContext sslContext = SSLContext.getInstance("TLSv1.2");
+        sslContext.init(null, trustManagerFactory.getTrustManagers(), null);
+        SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+        log.info("SSLContext created");
 
-    private KeyManager[] createKeyManagers(String keystorePath, String password) throws Exception {
-        KeyStore keyStore = KeyStore.getInstance("JKS");
-        try (FileInputStream fis = new FileInputStream(keystorePath)) {
-            keyStore.load(fis, password.toCharArray());
-        }
-
-        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(
-                KeyManagerFactory.getDefaultAlgorithm());
-        keyManagerFactory.init(keyStore, password.toCharArray());
-
-        return keyManagerFactory.getKeyManagers();
-    }
-
-    private HostnameVerifier getHostnameVerifier(String verifyMode) {
-        return switch (verifyMode.toLowerCase()) {
-            case "none" -> (hostname, session) -> true;
-            case "full" -> new DefaultHostnameVerifier();
-            default -> new DefaultHostnameVerifier();
+        javax.net.ssl.HostnameVerifier hostnameVerifier = (hostname, session) -> {
+            log.info("Hostname verification for: {}", hostname);
+            return true;
         };
+
+        String password = redisConfig.getPassword();
+        log.info("Creating JedisPool with password: {}",
+                password != null && !password.isEmpty() ? "YES" : "NO");
+
+        if (password != null && !password.isEmpty()) {
+            return new JedisPool(
+                    poolConfig,
+                    redisConfig.getHost(),
+                    redisConfig.getPort(),
+                    5000,
+                    password,
+                    true,
+                    sslSocketFactory,
+                    null,
+                    hostnameVerifier
+            );
+        } else {
+            return new JedisPool(
+                    poolConfig,
+                    redisConfig.getHost(),
+                    redisConfig.getPort(),
+                    5000,
+                    true,
+                    sslSocketFactory,
+                    null,
+                    hostnameVerifier
+            );
+        }
+    }
+
+    private JedisPool createNonSslJedisPool(JedisPoolConfig poolConfig) {
+        String password = redisConfig.getPassword();
+        if (password != null && !password.isEmpty()) {
+            return new JedisPool(
+                    poolConfig,
+                    redisConfig.getHost(),
+                    redisConfig.getPort(),
+                    redisConfig.getTimeout(),
+                    password
+            );
+        } else {
+            return new JedisPool(
+                    poolConfig,
+                    redisConfig.getHost(),
+                    redisConfig.getPort(),
+                    redisConfig.getTimeout()
+            );
+        }
     }
 }

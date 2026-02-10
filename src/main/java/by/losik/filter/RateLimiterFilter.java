@@ -51,10 +51,21 @@ public class RateLimiterFilter implements Filter {
     public void init(FilterConfig filterConfig) {
         try {
             this.jedisPool = redisConnectionFactory.createJedisPool();
-            log.info("RateLimiterFilter initialized with Redis");
+
+            try (Jedis jedis = jedisPool.getResource()) {
+                String pingResult = jedis.ping();
+                log.info("Redis connection test successful: {}", pingResult);
+
+                String testKey = "ratelimit_test:" + System.currentTimeMillis();
+                jedis.setex(testKey, 10, "test_value");
+                String value = jedis.get(testKey);
+                log.info("Redis read/write test: key={}, value={}", testKey, value);
+            }
+
+            log.info("RateLimiterFilter initialized successfully with Redis");
             log.info("Rate limiting enabled: {}", rateLimitConfig.isEnabled());
-            log.info("Redis enabled: {}", rateLimitConfig.isEnabled());
-            log.info("Redis: {}:{}", redisConfig.getHost(), redisConfig.getPort());
+            log.info("Redis: {}:{} (SSL={})",
+                    redisConfig.getHost(), redisConfig.getPort(), redisConfig.isUseSsl());
             log.info("Default limits: {}/min, {}/hour, {}/day",
                     rateLimitConfig.getMaxRequestsPerMinute(),
                     rateLimitConfig.getMaxRequestsPerHour(),

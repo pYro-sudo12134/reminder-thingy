@@ -23,23 +23,26 @@ public class RedisRateLimitConfig {
     private final String sslKeystorePassword;
     private final String sslVerifyMode;
     private final String sslProtocol;
+    private final String sslCipherSuites;
 
     @Inject
     public RedisRateLimitConfig(SecretsManagerConfig secretsManager) {
-        this.host = secretsManager.getSecret("REDIS_HOST", "localhost");
+        this.host = secretsManager.getSecret("REDIS_HOST", "redis");
         this.port = Integer.parseInt(secretsManager.getSecret("REDIS_PORT", "6379"));
         this.password = secretsManager.getSecret("REDIS_PASSWORD", "");
         this.timeout = Integer.parseInt(secretsManager.getSecret("REDIS_TIMEOUT", "2000"));
         this.maxTotal = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_TOTAL", "50"));
         this.maxIdle = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_IDLE", "10"));
         this.minIdle = Integer.parseInt(secretsManager.getSecret("REDIS_MIN_IDLE", "5"));
-        this.useSsl = Boolean.parseBoolean(secretsManager.getSecret("REDIS_USE_SSL", "false"));
-        this.sslTruststorePath = secretsManager.getSecret("REDIS_SSL_TRUSTSTORE_PATH", "/app/certs/redis_truststore.jks");
+        this.useSsl = Boolean.parseBoolean(secretsManager.getSecret("REDIS_USE_SSL", "true"));
+        this.sslTruststorePath = secretsManager.getSecret("REDIS_SSL_TRUSTSTORE_PATH", "/app/redis_certs/redis_truststore.jks");
         this.sslTruststorePassword = secretsManager.getSecret("REDIS_SSL_TRUSTSTORE_PASSWORD", "changeit");
-        this.sslKeystorePath = secretsManager.getSecret("REDIS_SSL_KEYSTORE_PATH", "/app/certs/redis_keystore.jks");
+        this.sslKeystorePath = secretsManager.getSecret("REDIS_SSL_KEYSTORE_PATH", "/app/redis_certs/redis_keystore.jks");
         this.sslKeystorePassword = secretsManager.getSecret("REDIS_SSL_KEYSTORE_PASSWORD", "changeit");
         this.sslVerifyMode = secretsManager.getSecret("REDIS_SSL_VERIFY_MODE", "full");
         this.sslProtocol = secretsManager.getSecret("REDIS_SSL_PROTOCOL", "TLSv1.2");
+        this.sslCipherSuites = secretsManager.getSecret("REDIS_SSL_CIPHER_SUITES",
+                "TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256");
 
         log.info("Redis Rate Limit Config: {}:{}, SSL={}, timeout={}ms",
                 host, port, useSsl, timeout);
@@ -63,4 +66,8 @@ public class RedisRateLimitConfig {
     public String getSslKeystorePassword() { return sslKeystorePassword; }
     public String getSslVerifyMode() { return sslVerifyMode; }
     public String getSslProtocol() { return sslProtocol; }
+
+    public String getSslCipherSuites() {
+        return sslCipherSuites;
+    }
 }

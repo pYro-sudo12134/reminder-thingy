@@ -307,7 +307,7 @@ services:
       - "traefik.enable=false"
 
   reminder-app:
-    image: pyrodocker1/reminder-backend:1.1
+    image: pyrodocker1/reminder-backend:1.1-1
     deploy:
       mode: replicated
       replicas: 2
@@ -341,8 +341,8 @@ services:
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_USER=admin
-      - OPENSEARCH_ADMIN_PASSWORD_FILE=/run/secrets/opensearch_password.txt
-      - OPENSEARCH_USE_SSL=true
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_USE_SSL=false
       - OPENSEARCH_SSL_VERIFICATION_MODE=none
       - OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
       - OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
@@ -354,7 +354,7 @@ services:
       - DB_PORT=5432
       - DB_NAME=voice_reminder
       - DB_USER=${POSTGRES_USER:-postgres}
-      - DB_PASSWORD_FILE=/run/secrets/postgres_password.txt
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_SCHEMA=voice_schema
       - DB_POOL_SIZE=10
       - DB_POOL_MIN_IDLE=5
@@ -372,8 +372,8 @@ services:
       - SMTP_TLS=true
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD_FILE=/run/secrets/redis_password.txt
-      - REDIS_TIMEOUT=2000
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_TIMEOUT=5000
       - REDIS_MAX_TOTAL=50
       - REDIS_MAX_IDLE=10
       - REDIS_MIN_IDLE=5
@@ -384,19 +384,8 @@ services:
       - REDIS_SSL_KEYSTORE_PATH=/app/redis_certs/redis_keystore.jks
       - REDIS_SSL_VERIFY_MODE=full
       - REDIS_SSL_PROTOCOL=TLSv1.2
-    secrets:
-      - source: postgres_password
-        target: /run/secrets/postgres_password.txt
-        mode: 0440
-      - source: opensearch_password
-        target: /run/secrets/opensearch_password.txt
-        mode: 0440
-      - source: redis_password
-        target: /run/secrets/redis_password.txt
-        mode: 0440
-      - source: nlp_grpc_key
-        target: /run/secrets/nlp_grpc_key.txt
-        mode: 0440
+      - REDIS_SSL_ENABLED_PROTOCOLS=TLSv1.2,TLSv1.3
+      - REDIS_SSL_CIPHER_SUITES=TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256
     volumes:
       - type: volume
         source: nfs_app_static
@@ -495,7 +484,9 @@ services:
       - redis-server
       - /usr/local/etc/redis/redis.conf
       - --requirepass
-      - "$$(cat /run/secrets/redis_password.txt)"
+      - "${REDIS_PASSWORD}"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
     secrets:
       - source: redis_password
         target: /run/secrets/redis_password.txt
@@ -509,10 +500,13 @@ services:
         source: ./redis/certs
         target: /usr/local/etc/redis/certs
         read_only: true
+    ports:
+      - "6379:6379"
+      - "6380:6380"
     networks:
       - reminder-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "ping"]
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "--pass", "${REDIS_PASSWORD}", "ping"]  # Исправлен healthcheck
       interval: 10s
       timeout: 5s
       retries: 3
