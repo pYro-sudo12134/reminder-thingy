@@ -381,4 +381,57 @@ public class ReminderResource {
             }
         }
     }
+
+    @GET
+    @Path("/autocomplete")
+    public void autocompleteReminders(
+            @Suspended AsyncResponse asyncResponse,
+            @QueryParam("userId") String userId,
+            @QueryParam("query") String query,
+            @QueryParam("limit") @DefaultValue("5") int limit) {
+
+        log.info("Autocomplete for user: {}, query: {}", userId, query);
+
+        if (userId == null || userId.isBlank() || query == null || query.isBlank()) {
+            Map<String, Object> errorResponse = new HashMap<>();
+            errorResponse.put("error", "userId and query are required");
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(errorResponse)
+                    .build());
+            return;
+        }
+
+        openSearchService.autocompleteReminders(userId, query, limit)
+                .thenApply(result -> {
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("userId", result.userId());
+                    response.put("query", result.query());
+                    response.put("total", result.total());
+                    response.put("timestamp", LocalDateTime.now().toString());
+
+                    List<Map<String, Object>> suggestions = result.suggestions().stream()
+                            .map(suggestion -> {
+                                Map<String, Object> suggestionMap = new HashMap<>();
+                                suggestionMap.put("reminderId", suggestion.reminderId());
+                                suggestionMap.put("action", suggestion.action());
+                                suggestionMap.put("text", suggestion.text());
+                                suggestionMap.put("score", suggestion.score());
+                                return suggestionMap;
+                            })
+                            .collect(Collectors.toList());
+
+                    response.put("suggestions", suggestions);
+                    return Response.ok(response).build();
+                })
+                .exceptionally(ex -> {
+                    log.error("Error in autocomplete", ex);
+                    Map<String, Object> errorResponse = new HashMap<>();
+                    errorResponse.put("error", "Failed to autocomplete");
+                    errorResponse.put("message", ex.getMessage());
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(errorResponse)
+                            .build();
+                })
+                .thenAccept(asyncResponse::resume);
+    }
 }

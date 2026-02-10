@@ -1,6 +1,7 @@
 package by.losik.service;
 
 import by.losik.config.LocalStackConfig;
+import by.losik.dto.AutocompleteResult;
 import by.losik.dto.ReminderRecord;
 import by.losik.dto.TranscriptionResult;
 import com.google.inject.Inject;
@@ -27,6 +28,8 @@ import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.index.query.RangeQueryBuilder;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.builder.SearchSourceBuilder;
+import org.opensearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.opensearch.search.fetch.subphase.highlight.HighlightField;
 import org.opensearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,6 +78,30 @@ public class OpenSearchService {
 
             XContentBuilder mapping = XContentFactory.jsonBuilder()
                     .startObject()
+                    .startObject("settings")
+                    .startObject("analysis")
+                    .startObject("analyzer")
+                    .startObject("autocomplete_analyzer")
+                    .field("type", "custom")
+                    .field("tokenizer", "standard")
+                    .field("filter", new String[]{"lowercase", "autocomplete_filter"})
+                    .endObject()
+                    .startObject("autocomplete_search_analyzer")
+                    .field("type", "custom")
+                    .field("tokenizer", "standard")
+                    .field("filter", new String[]{"lowercase"})
+                    .endObject()
+                    .endObject()
+                    .startObject("filter")
+                    .startObject("autocomplete_filter")
+                    .field("type", "edge_ngram")
+                    .field("min_gram", 2)
+                    .field("max_gram", 10)
+                    .endObject()
+                    .endObject()
+                    .endObject()
+                    .endObject()
+                    .startObject("mappings")
                     .startObject("properties")
                     .startObject("user_id")
                     .field("type", "keyword")
@@ -82,10 +109,26 @@ public class OpenSearchService {
                     .startObject("original_text")
                     .field("type", "text")
                     .field("analyzer", "russian")
+                    .field("search_analyzer", "russian")
+                    .startObject("fields")
+                    .startObject("autocomplete")
+                    .field("type", "text")
+                    .field("analyzer", "autocomplete_analyzer")
+                    .field("search_analyzer", "autocomplete_search_analyzer")
+                    .endObject()
+                    .endObject()
                     .endObject()
                     .startObject("extracted_action")
                     .field("type", "text")
                     .field("analyzer", "russian")
+                    .field("search_analyzer", "russian")
+                    .startObject("fields")
+                    .startObject("autocomplete")
+                    .field("type", "text")
+                    .field("analyzer", "autocomplete_analyzer")
+                    .field("search_analyzer", "autocomplete_search_analyzer")
+                    .endObject()
+                    .endObject()
                     .endObject()
                     .startObject("scheduled_time")
                     .field("type", "date")
@@ -112,12 +155,13 @@ public class OpenSearchService {
                     .field("format", "strict_date_optional_time||epoch_millis")
                     .endObject()
                     .endObject()
+                    .endObject()
                     .endObject();
 
-            request.mapping(mapping);
+            request.source(mapping);
             var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
             if (response != null && response.index() != null) {
-                log.info("Created reminder index: {}", response.index());
+                log.info("Created reminder index with autocomplete support: {}", response.index());
             } else {
                 log.warn("Create reminder index response was null");
             }
@@ -130,6 +174,7 @@ public class OpenSearchService {
 
             XContentBuilder mapping = XContentFactory.jsonBuilder()
                     .startObject()
+                    .startObject("mappings")
                     .startObject("properties")
                     .startObject("original_audio_key")
                     .field("type", "keyword")
@@ -159,9 +204,10 @@ public class OpenSearchService {
                     .field("format", "strict_date_optional_time||epoch_millis")
                     .endObject()
                     .endObject()
+                    .endObject()
                     .endObject();
 
-            request.mapping(mapping);
+            request.source(mapping);
             var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
             if (response != null && response.index() != null) {
                 log.info("Created transcription index: {}", response.index());
@@ -515,6 +561,76 @@ public class OpenSearchService {
                 }
             } catch (IOException e) {
                 log.error("Failed to cleanup indices", e);
+            }
+        });
+    }
+
+    public CompletableFuture<AutocompleteResult> autocompleteReminders(
+            String userId, String query, int limit) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+                BoolQueryBuilder boolQuery = QueryBuilders.boolQuery()
+                        .must(QueryBuilders.termQuery("user_id", userId))
+                        .should(QueryBuilders.matchQuery("extracted_action.autocomplete", query).boost(2.0f))
+                        .should(QueryBuilders.matchQuery("original_text.autocomplete", query).boost(1.5f))
+                        .should(QueryBuilders.matchQuery("extracted_action", query).boost(1.0f))
+                        .should(QueryBuilders.matchQuery("original_text", query).boost(0.8f));
+
+                sourceBuilder.query(boolQuery);
+                sourceBuilder.size(limit);
+                sourceBuilder.sort("_score", SortOrder.DESC);
+                sourceBuilder.sort("created_at", SortOrder.DESC);
+
+                HighlightBuilder highlightBuilder = new HighlightBuilder();
+                highlightBuilder.field("extracted_action");
+                highlightBuilder.field("original_text");
+                highlightBuilder.preTags("<em>");
+                highlightBuilder.postTags("</em>");
+                highlightBuilder.fragmentSize(50);
+                highlightBuilder.numOfFragments(1);
+                sourceBuilder.highlighter(highlightBuilder);
+
+                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                        .source(sourceBuilder);
+
+                SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
+
+                List<AutocompleteResult.Suggestion> suggestions =
+                        Arrays.stream(response.getHits().getHits())
+                                .map(hit -> {
+                                    Map<String, Object> source = hit.getSourceAsMap();
+                                    String action = (String) source.get("extracted_action");
+                                    String text = (String) source.get("original_text");
+
+                                    Map<String, HighlightField> highlights = hit.getHighlightFields();
+                                    if (highlights != null && !highlights.isEmpty()) {
+                                        HighlightField highlight = highlights.values().iterator().next();
+                                        if (highlight != null && highlight.getFragments() != null) {
+                                            action = highlight.getFragments()[0].string();
+                                        }
+                                    }
+
+                                    return new AutocompleteResult.Suggestion(
+                                            hit.getId(),
+                                            action != null ? action : "",
+                                            text != null ? text : "",
+                                            hit.getScore()
+                                    );
+                                })
+                                .collect(Collectors.toList());
+
+                return new AutocompleteResult(
+                        userId,
+                        query,
+                        suggestions,
+                        (int) response.getHits().getTotalHits().value
+                );
+
+            } catch (IOException e) {
+                log.error("Failed to autocomplete reminders", e);
+                throw new RuntimeException("Failed to autocomplete reminders", e);
             }
         });
     }

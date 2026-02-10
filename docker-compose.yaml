@@ -127,6 +127,7 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+      - "6380:6380"
     command:
       - redis-server
       - /usr/local/etc/redis/redis.conf
@@ -135,18 +136,17 @@ services:
     volumes:
       - "./redis/config/redis.conf:/usr/local/etc/redis/redis.conf:ro"
       - "./redis/certs:/usr/local/etc/redis/certs:ro"
-      - "./secrets:/run/secrets:ro"
     networks:
       - reminder-network
     healthcheck:
-      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "ping"]
+      test: ["CMD", "redis-cli", "--tls", "--cacert", "/usr/local/etc/redis/certs/root-ca.pem", "--pass", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 15s
 
   reminder-app:
-    image: pyrodocker1/reminder-backend:1.1
+    image: pyrodocker1/reminder-backend:1.1-1
     container_name: reminder-app
     ports:
       - "8090:8090"
@@ -195,7 +195,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
-      - REDIS_TIMEOUT=2000
+      - REDIS_TIMEOUT=5000
       - REDIS_MAX_TOTAL=50
       - REDIS_MAX_IDLE=10
       - REDIS_MIN_IDLE=5
@@ -206,12 +206,15 @@ services:
       - REDIS_SSL_KEYSTORE_PATH=/app/redis_certs/redis_keystore.jks
       - REDIS_SSL_VERIFY_MODE=full
       - REDIS_SSL_PROTOCOL=TLSv1.2
+      - REDIS_SSL_ENABLED_PROTOCOLS=TLSv1.2,TLSv1.3
+      - REDIS_SSL_CIPHER_SUITES=TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256
     volumes:
       - "./web:/app/web"
       - "./secrets/application.properties:/app/config/application.properties:ro"
       - "./opensearch_certs:/app/certs:ro"
       - "./db/migration:/app/db/migration:ro"
       - "./redis/certs:/app/redis_certs:ro"
+      - "./secrets/redis_password.txt:/run/secrets/redis_password:ro"
     networks:
       - reminder-network
     depends_on:

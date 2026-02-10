@@ -116,7 +116,7 @@ public class SecretsManagerConfig implements AutoCloseable {
 
     private boolean loadFromDockerSecrets() {
         try {
-            Path dockerSecretsPath = Paths.get("/run/secrets");
+            Path dockerSecretsPath = Paths.get("/app/secrets");
             if (!Files.exists(dockerSecretsPath) || !Files.isDirectory(dockerSecretsPath)) {
                 return false;
             }
@@ -158,6 +158,7 @@ public class SecretsManagerConfig implements AutoCloseable {
                     "secrets/",
                     "../secrets/",
                     "/app/secrets/",
+                    "/app/redis_certs/",
                     System.getProperty("user.dir") + "/secrets/"
             };
 

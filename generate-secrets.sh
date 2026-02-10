@@ -143,7 +143,7 @@ openssl req -new -x509 -key redis/certs/root-ca-key.pem \
 
 openssl genrsa -out redis/certs/redis-key.pem 2048
 
-cat > redis/certs/redis.cnf << EOF
+cat > redis/certs/redis.cnf << 'EOF'
 [req]
 distinguished_name = req_distinguished_name
 req_extensions = v3_req
@@ -154,7 +154,7 @@ C = US
 ST = New York
 L = New York
 O = LocalStack
-CN = redis.localhost
+CN = redis
 
 [v3_req]
 basicConstraints = CA:FALSE
@@ -163,9 +163,10 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = localhost
+DNS.1 = redis
 DNS.2 = redis.localhost
-DNS.3 = redis
+DNS.3 = localhost
+DNS.4 = 127.0.0.1
 IP.1 = 127.0.0.1
 EOF
 
@@ -201,7 +202,7 @@ keytool -importkeystore \
   -deststorepass changeit \
   -noprompt
 
-cat > postgres-init/01-create-schema.sql << 'EOF'
+cat > postgres-init/01-create-schema.sql << EOF
 CREATE SCHEMA IF NOT EXISTS voice_schema;
 
 GRANT USAGE ON SCHEMA voice_schema TO postgres;
@@ -292,15 +293,18 @@ EOF
 
 cat > redis/config/redis.conf << 'EOF'
 bind 0.0.0.0
-port 0
+port 6380
 tls-port 6379
 
 tls-cert-file /usr/local/etc/redis/certs/redis.pem
 tls-key-file /usr/local/etc/redis/certs/redis-key.pem
 tls-ca-cert-file /usr/local/etc/redis/certs/root-ca.pem
 tls-auth-clients optional
-
-requirepass ${REDIS_PASSWORD}
+tls-protocols "TLSv1.2 TLSv1.3"
+tls-ciphers "DEFAULT:@SECLEVEL=1"
+tls-session-caching yes
+tls-session-cache-timeout 300
+tls-prefer-server-ciphers yes
 
 save 60 1
 appendonly yes
@@ -309,7 +313,7 @@ appendfsync everysec
 maxmemory 256mb
 maxmemory-policy allkeys-lru
 
-loglevel warning
+loglevel notice
 EOF
 
 cat > .env << EOF
@@ -360,10 +364,15 @@ JPA_SHOW_SQL=false
 # Redis
 REDIS_HOST=redis
 REDIS_PORT=6379
+REDIS_NONSSL_PORT=6380
 REDIS_PASSWORD=$(cat secrets/redis_password.txt)
 REDIS_USE_SSL=true
 REDIS_SSL_VERIFY_MODE=full
 REDIS_SSL_PROTOCOL=TLSv1.2
+REDIS_TIMEOUT=5000
+REDIS_MAX_TOTAL=50
+REDIS_MAX_IDLE=10
+REDIS_MIN_IDLE=5
 EOF
 
 cat > secrets/secrets.json << EOF
