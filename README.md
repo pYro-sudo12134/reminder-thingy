@@ -4,7 +4,7 @@ That is a thingy for writing the reminders.
 
 Processing flow:
 
-Audio input → S3 → Transcribe → Parsing → OpenSearch → EventBridge → SES
+Audio input → S3 → Transcribe → Parsing → OpenSearch → EventBridge → SMTP client
 
 ### How to launch
 
