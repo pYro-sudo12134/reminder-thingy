@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder Metrics Configuration
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+  ProcessingQueueName:
+    Type: String
+    Default: dev-reminder-queue
+  DLQName:
+    Type: String
+    Default: dev-reminder-dlq
+  LambdaFunctionName:
+    Type: String
+    Default: send-reminder-lambda
+  OpenSearchDomainName:
+    Type: String
+    Default: reminder-domain
+  S3BucketName:
+    Type: String
+    Default: voice-reminder-audio-bucket
+
+Resources:
+  RemindersHighRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-reminders-high-rate
+      AlarmDescription: "High rate of reminder creation"
+      Namespace: "VoiceReminderApp"
+      MetricName: "reminders.created"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: service
+          Value: reminder-app
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  EmailsHighRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-emails-high-rate
+      AlarmDescription: "High rate of email sending"
+      Namespace: "VoiceReminderApp"
+      MetricName: "emails.sent"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 30
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: service
+          Value: reminder-app
+        - Name: type
+          Value: notification
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+Outputs:
+  MetricsEnabled:
+    Description: Metrics are enabled
+    Value: "true"

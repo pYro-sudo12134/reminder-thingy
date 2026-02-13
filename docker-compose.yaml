@@ -69,6 +69,7 @@ services:
       - "./localstack_data:/var/lib/localstack"
       - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
       - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
+      - "./metrics-config.yaml:/etc/localstack/init/ready.d/metrics-config.yaml"
       - "./opensearch_certs:/etc/localstack/opensearch/certs:ro"
       - "./secrets:/run/secrets:ro"
     mem_reservation: 2g
