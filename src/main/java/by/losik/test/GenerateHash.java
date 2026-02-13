@@ -1,4 +1,4 @@
-package by.losik;
+package by.losik.test;
 
 import org.mindrot.jbcrypt.BCrypt;
 

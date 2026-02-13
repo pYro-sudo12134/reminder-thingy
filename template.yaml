@@ -681,6 +681,25 @@ Resources:
                     "title": "Recent Lambda Errors",
                     "view": "table"
                   }
+                },
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 18,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["VoiceReminderApp", "reminders.created", "service", "reminder-app", { "stat": "Sum", "label": "Reminders Created" }],
+                      [".", "emails.sent", "service", "reminder-app", "type", "notification", { "stat": "Sum", "label": "Emails Sent" }],
+                      [".", "audio.uploaded", "bucket", "voice-reminder-audio-bucket", { "stat": "Sum", "label": "Audio Uploads" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "Voice Reminder - Business Metrics",
+                    "period": 300
+                  }
                 }
               ]
             }
