@@ -12,6 +12,8 @@ import io.micrometer.core.instrument.binder.jvm.JvmGcMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics;
 import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
+import io.micrometer.prometheus.PrometheusConfig;
+import io.micrometer.prometheus.PrometheusMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
@@ -24,12 +26,14 @@ public class MonitoringConfig implements AutoCloseable {
     private final LocalStackConfig localStackConfig;
     private final SecretsManagerConfig secretsManagerConfig;
     private MeterRegistry meterRegistry;
+    private final PrometheusMeterRegistry prometheusRegistry;
 
     @Inject
     public MonitoringConfig(LocalStackConfig localStackConfig,
                             SecretsManagerConfig secretsManagerConfig) {
         this.localStackConfig = localStackConfig;
         this.secretsManagerConfig = secretsManagerConfig;
+        this.prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         initMetrics();
     }
 
@@ -75,10 +79,19 @@ public class MonitoringConfig implements AutoCloseable {
         new JvmGcMetrics().bindTo(meterRegistry);
         new ProcessorMetrics().bindTo(meterRegistry);
         new JvmThreadMetrics().bindTo(meterRegistry);
+        new ClassLoaderMetrics().bindTo(prometheusRegistry);
+        new JvmMemoryMetrics().bindTo(prometheusRegistry);
+        new JvmGcMetrics().bindTo(prometheusRegistry);
+        new ProcessorMetrics().bindTo(prometheusRegistry);
+        new JvmThreadMetrics().bindTo(prometheusRegistry);
     }
 
     public MeterRegistry getMeterRegistry() {
         return meterRegistry;
+    }
+
+    public PrometheusMeterRegistry getPrometheusRegistry() {
+        return prometheusRegistry;
     }
 
     public boolean isMetricsEnabled() {

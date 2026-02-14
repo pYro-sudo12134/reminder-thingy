@@ -20,6 +20,12 @@ Parameters:
   S3BucketName:
     Type: String
     Default: voice-reminder-audio-bucket
+  ApiGatewayName:
+    Type: String
+    Default: voice-reminder-api
+  EventBusName:
+    Type: String
+    Default: default
 
 Resources:
   RemindersHighRateAlarm:
@@ -60,7 +66,221 @@ Resources:
       AlarmActions:
         - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
 
+  ApiGatewayHighRequestCountAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-apigateway-high-requests
+      AlarmDescription: "High number of API requests"
+      Namespace: "AWS/ApiGateway"
+      MetricName: "Count"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGatewayName
+        - Name: Stage
+          Value: !Ref EnvironmentName
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  ApiGatewayHighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-apigateway-high-errors
+      AlarmDescription: "High error rate in API Gateway"
+      Metrics:
+        - Id: e1
+          Label: "Error Rate"
+          Expression: "m1 / m2 * 100"
+        - Id: m1
+          MetricStat:
+            Metric:
+              Namespace: "AWS/ApiGateway"
+              MetricName: "4XXError"
+              Dimensions:
+                - Name: ApiName
+                  Value: !Ref ApiGatewayName
+                - Name: Stage
+                  Value: !Ref EnvironmentName
+            Period: 300
+            Stat: Sum
+        - Id: m2
+          MetricStat:
+            Metric:
+              Namespace: "AWS/ApiGateway"
+              MetricName: "Count"
+              Dimensions:
+                - Name: ApiName
+                  Value: !Ref ApiGatewayName
+                - Name: Stage
+                  Value: !Ref EnvironmentName
+            Period: 300
+            Stat: Sum
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 2
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  ApiGatewayHighLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-apigateway-high-latency
+      AlarmDescription: "High latency in API Gateway"
+      Namespace: "AWS/ApiGateway"
+      MetricName: "Latency"
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ApiName
+          Value: !Ref ApiGatewayName
+        - Name: Stage
+          Value: !Ref EnvironmentName
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  EventBridgeHighFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-eventbridge-high-failures
+      AlarmDescription: "High number of failed EventBridge invocations"
+      Namespace: "AWS/Events"
+      MetricName: "FailedInvocations"
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: RuleName
+          Value: !Sub ${EnvironmentName}-transcribe-failure-rule
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  EventBridgeLowInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-eventbridge-low-invocations
+      AlarmDescription: "Low number of EventBridge invocations"
+      Namespace: "AWS/Events"
+      MetricName: "Invocations"
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      Dimensions:
+        - Name: RuleName
+          Value: !Sub ${EnvironmentName}-transcribe-failure-rule
+      AlarmActions:
+        - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+
+  ApiGatewayDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-apigateway-dashboard
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 0,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/ApiGateway", "Count", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum" }]
+                    ],
+                    "period": 300,
+                    "stat": "Sum",
+                    "region": "${AWSRegion}",
+                    "title": "API Gateway Request Count"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 0,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/ApiGateway", "4XXError", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum", "color": "#ff9900" }],
+                      ["AWS/ApiGateway", "5XXError", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum", "color": "#d13212" }]
+                    ],
+                    "period": 300,
+                    "stat": "Sum",
+                    "region": "${AWSRegion}",
+                    "title": "API Gateway Errors"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/ApiGateway", "Latency", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Average" }],
+                      [".", "IntegrationLatency", ".", ".", ".", ".", { "stat": "Average" }]
+                    ],
+                    "period": 300,
+                    "stat": "Average",
+                    "region": "${AWSRegion}",
+                    "title": "API Gateway Latency"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12,
+                  "y": 6,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/Events", "Invocations", "RuleName", "${TranscribeRule}", { "stat": "Sum" }],
+                      [".", "FailedInvocations", ".", ".", { "stat": "Sum" }],
+                      [".", "TriggeredRules", ".", ".", { "stat": "Sum" }]
+                    ],
+                    "period": 300,
+                    "stat": "Sum",
+                    "region": "${AWSRegion}",
+                    "title": "EventBridge Metrics"
+                  }
+                }
+              ]
+            }
+          - ApiName: !Ref ApiGatewayName
+            Stage: !Ref EnvironmentName
+            TranscribeRule: !Sub ${EnvironmentName}-transcribe-failure-rule
+            AWSRegion: !Ref AWS::Region
+
+  TestMetricsGenerator:
+    Type: AWS::CloudFormation::CustomResource
+    Properties:
+      ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:test-metrics-generator
+      ApiName: !Ref ApiGatewayName
+      Environment: !Ref EnvironmentName
+
 Outputs:
   MetricsEnabled:
     Description: Metrics are enabled
+    Value: "true"
+
+  ApiGatewayDashboardUrl:
+    Description: URL for API Gateway Dashboard
+    Value: !Sub https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-apigateway-dashboard
+
+  EventBridgeAlarmsCreated:
+    Description: EventBridge alarms created
     Value: "true"

@@ -52,6 +52,7 @@ dependencies {
 
     implementation 'io.micrometer:micrometer-core:1.12.4'
     implementation 'io.micrometer:micrometer-registry-cloudwatch2:1.12.4'
+    implementation 'io.micrometer:micrometer-registry-prometheus:1.12.4'
     implementation 'software.amazon.awssdk:cloudwatch:2.25.38'
 
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
