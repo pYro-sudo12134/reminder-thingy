@@ -31,6 +31,7 @@ public class SessionAuthFilter implements ContainerRequestFilter {
         PUBLIC_PATHS.add("auth/me");
         PUBLIC_PATHS.add("auth/register");
         PUBLIC_PATHS.add("health");
+        PUBLIC_PATHS.add("metrics");
     }
 
     @Override

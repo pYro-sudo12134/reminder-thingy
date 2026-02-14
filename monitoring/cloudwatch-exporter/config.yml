@@ -1,0 +1,326 @@
+---
+region: us-east-1
+metrics:
+  - aws_namespace: AWS/SQS
+    aws_metric_name: ApproximateNumberOfMessagesVisible
+    aws_dimensions: [QueueName]
+    aws_statistics: [Average, Sum, Maximum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: ApproximateNumberOfMessagesNotVisible
+    aws_dimensions: [QueueName]
+    aws_statistics: [Average, Sum, Maximum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: ApproximateNumberOfMessagesDelayed
+    aws_dimensions: [QueueName]
+    aws_statistics: [Average, Sum, Maximum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: ApproximateAgeOfOldestMessage
+    aws_dimensions: [QueueName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: NumberOfMessagesSent
+    aws_dimensions: [QueueName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: NumberOfMessagesReceived
+    aws_dimensions: [QueueName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: NumberOfMessagesDeleted
+    aws_dimensions: [QueueName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SQS
+    aws_metric_name: SentMessageSize
+    aws_dimensions: [QueueName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: CPUUtilization
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: FreeStorageSpace
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Minimum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: JVMMemoryPressure
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: ClusterStatus.green
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: ClusterStatus.yellow
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: ClusterStatus.red
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: ReadLatency
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: WriteLatency
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: IndexingLatency
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ES
+    aws_metric_name: SearchLatency
+    aws_dimensions: [DomainName, ClientId]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ApiGateway
+    aws_metric_name: Count
+    aws_dimensions: [ApiName, Method, Resource, Stage]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/ApiGateway
+    aws_metric_name: 4XXError
+    aws_dimensions: [ApiName, Method, Resource, Stage]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/ApiGateway
+    aws_metric_name: 5XXError
+    aws_dimensions: [ApiName, Method, Resource, Stage]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/ApiGateway
+    aws_metric_name: Latency
+    aws_dimensions: [ApiName, Method, Resource, Stage]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/ApiGateway
+    aws_metric_name: IntegrationLatency
+    aws_dimensions: [ApiName, Method, Resource, Stage]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/Lambda
+    aws_metric_name: Invocations
+    aws_dimensions: [FunctionName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Lambda
+    aws_metric_name: Errors
+    aws_dimensions: [FunctionName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Lambda
+    aws_metric_name: Throttles
+    aws_dimensions: [FunctionName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Lambda
+    aws_metric_name: Duration
+    aws_dimensions: [FunctionName]
+    aws_statistics: [Average, Maximum, Minimum]
+
+  - aws_namespace: AWS/Lambda
+    aws_metric_name: IteratorAge
+    aws_dimensions: [FunctionName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/Events
+    aws_metric_name: Invocations
+    aws_dimensions: [RuleName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Events
+    aws_metric_name: FailedInvocations
+    aws_dimensions: [RuleName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Events
+    aws_metric_name: TriggeredRules
+    aws_dimensions: [RuleName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Events
+    aws_metric_name: MatchedEvents
+    aws_dimensions: [EventBusName]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/Events
+    aws_metric_name: InvocationDelay
+    aws_dimensions: [RuleName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/S3
+    aws_metric_name: FirstByteLatency
+    aws_dimensions: [BucketName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/S3
+    aws_metric_name: TotalRequestLatency
+    aws_dimensions: [BucketName]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: AWS/SES
+    aws_metric_name: Send
+    aws_dimensions: [ConfigurationSet]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SES
+    aws_metric_name: Bounce
+    aws_dimensions: [ConfigurationSet]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SES
+    aws_metric_name: Complaint
+    aws_dimensions: [ConfigurationSet]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SES
+    aws_metric_name: Delivery
+    aws_dimensions: [ConfigurationSet]
+    aws_statistics: [Sum]
+
+  - aws_namespace: AWS/SES
+    aws_metric_name: SendDelay
+    aws_dimensions: [ConfigurationSet]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: reminders.created
+    aws_dimensions: [service]
+    aws_statistics: [Sum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: emails.sent
+    aws_dimensions: [service, type]
+    aws_statistics: [Sum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: audio.uploaded
+    aws_dimensions: [bucket]
+    aws_statistics: [Sum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: reminders.processing.time
+    aws_dimensions: [stage]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: transcription.latency
+    aws_dimensions: [language]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: api.latency
+    aws_dimensions: [endpoint, method]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: nlp.inference.time
+    aws_dimensions: [model_type]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.memory.used.value
+    aws_dimensions: [area, id]
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.memory.committed.value
+    aws_dimensions: [area, id]
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.memory.max.value
+    aws_dimensions: [area, id]
+    aws_statistics: [Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.count
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [Sum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.sum
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [Sum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.max
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.avg
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.p95
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [p95]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.gc.pause.p99
+    aws_dimensions: [gc, action, cause]
+    aws_statistics: [p99]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.threads.live.value
+    aws_statistics: [Average, Maximum]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.threads.states.value
+    aws_dimensions: [state]
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: jvm.classes.loaded.value
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: process.cpu.usage.value
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: system.cpu.usage.value
+    aws_statistics: [Average]
+
+  - aws_namespace: VoiceReminderApp
+    aws_metric_name: system.load.average.1m.value
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/SecretsManager
+    aws_metric_name: SecretsManagerSecretCount
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/SecretsManager
+    aws_metric_name: SecretsManagerSecretVersionCount
+    aws_dimensions: [SecretId]
+    aws_statistics: [Average]
+
+  - aws_namespace: AWS/SecretsManager
+    aws_metric_name: DaysToExpiration
+    aws_dimensions: [SecretId]
+    aws_statistics: [Minimum]
+
+  - aws_namespace: AWS/KMS
+    aws_metric_name: SecondsUntilKeyMaterialExpiration
+    aws_dimensions: [KeyId]
+    aws_statistics: [Minimum]

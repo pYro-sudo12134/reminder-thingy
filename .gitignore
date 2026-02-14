@@ -15,7 +15,6 @@
 *.pyc
 *.pt
 *.pkl
-*.json
 .grpc_api_key
 .jwt_secret
 .env
@@ -44,6 +43,7 @@ nfs-storage
 nfs-config
 redis
 data
+nlp/data
 
 hs_err_pid*
 replay_pid*

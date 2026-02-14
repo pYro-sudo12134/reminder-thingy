@@ -6,6 +6,7 @@ import by.losik.config.MonitoringConfig;
 import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.resource.AuthResource;
+import by.losik.resource.MetricsResource;
 import by.losik.resource.ReminderResource;
 import by.losik.server.WebServer;
 import com.google.inject.AbstractModule;
@@ -92,6 +93,7 @@ public class AWSModule extends AbstractModule {
     @Singleton
     public WebServer createWebServer(ReminderResource reminderResource,
                                       AuthResource authResource,
+                                      MetricsResource metricsResource,
                                       RateLimiterFilter rateLimiterFilter) {
         String portStr = Optional.ofNullable(System.getenv("WS_PORT"))
                 .or(() -> Optional.ofNullable(System.getProperty("WS_PORT")))
@@ -104,7 +106,7 @@ public class AWSModule extends AbstractModule {
             webServerPort = 8090;
         }
 
-        return new WebServer(webServerPort, reminderResource, authResource, rateLimiterFilter);
+        return new WebServer(webServerPort, reminderResource, authResource, metricsResource, rateLimiterFilter);
     }
 
     @Provides

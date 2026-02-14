@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.reminder.local`)"
+      - "traefik.http.routers.prometheus.entrypoints=web"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_BASIC_ENABLED=true
+      - GF_AUTH_DISABLE_LOGIN_FORM=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_SECURITY_ALLOW_EMBEDDING=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
+    networks:
+      - reminder_reminder-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.reminder.local`)"
+      - "traefik.http.routers.grafana.entrypoints=web"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: cadvisor
+    ports:
+      - "8081:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cadvisor.rule=Host(`cadvisor.reminder.local`)"
+      - "traefik.http.routers.cadvisor.entrypoints=web"
+      - "traefik.http.services.cadvisor.loadbalancer.server.port=8080"
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.node-exporter.rule=Host(`node-exporter.reminder.local`)"
+      - "traefik.http.routers.node-exporter.entrypoints=web"
+      - "traefik.http.services.node-exporter.loadbalancer.server.port=9100"
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    ports:
+      - "9187:9187"
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:${POSTGRES_PASSWORD_URLENCODED}@postgres:5432/voice_reminder?sslmode=disable"
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    ports:
+      - "9121:9121"
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_EXPORTER_TLS_CLIENT_KEY_FILE: /certs/redis-key.pem
+      REDIS_EXPORTER_TLS_CLIENT_CERT_FILE: /certs/redis.pem
+      REDIS_EXPORTER_TLS_CA_CERT_FILE: /certs/root-ca.pem
+      REDIS_EXPORTER_SKIP_TLS_VERIFICATION: "true"
+    volumes:
+      - ./redis/certs:/certs:ro
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    command:
+      - '--redis.addr=redis://redis:6380'
+      - '--redis.password=${REDIS_PASSWORD}'
+      - '--tls-client-key-file=/certs/redis-key.pem'
+      - '--tls-client-cert-file=/certs/redis.pem'
+      - '--tls-ca-cert-file=/certs/root-ca.pem'
+    labels:
+      - "traefik.enable=false"
+
+  cloudwatch-exporter:
+    build:
+      context: ./monitoring/cloudwatch-exporter
+      dockerfile: Dockerfile
+    container_name: cloudwatch-exporter
+    ports:
+      - "9106:9106"
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    volumes:
+      - ./monitoring/cloudwatch-exporter/config.yml:/app/config.yml:ro
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+
+  opensearch-exporter:
+    image: quay.io/prometheuscommunity/elasticsearch-exporter:latest
+    container_name: opensearch-exporter
+    ports:
+      - "9114:9114"
+    command:
+      - '--es.uri=http://localstack:4510'
+      - '--es.all'
+      - '--es.indices'
+      - '--es.timeout=30s'
+    networks:
+      - reminder_reminder-network
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  reminder_reminder-network:
+    external: true
+
+volumes:
+  prometheus_data:
+  grafana_data:

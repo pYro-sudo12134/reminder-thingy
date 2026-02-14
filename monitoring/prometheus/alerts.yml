@@ -1,0 +1,65 @@
+groups:
+  - name: reminder_alerts
+    rules:
+      - alert: HighReminderCreationRate
+        expr: rate(reminders_created_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High reminder creation rate"
+          description: "Reminder creation rate is {{ $value }} per second"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+
+      - alert: HighEmailFailureRate
+        expr: rate(email_send_failures_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High email failure rate"
+          description: "Email send failures are {{ $value }} per second"
+
+      - alert: RateLimiterHighBlockRate
+        expr: rate(rate_limiter_blocked_requests_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate limiter block rate"
+          description: "Rate limiter is blocking {{ $value }} requests per second"
+
+      - alert: JVMHeapUsageHigh
+        expr: (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM Heap usage high"
+          description: "JVM Heap usage is {{ $value }}% for {{ $labels.instance }}"
+
+      - alert: OpenSearchClusterHealth
+        expr: elasticsearch_cluster_health_status{color="red"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "OpenSearch cluster health is RED"
+          description: "OpenSearch cluster health status is RED"
+
+      - alert: QueueSizeGrowing
+        expr: aws_sqs_approximate_number_of_messages_visible > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SQS queue is growing"
+          description: "Queue {{ $labels.queue_name }} has {{ $value }} visible messages"

@@ -158,7 +158,6 @@ public class SecretsManagerConfig implements AutoCloseable {
                     "secrets/",
                     "../secrets/",
                     "/app/secrets/",
-                    "/app/redis_certs/",
                     System.getProperty("user.dir") + "/secrets/"
             };
 
@@ -227,7 +226,8 @@ public class SecretsManagerConfig implements AutoCloseable {
 
         String[] secretFiles = {
                 "NLP_GRPC_API_KEY", "JWT_SECRET", "DATABASE_PASSWORD",
-                "SERVICE_TOKEN", "AWS_ACCESS_KEY", "AWS_SECRET_KEY"
+                "SERVICE_TOKEN", "AWS_ACCESS_KEY", "AWS_SECRET_KEY",
+                "REDIS_PASSWORD"
         };
 
         for (String fileName : secretFiles) {

@@ -29,7 +29,7 @@ public class RedisRateLimitConfig {
     public RedisRateLimitConfig(SecretsManagerConfig secretsManager) {
         this.host = secretsManager.getSecret("REDIS_HOST", "redis");
         this.port = Integer.parseInt(secretsManager.getSecret("REDIS_PORT", "6379"));
-        this.password = secretsManager.getSecret("REDIS_PASSWORD", "");
+        this.password = secretsManager.getSecret("REDIS_PASSWORD", System.getenv("REDIS_PASSWORD"));
         this.timeout = Integer.parseInt(secretsManager.getSecret("REDIS_TIMEOUT", "2000"));
         this.maxTotal = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_TOTAL", "50"));
         this.maxIdle = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_IDLE", "10"));
