@@ -72,7 +72,6 @@ dependencies {
     implementation 'io.grpc:grpc-stub:1.60.0'
     implementation 'com.google.protobuf:protobuf-java-util:3.25.1'
     implementation 'io.grpc:grpc-services:1.60.0'
-    compileOnly 'org.apache.tomcat:annotations-api:6.0.53'
 
     implementation 'org.eclipse.jetty:jetty-server:11.0.20'
     implementation 'org.eclipse.jetty:jetty-servlet:11.0.20'
