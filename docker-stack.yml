@@ -26,6 +26,7 @@ services:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+      - "--entrypoints.web-internal.address=:8081"
       - "--entrypoints.websecure.address=:443"
       - "--log.level=INFO"
       - "--accesslog=true"
@@ -35,6 +36,7 @@ services:
       - "80:80"
       - "443:443"
       - "8080:8080"
+      - "8081:8081"
     volumes:
       - type: bind
         source: /var/run/docker.sock
@@ -239,10 +241,13 @@ services:
       start_period: 90s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.localstack.rule=Host(`localstack.reminder.local`)"
+      - "traefik.http.routers.localstack.rule=Host(`api.reminder.local`) || Host(`localstack.reminder.local`)"
       - "traefik.http.routers.localstack.entrypoints=web"
       - "traefik.http.services.localstack.loadbalancer.server.port=4566"
-      - "traefik.http.routers.localstack.service=localstack"
+      - "traefik.http.middlewares.localstack-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.localstack-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.localstack-cors.headers.accesscontrolallowheaders=Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token"
+      - "traefik.http.routers.localstack.middlewares=localstack-cors"
 
   postgres:
     image: postgres:15-alpine
@@ -412,19 +417,24 @@ services:
     networks:
       - reminder-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
+      test: ["CMD", "curl", "-f", "http://reminder-app:8090/api/test"]
       interval: 60s
       timeout: 10s
       retries: 5
       start_period: 120s
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.reminder-app.rule=Host(`reminder.local`) || Host(`app.reminder.local`)"
-      - "traefik.http.routers.reminder-app.entrypoints=web"
+      - "traefik.http.routers.reminder-app.rule=Host(`app.reminder.internal`)"
+      - "traefik.http.routers.reminder-app.entrypoints=web-internal"
+      - "traefik.http.routers.reminder-app.middlewares=internal-network-only,rate-limit,security-headers"
       - "traefik.http.services.reminder-app.loadbalancer.server.port=8090"
-      - "traefik.http.services.reminder-app.loadbalancer.healthcheck.path=/api/test"
-      - "traefik.http.services.reminder-app.loadbalancer.healthcheck.interval=30s"
-      - "traefik.http.routers.reminder-app.service=reminder-app"
+      - "traefik.http.middlewares.internal-network-only.ipwhitelist.sourcerange=10.10.0.0/24"
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=50"
+      - "traefik.http.middlewares.security-headers.headers.sslredirect=true"
+      - "traefik.http.middlewares.security-headers.headers.stsincludesubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stspreload=true"
+      - "traefik.http.middlewares.security-headers.headers.stsseconds=31536000"
 
   portainer:
     image: portainer/portainer-ce:alpine-sts

@@ -352,18 +352,61 @@ Resources:
       HttpMethod: GET
       AuthorizationType: NONE
       Integration:
-        Type: MOCK
-        IntegrationHttpMethod: POST
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseTemplates:
-              application/json: '{"status": "healthy", "timestamp": "$context.requestTime"}'
-      MethodResponses:
-        - StatusCode: 200
-          ResponseModels:
-            application/json: Empty
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: http://reminder-app:8090/api/test
+#        Uri: http://traefik:8081/api/test
+        ConnectionType: INTERNET
+        TimeoutInMillis: 29000
+#        RequestParameters:
+#          integration.request.header.Host: "'app.reminder.internal'"
+
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "{proxy+}"
+
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: http://reminder-app:8090/{proxy}
+#        Uri: http://traefik:8081/{proxy}
+        ConnectionType: INTERNET
+        RequestParameters:
+          integration.request.path.proxy: method.request.path.proxy
+#        RequestParameters:
+#          integration.request.path.proxy: method.request.path.proxy
+#          integration.request.header.Host: "'app.reminder.internal'"
+
+  MetricsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: metrics
+
+  MetricsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref MetricsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: http://reminder-app:8090/metrics
+#        Uri: http://traefik:8081/api/metrics
+        ConnectionType: INTERNET
 
   ApiGatewayUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
@@ -410,13 +453,28 @@ Resources:
       PathPart: reminders
 
   ApiGatewayCors:
-    Type: AWS::ApiGateway::GatewayResponse
+    Type: AWS::ApiGateway::Method
     Properties:
       RestApiId: !Ref ApiGateway
-      ResponseType: DEFAULT_4XX
-      ResponseParameters:
-        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
-        gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+      ResourceId: !Ref ProxyResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
 
   ReminderNotificationTopic:
     Type: AWS::SNS::Topic
@@ -738,7 +796,7 @@ Outputs:
 
   ApiGatewayUrl:
     Description: API Gateway URL
-    Value: !Sub https://${ApiGateway}.execute-api.localhost.localstack.cloud:4566/${EnvironmentName}
+    Value: !Sub http://localhost:4566/restapis/${ApiGateway}/${EnvironmentName}/_user_request_
 
   ReminderQueueUrl:
     Description: SQS Queue URL for reminder processing
