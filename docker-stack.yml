@@ -436,46 +436,6 @@ services:
       - "traefik.http.middlewares.security-headers.headers.stspreload=true"
       - "traefik.http.middlewares.security-headers.headers.stsseconds=31536000"
 
-  portainer:
-    image: portainer/portainer-ce:alpine-sts
-    deploy:
-      mode: replicated
-      replicas: 1
-      placement:
-        constraints:
-          - node.role == manager
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
-      restart_policy:
-        condition: on-failure
-        delay: 10s
-        max_attempts: 3
-      update_config:
-        parallelism: 1
-        delay: 30s
-        order: start-first
-    ports:
-      - target: 9000
-        published: 9000
-        protocol: tcp
-        mode: host
-    volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-      - type: volume
-        source: portainer_data
-        target: /data
-    networks:
-      - reminder-network
-    labels:
-      - "traefik.enable=false"
-      - "traefik.docker.lbswarm=false"
-      - "traefik.tags=exclude"
-
   redis:
     image: redis:7-alpine
     deploy:
@@ -484,6 +444,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.labels.cache == true
       resources:
         limits:
           memory: 256M
@@ -526,6 +487,66 @@ services:
       start_period: 15s
     labels:
       - "traefik.enable=false"
+
+  dlq-processor:
+    image: pyrodocker1/reminder-dlq-processor:1.0
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == worker
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - ENVIRONMENT_NAME=dev
+      - USE_LOCAL_SECRETS=true
+      - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m
+      - DLQ_URL=http://localstack:4566/000000000000/dev-reminder-dlq
+      - QUEUE_SUFFIX=-reminder-dlq
+      - VISIBILITY_TIMEOUT=60
+      - MAX_BATCH_SIZE=10
+      - NOTIFY_AFTER_ATTEMPTS=3
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-changeit}
+      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
+      - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-losik2006@gmail.com}
+      - SMTP_AUTH=true
+      - SMTP_STARTTLS=true
+      - METRICS_ENABLED=true
+      - CLOUDWATCH_NAMESPACE=Reminder/DLQ
+    networks:
+      - reminder-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8085/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dlq-processor.rule=Host(`dlq.reminder.internal`)"
+      - "traefik.http.routers.dlq-processor.entrypoints=web-internal"
+      - "traefik.http.routers.dlq-processor.middlewares=internal-network-only"
+      - "traefik.http.services.dlq-processor.loadbalancer.server.port=8085"
 
 secrets:
   nlp_grpc_key:

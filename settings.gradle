@@ -1,2 +1,3 @@
 rootProject.name = 'reminder'
+include 'dlq-processor'
 

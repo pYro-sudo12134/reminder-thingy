@@ -234,6 +234,46 @@ services:
       retries: 5
       start_period: 120s
 
+  dlq-processor:
+    image: pyrodocker1/reminder-dlq-processor:1.0
+    container_name: dlq-processor
+    restart: unless-stopped
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - ENVIRONMENT_NAME=dev
+      - USE_LOCAL_SECRETS=true
+      - SECRETS_PATH=/run/secrets
+      - JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m
+      - DLQ_URL=http://localstack:4566/000000000000/dev-reminder-dlq
+      - QUEUE_SUFFIX=-reminder-dlq
+      - VISIBILITY_TIMEOUT=60
+      - MAX_BATCH_SIZE=10
+      - NOTIFY_AFTER_ATTEMPTS=3
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-changeit}
+      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
+      - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-losik2006@gmail.com}
+      - SMTP_AUTH=true
+      - SMTP_STARTTLS=true
+      - METRICS_ENABLED=true
+      - CLOUDWATCH_NAMESPACE=Reminder/DLQ
+    networks:
+      - reminder-network
+    depends_on:
+      localstack:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8085/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 networks:
   reminder-network:
     driver: bridge
