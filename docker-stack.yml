@@ -417,7 +417,7 @@ services:
     networks:
       - reminder-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://reminder-app:8090/api/test"]
+      test: ["CMD", "curl", "-f", "http://localhost:8090/api/test"]
       interval: 60s
       timeout: 10s
       retries: 5
