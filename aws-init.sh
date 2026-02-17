@@ -105,7 +105,6 @@ create_api_gateway() {
       --output text)
 
     echo "API Gateway created successfully!"
-    echo "Health endpoint: http://localhost:4566/_aws/execute-api/$API_ID/dev/health"
 }
 
 init_metrics() {
