@@ -46,7 +46,9 @@ public class AWSModule extends AbstractModule {
                 .toInstance(System.getenv().getOrDefault("FROM_EMAIL", "losik2006@gmail.com"));
         bind(String.class).annotatedWith(Names.named("dlq.url"))
                 .toInstance(System.getenv().getOrDefault("DLQ_URL",
-                        awsEndpoint + "/000000000000/" + environment + queueSuffix));
+                        awsEndpoint + "/" +
+                                System.getenv().getOrDefault("AWS_ACCOUNT_ID", "000000000000") +
+                                "/" + environment + queueSuffix));
         bind(String.class).annotatedWith(Names.named("notification.email"))
                 .toInstance(System.getenv().getOrDefault("NOTIFICATION_EMAIL", "losik2006@gmail.com"));
 
@@ -57,7 +59,7 @@ public class AWSModule extends AbstractModule {
         bind(String.class).annotatedWith(Names.named("smtp.username"))
                 .toInstance(System.getenv().getOrDefault("SMTP_USERNAME", "losik2006@gmail.com"));
         bind(String.class).annotatedWith(Names.named("smtp.password"))
-                .toInstance(System.getenv().getOrDefault("SMTP_PASSWORD", "uadmghdxomypqyvf"));
+                .toInstance(System.getenv().getOrDefault("SMTP_PASSWORD", "pvtorvfjghhixyxy"));
         bind(Boolean.class).annotatedWith(Names.named("smtp.auth"))
                 .toInstance(Boolean.parseBoolean(System.getenv().getOrDefault("SMTP_AUTH", "true")));
         bind(Boolean.class).annotatedWith(Names.named("smtp.starttls"))
@@ -75,7 +77,9 @@ public class AWSModule extends AbstractModule {
     public AwsCredentialsProvider provideCredentials() {
         if (useLocalstack) {
             return StaticCredentialsProvider.create(
-                    AwsBasicCredentials.create("test", "test")
+                    AwsBasicCredentials.create(
+                            System.getenv().getOrDefault("AWS_ACCESS_KEY_ID", "test"),
+                            System.getenv().getOrDefault("AWS_SECRET_ACCESS_KEY", "test"))
             );
         }
 

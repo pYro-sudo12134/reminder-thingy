@@ -27,5 +27,3 @@ aws --endpoint-url=http://localhost:4566 sqs send-message \
     },
     "time": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"
   }'
-
-echo "Done - Check your email!"

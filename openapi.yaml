@@ -1,0 +1,776 @@
+openapi: 3.0.1
+info:
+  title: Voice Reminder API
+  description: |
+    ## Intelligent Voice Reminder Assistant
+  version: 2.0.0
+
+servers:
+  - url: https://api.voicereminder.example.com/v1
+    description: Production API
+  - url: http://localhost:8090/api
+    description: Local development
+  - url: http://api.reminder.local/v1
+    description: Docker Swarm internal
+
+tags:
+  - name: Reminders
+    description: Voice reminder operations
+    x-displayName: "Reminders"
+  - name: Search
+    description: Contextual search and autocomplete
+    x-displayName: "Search"
+  - name: Stats
+    description: User statistics and analytics
+    x-displayName: "Statistics"
+  - name: Auth
+    description: Authentication endpoints
+    x-displayName: "Authentication"
+  - name: Health
+    description: Service health checks
+    x-displayName: "Health"
+  - name: Metrics
+    description: Prometheus metrics
+    x-displayName: "Metrics"
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: User login
+      description: Authenticate user and create session. Returns session cookie.
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  example: "admin"
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: "admin123"
+      responses:
+        '200':
+          description: Login successful
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: "JSESSIONID=abc123; Path=/; HttpOnly"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                    example: "admin"
+                  sessionId:
+                    type: string
+                    example: "abc123"
+        '400':
+          description: Missing credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          headers:
+            X-RateLimit-Limit:
+              schema:
+                type: integer
+            X-RateLimit-Remaining:
+              schema:
+                type: integer
+            X-RateLimit-Reset:
+              schema:
+                type: integer
+
+  /auth/register:
+    post:
+      tags:
+        - Auth
+      summary: User registration
+      description: Create new user account
+      operationId: register
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  minLength: 3
+                  maxLength: 50
+                  example: "newuser"
+                password:
+                  type: string
+                  format: password
+                  minLength: 8
+                  example: "SecurePass123!"
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+                  sessionId:
+                    type: string
+                  message:
+                    type: string
+        '400':
+          description: Invalid input
+        '409':
+          description: Username already exists
+
+  /auth/me:
+    get:
+      tags:
+        - Auth
+      summary: Get current user
+      description: Returns authenticated user information
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: User info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  username:
+                    type: string
+        '401':
+          description: Not authenticated
+
+  /auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: User logout
+      description: Invalidate current session
+      operationId: logout
+      responses:
+        '200':
+          description: Logged out successfully
+
+  /reminder/record:
+    post:
+      tags:
+        - Reminders
+      summary: Record voice reminder
+      description: |
+        Upload audio file for voice reminder processing.
+        
+        **Processing Flow:**
+        1. Audio uploaded to S3
+        2. Transcribe job started
+        3. NLP service extracts intent and entities
+        4. Reminder saved to OpenSearch
+        5. EventBridge rule created for scheduling
+        6. Email notification sent at scheduled time
+      operationId: recordReminder
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - userId
+                - userEmail
+                - audio
+              properties:
+                userId:
+                  type: string
+                  description: User identifier
+                  example: "user123"
+                userEmail:
+                  type: string
+                  format: email
+                  description: Email for notification
+                  example: "user@example.com"
+                audio:
+                  type: string
+                  format: binary
+                  description: |
+                    Audio file (supported formats: WAV, MP3, FLAC)
+                    Max size: 10MB
+      responses:
+        '200':
+          description: Reminder accepted for processing
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminderId:
+                    type: string
+                    format: uuid
+                    example: "123e4567-e89b-12d3-a456-426614174000"
+                  userId:
+                    type: string
+                  userEmail:
+                    type: string
+                  status:
+                    type: string
+                    enum: [processing]
+                    example: "processing"
+                  message:
+                    type: string
+                    example: "Reminder is being processed"
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Missing required fields
+        '429':
+          description: Rate limit exceeded
+        '500':
+          description: Processing error
+
+  /reminder/{id}:
+    get:
+      tags:
+        - Reminders
+      summary: Get reminder details
+      description: Retrieve full reminder information including NLP results
+      operationId: getReminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Reminder ID
+      responses:
+        '200':
+          description: Reminder found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReminderRecord'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags:
+        - Reminders
+      summary: Delete reminder
+      description: Remove reminder and associated EventBridge rule
+      operationId: deleteReminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Reminder deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminderId:
+                    type: string
+                  deleted:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+        '404':
+          description: Reminder not found
+
+  /reminder/{id}/transcription:
+    get:
+      tags:
+        - Reminders
+      summary: Get reminder transcription
+      description: Retrieve the transcribed text from original audio
+      operationId: getTranscription
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transcription found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranscriptionResult'
+        '404':
+          description: Reminder not found
+
+  /user/{userId}/reminders:
+    get:
+      tags:
+        - Reminders
+      summary: List user reminders
+      description: Get paginated list of user's reminders with optional status filter
+      operationId: getUserReminders
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: User ID
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+            maximum: 100
+          description: Number of reminders to return
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED]
+          description: Filter by reminder status
+      responses:
+        '200':
+          description: List of reminders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  total:
+                    type: integer
+                  filtered:
+                    type: integer
+                  reminders:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reminderId:
+                          type: string
+                        extractedAction:
+                          type: string
+                        scheduledTime:
+                          type: string
+                          format: date-time
+                        reminderTime:
+                          type: string
+                        status:
+                          type: string
+                        createdAt:
+                          type: string
+                          format: date-time
+                        notificationSent:
+                          type: boolean
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /autocomplete:
+    get:
+      tags:
+        - Search
+      summary: Autocomplete reminders
+      description: |
+        Search-as-you-type suggestion for reminders.
+        
+        Uses OpenSearch's completion suggester for fast, fuzzy matching.
+        
+        **Example queries:**
+        - `купи` → "купить молоко", "купить хлеб"
+        - `встреч` → "встреча с командой", "встреча в 15:00"
+        - `позвон` → "позвонить маме", "позвонить в банк"
+      operationId: autocompleteReminders
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: User ID
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          description: Partial search query (minimum 2 characters)
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 5
+            maximum: 20
+          description: Maximum number of suggestions
+      responses:
+        '200':
+          description: Autocomplete suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  query:
+                    type: string
+                  total:
+                    type: integer
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        reminderId:
+                          type: string
+                        action:
+                          type: string
+                        text:
+                          type: string
+                        score:
+                          type: number
+                          format: float
+                  timestamp:
+                    type: string
+                    format: date-time
+        '400':
+          description: Missing required parameters
+        '429':
+          description: Rate limit exceeded
+
+  /stats/{userId}:
+    get:
+      tags:
+        - Stats
+      summary: Get user statistics
+      description: |
+        Retrieve analytics and statistics for user reminders.
+        
+        **Metrics included:**
+        - Total reminders count
+        - Distribution by status
+        - Daily/weekly trends
+        - Most common intents
+        - Average processing time
+      operationId: getUserStats
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId:
+                    type: string
+                  timestamp:
+                    type: string
+                    format: date-time
+                  stats:
+                    $ref: '#/components/schemas/ReminderStats'
+
+  /test:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Simple endpoint to verify API is working
+      operationId: test
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "API is working!"
+
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Prometheus metrics
+      description: |
+        Get Prometheus-formatted metrics for monitoring.
+        
+        **Available metrics:**
+        - JVM memory usage
+        - HTTP request counters
+        - Rate limit hits
+        - Processing durations
+        - SQS queue depths
+        - OpenSearch query times
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP jvm_memory_used_bytes Used bytes of a given JVM memory area.
+                  # TYPE jvm_memory_used_bytes gauge
+                  jvm_memory_used_bytes{area="heap"} 1.2345678E8
+        '408':
+          description: Metrics scraping timeout
+        '500':
+          description: Error scraping metrics
+
+components:
+  schemas:
+    ReminderRecord:
+      type: object
+      description: Full reminder record with all metadata
+      properties:
+        reminder_id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        user_id:
+          type: string
+          example: "user123"
+        original_text:
+          type: string
+          example: "Напомни купить молоко завтра в 9 утра"
+        extracted_action:
+          type: string
+          example: "купить молоко"
+        scheduled_time:
+          type: string
+          format: date-time
+          example: "2026-02-17T09:00:00"
+        reminder_time:
+          type: string
+          pattern: "HH:mm"
+          example: "09:00"
+        created_at:
+          type: string
+          format: date-time
+          example: "2026-02-16T22:35:00"
+        status:
+          type: string
+          enum: [PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED]
+          example: "SCHEDULED"
+        notification_sent:
+          type: boolean
+          example: false
+        intent:
+          type: string
+          example: "create_reminder"
+        rule_name:
+          type: string
+          example: "reminder-123e4567-rule"
+      required:
+        - reminder_id
+        - user_id
+        - status
+
+    TranscriptionResult:
+      type: object
+      description: Result of AWS Transcribe job
+      properties:
+        transcription_id:
+          type: string
+          example: "transcribe-job-123"
+        original_audio_key:
+          type: string
+          example: "audio/user123/recording.wav"
+        transcribed_text:
+          type: string
+          example: "напомни купить молоко завтра в девять утра"
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          example: 0.95
+        language:
+          type: string
+          example: "ru-RU"
+        duration_seconds:
+          type: number
+          example: 3.5
+        completed_at:
+          type: string
+          format: date-time
+
+    ParsedResult:
+      type: object
+      description: NLP parsing result with extracted entities
+      properties:
+        scheduledTime:
+          type: string
+          format: date-time
+        action:
+          type: string
+        confidence:
+          type: number
+          format: double
+        language:
+          type: string
+        reminderId:
+          type: string
+        intent:
+          type: string
+          enum: [create_reminder, cancel_reminder, check_reminders, unknown]
+        entities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entity'
+        rawText:
+          type: string
+        normalizedText:
+          type: string
+
+    Entity:
+      type: object
+      description: Named entity extracted from text
+      properties:
+        text:
+          type: string
+          example: "завтра"
+        type:
+          type: string
+          enum: [DATE, TIME, ACTION, PERSON, LOCATION]
+          example: "DATE"
+        start:
+          type: integer
+        end:
+          type: integer
+        confidence:
+          type: number
+          format: double
+
+    ReminderStats:
+      type: object
+      description: User reminder statistics
+      properties:
+        total_reminders:
+          type: integer
+        pending_reminders:
+          type: integer
+        sent_reminders:
+          type: integer
+        failed_reminders:
+          type: integer
+        avg_processing_time_ms:
+          type: integer
+        last_7_days_count:
+          type: integer
+        most_common_intent:
+          type: string
+        reminders_by_status:
+          type: object
+          additionalProperties:
+            type: integer
+          example:
+            PENDING: 5
+            SCHEDULED: 10
+            COMPLETED: 25
+        reminders_by_day:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+
+    ErrorResponse:
+      type: object
+      description: Standard error response
+      properties:
+        error:
+          type: string
+          example: "Invalid credentials"
+        message:
+          type: string
+          example: "Username or password is incorrect"
+        code:
+          type: integer
+          example: 401
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - error
+
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: JSESSIONID
+      description: Session-based authentication (automatically set after login)
+    ApiKey:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Alternative API key authentication for machine clients
+
+security:
+  - SessionCookie: []
+  - ApiKey: []
+
+x-amazon-apigateway-auth:
+  type: aws_iam
+
+x-amazon-apigateway-gateway-responses:
+  UNAUTHORIZED:
+    statusCode: 401
+    responseTemplates:
+      application/json: '{"error": "Unauthorized", "message": "Authentication required"}'
+  RATE_LIMIT_EXCEEDED:
+    statusCode: 429
+    responseTemplates:
+      application/json: '{"error": "Too Many Requests", "message": "Rate limit exceeded"}'
