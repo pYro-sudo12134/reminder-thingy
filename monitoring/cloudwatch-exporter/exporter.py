@@ -30,7 +30,6 @@ class CloudWatchCollector:
         logger.info(f"CloudWatch collector initialized with endpoint: {self.endpoint}")
 
     def get_gauge(self, name, namespace, metric_name, statistic, dimensions):
-        """Создает или возвращает существующую метрику"""
         key = f"{namespace}_{metric_name}_{statistic}"
         if key not in self.gauges:
             label_names = [d['Name'].lower() for d in dimensions] if dimensions else []
@@ -42,7 +41,6 @@ class CloudWatchCollector:
         return self.gauges[key]
 
     def collect(self):
-        """Сбор метрик"""
         try:
             for metric in self.config.get('metrics', []):
                 namespace = metric['aws_namespace']
