@@ -8,6 +8,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.label.ingress == true
       resources:
         limits:
           memory: 256M
@@ -115,6 +116,7 @@ services:
       placement:
         constraints:
           - node.role == worker
+          - node.label.nlp == true
       resources:
         limits:
           memory: 2G
@@ -168,6 +170,7 @@ services:
       placement:
         constraints:
           - node.role == manager
+          - node.label.cloud == true
       resources:
         limits:
           memory: 3G
@@ -231,6 +234,9 @@ services:
         source: ./opensearch_certs
         target: /etc/localstack/opensearch/certs
         read_only: true
+      - type: bind
+        source: ./route53.yaml
+        target: /etc/localstack/init/ready.d/route53.yaml
     networks:
       - reminder-network
     healthcheck:
@@ -322,6 +328,7 @@ services:
       placement:
         constraints:
           - node.role == worker
+          - node.label.app == true
       resources:
         limits:
           memory: 768M
@@ -496,6 +503,7 @@ services:
       placement:
         constraints:
           - node.role == worker
+          - node.label.dlq == true
       resources:
         limits:
           memory: 512M

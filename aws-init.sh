@@ -357,4 +357,90 @@ else
 fi
 
 echo ""
+echo "=== Deploying Route53 CloudFormation stack ==="
+echo ""
+
+if [ -f "/etc/localstack/init/ready.d/route53.yaml" ]; then
+    echo "Deploying Route53 CloudFormation stack..."
+
+    MAIN_ZONE_ID=$(aws --endpoint-url=http://localhost:4566 route53 create-hosted-zone \
+      --name reminder.local \
+      --caller-reference "main-$(date +%s)" \
+      --query 'HostedZone.Id' \
+      --output text 2>/dev/null | cut -d'/' -f3 || echo "")
+
+    INTERNAL_ZONE_ID=$(aws --endpoint-url=http://localhost:4566 route53 create-hosted-zone \
+      --name internal.reminder.local \
+      --caller-reference "internal-$(date +%s)" \
+      --query 'HostedZone.Id' \
+      --output text 2>/dev/null | cut -d'/' -f3 || echo "")
+
+    echo "Main Hosted Zone ID: $MAIN_ZONE_ID"
+    echo "Internal Hosted Zone ID: $INTERNAL_ZONE_ID"
+
+    export CFN_IGNORE_UNSUPPORTED_RESOURCE_TYPES=1
+
+    aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
+      --stack-name voice-reminder-route53 \
+      --template-body file:///etc/localstack/init/ready.d/route53.yaml \
+      --parameters \
+        ParameterKey=EnvironmentName,ParameterValue=dev \
+        ParameterKey=DomainName,ParameterValue=reminder.local \
+        ParameterKey=NLPServiceIP,ParameterValue=10.10.0.5 \
+        ParameterKey=PostgresIP,ParameterValue=10.10.0.6 \
+        ParameterKey=RedisIP,ParameterValue=10.10.0.7 \
+        ParameterKey=LocalStackIP,ParameterValue=10.10.0.4 \
+        ParameterKey=DLQProcessorIP,ParameterValue=10.10.0.12 \
+        ParameterKey=TraefikIP,ParameterValue=10.10.0.2 \
+        ParameterKey=AppIPs,ParameterValue=\"10.10.0.10,10.10.0.11\" \
+        ParameterKey=MainHostedZoneId,ParameterValue=$MAIN_ZONE_ID \
+        ParameterKey=InternalHostedZoneId,ParameterValue=$INTERNAL_ZONE_ID \
+      --capabilities CAPABILITY_IAM \
+      --region us-east-1 \
+      --query 'StackId' \
+      --output text || true
+
+    wait_for_stack "voice-reminder-route53"
+
+    echo ""
+    echo "Route53 stack deployed successfully!"
+    echo ""
+
+    if [ ! -z "$MAIN_ZONE_ID" ]; then
+        echo "DNS Records in main zone (reminder.local):"
+        aws --endpoint-url=http://localhost:4566 route53 list-resource-record-sets \
+          --hosted-zone-id "$MAIN_ZONE_ID" \
+          --region us-east-1 \
+          --query 'ResourceRecordSets[?Type!=`NS` && Type!=`SOA`].{Name:Name,Type:Type,Value:ResourceRecords[0].Value}' \
+          --output table 2>/dev/null || echo "  No records found"
+    fi
+
+    if [ ! -z "$INTERNAL_ZONE_ID" ]; then
+        echo ""
+        echo "DNS Records in internal zone (internal.reminder.local):"
+        aws --endpoint-url=http://localhost:4566 route53 list-resource-record-sets \
+          --hosted-zone-id "$INTERNAL_ZONE_ID" \
+          --region us-east-1 \
+          --query 'ResourceRecordSets[?Type!=`NS` && Type!=`SOA`].{Name:Name,Type:Type,Value:ResourceRecords[0].Value}' \
+          --output table 2>/dev/null || echo "  No records found"
+    fi
+
+    echo ""
+    echo "For local resolution, add these lines to /etc/hosts:"
+    echo "# Voice Reminder DNS"
+    echo "10.10.0.2 api.reminder.local app.reminder.local"
+    echo "10.10.0.4 localstack.reminder.local"
+    echo "10.10.0.5 nlp.internal.reminder.local"
+    echo "10.10.0.6 postgres.internal.reminder.local"
+    echo "10.10.0.7 redis.internal.reminder.local"
+    echo "10.10.0.4 localstack.internal.reminder.local"
+    echo "10.10.0.12 dlq.internal.reminder.local"
+    echo "10.10.0.10 app.internal.reminder.local"
+    echo "10.10.0.11 app.internal.reminder.local"
+
+else
+    echo "route53.yaml not found, skipping Route53 deployment"
+fi
+
+echo ""
 echo "LocalStack initialization complete!"

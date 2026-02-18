@@ -16,7 +16,9 @@ import software.amazon.awssdk.services.transcribe.model.StartTranscriptionJobReq
 import software.amazon.awssdk.services.transcribe.model.TranscriptionJob;
 import software.amazon.awssdk.services.transcribe.model.TranscriptionJobStatus;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -159,6 +161,7 @@ public class TranscribeService {
 
     private CompletableFuture<String> downloadTranscriptionText(String transcriptUri) {
         return CompletableFuture.supplyAsync(() -> {
+            Path tempFile = null;
             try {
                 log.info("Attempting to download transcription from: {}", transcriptUri);
 
@@ -176,32 +179,39 @@ public class TranscribeService {
 
                 int firstSlash = path.indexOf('/');
                 if (firstSlash == -1) {
-                    throw new RuntimeException("Invalid S3 path in transcript URI: " + path);
+                    throw new RuntimeException("Invalid S3 path: " + path);
                 }
 
                 String bucketName = path.substring(0, firstSlash);
                 String key = path.substring(firstSlash + 1);
 
-                log.info("Parsed S3 location - bucket: {}, key: {}", bucketName, key);
+                key = java.net.URLDecoder.decode(key, StandardCharsets.UTF_8);
 
-                Path tempFile = Files.createTempFile("transcription", ".json");
+                log.info("Downloading from bucket: {}, key: {}", bucketName, key);
 
-                try {
-                    s3Service.downloadFileAsync(key, tempFile, bucketName)
-                            .get(30, TimeUnit.SECONDS);
+                tempFile = Files.createTempFile("transcription", ".json");
 
-                    String jsonContent = Files.readString(tempFile);
-                    log.info("Downloaded transcription JSON, size: {} bytes", jsonContent.length());
+                tempFile.toFile().deleteOnExit();
 
-                    return parseTranscriptionJson(jsonContent);
+                s3Service.downloadFileAsync(key, tempFile, bucketName)
+                        .get(30, TimeUnit.SECONDS);
 
-                } finally {
-                    Files.deleteIfExists(tempFile);
-                }
+                String jsonContent = Files.readString(tempFile);
+                log.info("Downloaded transcription JSON, size: {} bytes", jsonContent.length());
+
+                return parseTranscriptionJson(jsonContent);
 
             } catch (Exception e) {
-                log.error("Failed to download transcription text from URI: {}", transcriptUri, e);
-                throw new RuntimeException("Failed to download transcription from: " + transcriptUri, e);
+                log.error("Failed to download transcription from URI: {}", transcriptUri, e);
+                throw new RuntimeException("Failed to download transcription", e);
+            } finally {
+                if (tempFile != null) {
+                    try {
+                        Files.deleteIfExists(tempFile);
+                    } catch (IOException e) {
+                        log.debug("Could not delete temp file immediately: {}", tempFile);
+                    }
+                }
             }
         });
     }

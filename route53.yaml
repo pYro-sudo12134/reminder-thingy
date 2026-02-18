@@ -1,0 +1,234 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Route53 Configuration for Voice Reminder in LocalStack'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  DomainName:
+    Type: String
+    Default: reminder.local
+    Description: Base domain name for the application
+
+  NLPServiceIP:
+    Type: String
+    Default: 10.10.0.5
+    Description: IP address of NLP service
+
+  PostgresIP:
+    Type: String
+    Default: 10.10.0.6
+    Description: IP address of PostgreSQL
+
+  RedisIP:
+    Type: String
+    Default: 10.10.0.7
+    Description: IP address of Redis
+
+  LocalStackIP:
+    Type: String
+    Default: 10.10.0.4
+    Description: IP address of LocalStack
+
+  AppIPs:
+    Type: CommaDelimitedList
+    Default: "10.10.0.10,10.10.0.11"
+    Description: IP addresses of reminder-app instances
+
+  DLQProcessorIP:
+    Type: String
+    Default: 10.10.0.12
+    Description: IP address of DLQ processor
+
+  TraefikIP:
+    Type: String
+    Default: 10.10.0.2
+    Description: IP address of Traefik
+
+  MainHostedZoneId:
+    Type: String
+    Description: ID of existing main hosted zone
+
+  InternalHostedZoneId:
+    Type: String
+    Description: ID of existing internal hosted zone
+
+Resources:
+  ApiRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "api.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref TraefikIP
+
+  AppRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "app.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref TraefikIP
+
+  LocalStackRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "localstack.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref LocalStackIP
+
+  NLPServiceRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "nlp.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref NLPServiceIP
+
+  PostgresRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "postgres.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref PostgresIP
+
+  RedisRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "redis.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref RedisIP
+
+  LocalStackInternalRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "localstack.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref LocalStackIP
+
+  DLQProcessorRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "dlq.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref DLQProcessorIP
+
+  AppInternalRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "app.internal.${DomainName}"
+      Type: A
+      TTL: 30
+      ResourceRecords: !Ref AppIPs
+
+  GrpcSRVRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "_grpc._tcp.nlp.internal.${DomainName}"
+      Type: SRV
+      TTL: 60
+      ResourceRecords:
+        - !Sub "10 10 50051 nlp.internal.${DomainName}"
+
+  PostgresSRVRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "_postgres._tcp.postgres.internal.${DomainName}"
+      Type: SRV
+      TTL: 60
+      ResourceRecords:
+        - !Sub "10 10 5432 postgres.internal.${DomainName}"
+
+  RedisSRVRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "_redis._tcp.redis.internal.${DomainName}"
+      Type: SRV
+      TTL: 60
+      ResourceRecords:
+        - !Sub "10 10 6379 redis.internal.${DomainName}"
+
+  OpenSearchCNAME:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "opensearch.internal.${DomainName}"
+      Type: CNAME
+      TTL: 60
+      ResourceRecords:
+        - "localhost"
+
+  S3CNAME:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "s3.internal.${DomainName}"
+      Type: CNAME
+      TTL: 60
+      ResourceRecords:
+        - "localhost"
+
+  ConfigTXTRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "config.internal.${DomainName}"
+      Type: TXT
+      TTL: 300
+      ResourceRecords:
+        - !Sub '"environment=${EnvironmentName}"'
+        - '"region=us-east-1"'
+        - '"aws-endpoint=http://localstack:4566"'
+
+  WildcardInternalRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "*.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref TraefikIP
+
+Outputs:
+  ServiceEndpoints:
+    Description: Service endpoints for configuration
+    Value: !Sub |
+      API: http://api.${DomainName}
+      App: http://app.${DomainName}
+      LocalStack: http://localstack.${DomainName}:4566
+      
+      Internal Endpoints:
+      - NLP Service: nlp.internal.${DomainName}:50051
+      - PostgreSQL: postgres.internal.${DomainName}:5432
+      - Redis: redis.internal.${DomainName}:6379
+      - LocalStack: localstack.internal.${DomainName}:4566
+      - DLQ Processor: dlq.internal.${DomainName}:8085
+      - App (round-robin): app.internal.${DomainName}:8090
