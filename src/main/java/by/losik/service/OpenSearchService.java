@@ -36,6 +36,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -490,17 +493,36 @@ public class OpenSearchService {
                     (String) source.get("user_id"),
                     (String) source.get("original_text"),
                     (String) source.get("extracted_action"),
-                    LocalDateTime.parse((String) source.get("scheduled_time")),
+                    parseDateTime((String) source.get("scheduled_time")),
                     (String) source.get("reminder_time"),
-                    LocalDateTime.parse((String) source.get("created_at")),
+                    parseDateTime((String) source.get("created_at")),
                     ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
                     (Boolean) source.get("notification_sent"),
                     (String) source.get("intent"),
                     (String) source.get("eventbridge_rule_name")
             );
         } catch (Exception e) {
-            log.error("Failed to map source to ReminderRecord", e);
+            log.error("Failed to map source to ReminderRecord: {}", source, e);
             return null;
+        }
+    }
+
+    private LocalDateTime parseDateTime(String dateTimeStr) {
+        if (dateTimeStr == null) return null;
+
+        try {
+            return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ISO_DATE_TIME);
+        } catch (DateTimeParseException e) {
+            try {
+                return OffsetDateTime.parse(dateTimeStr).toLocalDateTime();
+            } catch (DateTimeParseException e2) {
+                try {
+                    return LocalDateTime.parse(dateTimeStr);
+                } catch (DateTimeParseException e3) {
+                    log.error("Failed to parse date: {}", dateTimeStr, e3);
+                    return LocalDateTime.now();
+                }
+            }
         }
     }
 

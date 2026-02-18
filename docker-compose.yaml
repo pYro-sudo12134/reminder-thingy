@@ -70,6 +70,7 @@ services:
       - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
       - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
       - "./metrics-config.yaml:/etc/localstack/init/ready.d/metrics-config.yaml"
+      - "./route53.yaml:/etc/localstack/init/ready.d/route53.yaml"
       - "./opensearch_certs:/etc/localstack/opensearch/certs:ro"
       - "./secrets:/run/secrets:ro"
     mem_reservation: 2g
@@ -121,6 +122,7 @@ services:
       -c work_mem=4MB 
       -c min_wal_size=1GB 
       -c max_wal_size=4GB
+
 
   redis:
     image: redis:7-alpine
