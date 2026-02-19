@@ -377,9 +377,7 @@ REDIS_MAX_IDLE=10
 REDIS_MIN_IDLE=5
 
 #DLQ Processor
-ENVIRONMENT_NAME=dev
-USE_LOCAL_SECRETS=true
-JAVA_OPTS=-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m
+JAVA_OPTS='-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m'
 DLQ_URL=http://localstack:4566/000000000000/dev-reminder-dlq
 QUEUE_SUFFIX=-reminder-dlq
 VISIBILITY_TIMEOUT=60
@@ -395,15 +393,6 @@ SMTP_AUTH=true
 SMTP_STARTTLS=true
 METRICS_ENABLED=true
 CLOUDWATCH_NAMESPACE=Reminder/DLQ
-
-#Mail
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USERNAME=losik2006@gmail.com
-SMTP_PASSWORD=changeit
-FROM_EMAIL=losik2006@gmail.com
-SMTP_TLS=true
-SMTP_SSL=false
 
 SECRET_KEY=$(cat secrets/jwt_secret.txt)
 TOKEN_EXPIRATION=86400000
