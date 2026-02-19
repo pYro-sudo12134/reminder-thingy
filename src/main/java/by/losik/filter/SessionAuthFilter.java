@@ -32,6 +32,12 @@ public class SessionAuthFilter implements ContainerRequestFilter {
         PUBLIC_PATHS.add("auth/register");
         PUBLIC_PATHS.add("health");
         PUBLIC_PATHS.add("metrics");
+        PUBLIC_PATHS.add("auth/password/forgot");
+        PUBLIC_PATHS.add("auth/password/reset");
+        PUBLIC_PATHS.add("auth/password/validate");
+        PUBLIC_PATHS.add("auth/password/reset-form");
+        PUBLIC_PATHS.add("auth/password");
+        PUBLIC_PATHS.add("auth/password/");
     }
 
     @Override

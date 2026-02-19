@@ -153,6 +153,39 @@
             transition: width 0.3s, background-color 0.3s;
         }
 
+        .email-note {
+            font-size: 11px;
+            color: #999;
+            margin-top: 2px;
+        }
+
+        .requirement-valid {
+            color: #28a745;
+        }
+
+        .requirement-invalid {
+            color: #dc3545;
+        }
+
+        .strength-weak {
+            background-color: #dc3545;
+            width: 25%;
+        }
+
+        .strength-fair {
+            background-color: #ffc107;
+            width: 50%;
+        }
+
+        .strength-good {
+            background-color: #17a2b8;
+            width: 75%;
+        }
+
+        .strength-strong {
+            background-color: #28a745;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -181,6 +214,12 @@
                     <li id="req-number">Цифра</li>
                 </ul>
             </div>
+        </div>
+
+        <div class="form-group">
+            <label for="email">Email *</label>
+            <input type="email" id="email" placeholder="your@email.com" required autocomplete="email">
+            <div class="email-note">На этот email будут приходить уведомления и ссылки для сброса пароля</div>
         </div>
 
         <div class="form-group">
@@ -236,6 +275,7 @@
 
         if (password.length === 0) {
             strengthBar.style.width = '0';
+            strengthBar.className = 'password-strength-bar';
         } else {
             switch(strength) {
                 case 1:
@@ -267,10 +307,10 @@
             matchElement.textContent = '';
             matchElement.className = 'password-requirements';
         } else if (password === confirmPassword) {
-            matchElement.textContent = 'Пароли совпадают';
+            matchElement.textContent = '✓ Пароли совпадают';
             matchElement.className = 'password-requirements requirement-valid';
         } else {
-            matchElement.textContent = 'Пароли не совпадают';
+            matchElement.textContent = '✗ Пароли не совпадают';
             matchElement.className = 'password-requirements requirement-invalid';
         }
     }
@@ -280,14 +320,17 @@
         if (isValid) {
             element.classList.add('requirement-valid');
             element.classList.remove('requirement-invalid');
+            element.innerHTML = '✓ ' + element.innerHTML.replace('✓ ', '').replace('✗ ', '');
         } else {
             element.classList.add('requirement-invalid');
             element.classList.remove('requirement-valid');
+            element.innerHTML = '✗ ' + element.innerHTML.replace('✓ ', '').replace('✗ ', '');
         }
     }
 
     async function register() {
         const username = document.getElementById('username').value.trim();
+        const email = document.getElementById('email').value.trim();  // НОВОЕ
         const password = document.getElementById('password').value;
         const confirmPassword = document.getElementById('confirm-password').value;
         const messageDiv = document.getElementById('message');
@@ -295,13 +338,19 @@
         messageDiv.className = 'message hidden';
         messageDiv.textContent = '';
 
-        if (!username || !password || !confirmPassword) {
+        if (!username || !email || !password || !confirmPassword) {
             showMessage('Все поля обязательны для заполнения', 'error');
             return;
         }
 
         if (username.length < 3) {
             showMessage('Имя пользователя должно быть не менее 3 символов', 'error');
+            return;
+        }
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(email)) {
+            showMessage('Введите корректный email адрес', 'error');
             return;
         }
 
@@ -319,6 +368,7 @@
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
+            formData.append('email', email);
 
             const response = await fetch('/api/auth/register', {
                 method: 'POST',
@@ -347,7 +397,6 @@
         messageDiv.textContent = text;
         messageDiv.className = `message ${type}`;
         messageDiv.classList.remove('hidden');
-
         messageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 

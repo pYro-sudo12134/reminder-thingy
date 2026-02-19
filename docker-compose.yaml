@@ -124,6 +124,7 @@ services:
       -c max_wal_size=4GB
 
 
+
   redis:
     image: redis:7-alpine
     container_name: redis-reminder
@@ -188,13 +189,19 @@ services:
       - FLYWAY_LOCATIONS=classpath:db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
-      - SMTP_HOST=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_SSL=false
-      - SMTP_TLS=true
+      - SECRET_KEY=${SECRET_KEY}
+      - TOKEN_EXPIRATION=${TOKEN_EXPIRATION:-86400000}
+      - ISSUER=${ISSUER:-voice-reminder-app}
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8090}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL:-losik2006@gmail.com}
+      - SMTP_SSL=${SMTP_SSL:-false}
+      - SMTP_TLS=${SMTP_TLS:-true}
+      - SMTP_AUTH=${SMTP_AUTH:-true}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-true}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -218,6 +225,7 @@ services:
       - "./db/migration:/app/db/migration:ro"
       - "./redis/certs:/app/redis_certs:ro"
       - "./secrets/redis_password.txt:/run/secrets/redis_password:ro"
+      - "./secrets/jwt_secret.txt:/run/secrets/jwt_secret:ro"
     networks:
       - reminder-network
     depends_on:
@@ -292,3 +300,5 @@ secrets:
     file: ./secrets/postgres_password.txt
   redis_password:
     file: ./secrets/redis_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt

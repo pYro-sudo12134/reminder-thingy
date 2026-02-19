@@ -12,6 +12,7 @@ openssl rand -base64 32 > secrets/nlp_grpc_key.txt
 openssl rand -base64 16 > secrets/opensearch_password.txt
 openssl rand -base64 32 > secrets/postgres_password.txt
 openssl rand -base64 16 > secrets/redis_password.txt
+openssl rand -base64 32 > secrets/jwt_secret.txt
 
 echo "test" > secrets/aws_access_key.txt
 echo "test" > secrets/aws_secret_key.txt
@@ -232,6 +233,7 @@ CREATE TABLE users (
     id BIGSERIAL,
     username VARCHAR(50) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_active BOOLEAN DEFAULT true,
@@ -284,10 +286,10 @@ cat > src/main/resources/db/migration/V2__insert_default_users.sql << 'EOF'
 SET search_path TO voice_schema;
 
 -- Пароли: admin123 и user123
-INSERT INTO voice_schema.users (username, password_hash, created_at)
+INSERT INTO voice_schema.users (username, password_hash, email, created_at)
 VALUES
-    ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', NOW()),
-    ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', NOW())
+    ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'admin@example.com', NOW()),
+    ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'user@example.com', NOW())
 ON CONFLICT (username, created_at) DO NOTHING;
 EOF
 
@@ -393,6 +395,20 @@ SMTP_AUTH=true
 SMTP_STARTTLS=true
 METRICS_ENABLED=true
 CLOUDWATCH_NAMESPACE=Reminder/DLQ
+
+#Mail
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=losik2006@gmail.com
+SMTP_PASSWORD=changeit
+FROM_EMAIL=losik2006@gmail.com
+SMTP_TLS=true
+SMTP_SSL=false
+
+SECRET_KEY=$(cat secrets/jwt_secret.txt)
+TOKEN_EXPIRATION=86400000
+ISSUER=voice-reminder-app
+APP_BASE_URL=http://localhost:8090
 EOF
 
 cat > secrets/secrets.json << EOF
@@ -401,6 +417,7 @@ cat > secrets/secrets.json << EOF
   "OPENSEARCH_PASSWORD": "$(cat secrets/opensearch_password.txt)",
   "POSTGRES_PASSWORD": "$(cat secrets/postgres_password.txt)",
   "REDIS_PASSWORD": "$(cat secrets/redis_password.txt)",
+  "JWT_SECRET": "$(cat secrets/jwt_secret.txt)",
   "OPENSEARCH_USER": "admin",
   "OPENSEARCH_HOST": "localstack",
   "OPENSEARCH_HTTPS_PORT": "9200",
@@ -489,6 +506,11 @@ flyway.schemas=\${DB_SCHEMA:voice_schema}
 flyway.table=flyway_schema_history
 flyway.validate-on-migrate=true
 flyway.baseline-on-migrate=true
+
+jwt.secret-key=${JWT_SECRET}
+jwt.expiration=${TOKEN_EXPIRATION:-86400000}
+jwt.issuer=${ISSUER:-voice-reminder-app}
+app.base-url=${APP_BASE_URL:-http://localhost:8090}
 EOF
 
 rm -f opensearch_certs/*.csr opensearch_certs/*.srl opensearch_certs/*.cnf

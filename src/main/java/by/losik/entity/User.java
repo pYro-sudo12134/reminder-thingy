@@ -10,6 +10,7 @@ import jakarta.persistence.NamedQuery;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import jakarta.validation.constraints.Email;
 import org.eclipse.persistence.annotations.Cache;
 import org.eclipse.persistence.annotations.CacheCoordinationType;
 import org.eclipse.persistence.annotations.CacheType;
@@ -22,7 +23,9 @@ import java.time.LocalDateTime;
         @NamedQuery(name = "User.findByUsername",
                 query = "SELECT u FROM User u WHERE u.username = :username"),
         @NamedQuery(name = "User.findAllActive",
-                query = "SELECT u FROM User u WHERE u.isActive = true")
+                query = "SELECT u FROM User u WHERE u.isActive = true"),
+        @NamedQuery(name = "User.findByEmail",
+            query = "SELECT u FROM User u WHERE u.email = :email")
 })
 @Cache(
     type = CacheType.SOFT,
@@ -39,10 +42,14 @@ public class User {
     private Long id;
 
     @Column(nullable = false, unique = true, length = 50)
+    @Email
     private String username;
 
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
+
+    @Column(name = "email", nullable = false, length = 255)
+    private String email;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -58,8 +65,9 @@ public class User {
 
     public User() {}
 
-    public User(String username, String passwordHash) {
+    public User(String username, String email, String passwordHash) {
         this.username = username;
+        this.email = email;
         this.passwordHash = passwordHash;
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
@@ -80,6 +88,7 @@ public class User {
         this.updatedAt = LocalDateTime.now();
     }
     public void setEmail(String email) {
+        this.email = email;
         this.updatedAt = LocalDateTime.now();
     }
 
@@ -111,5 +120,9 @@ public class User {
         LocalDateTime now = LocalDateTime.now();
         this.createdAt = now;
         this.updatedAt = now;
+    }
+
+    public String getEmail() {
+        return email;
     }
 }
