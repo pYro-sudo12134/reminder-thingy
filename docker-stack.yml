@@ -378,13 +378,19 @@ services:
       - FLYWAY_LOCATIONS=classpath:db/migration
       - JPA_DDL_GENERATION=none
       - JPA_SHOW_SQL=false
-      - SMTP_HOST=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_USERNAME=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - FROM_EMAIL=${SMTP_MAIL:-losik2006@gmail.com}
-      - SMTP_SSL=false
-      - SMTP_TLS=true
+      - SECRET_KEY=${SECRET_KEY}
+      - TOKEN_EXPIRATION=${TOKEN_EXPIRATION:-86400000}
+      - ISSUER=${ISSUER:-voice-reminder-app}
+      - APP_BASE_URL=${APP_BASE_URL:-http://localhost:8090}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-losik2006@gmail.com}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL:-losik2006@gmail.com}
+      - SMTP_SSL=${SMTP_SSL:-false}
+      - SMTP_TLS=${SMTP_TLS:-true}
+      - SMTP_AUTH=${SMTP_AUTH:-true}
+      - SMTP_STARTTLS=${SMTP_STARTTLS:-true}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD}
@@ -420,6 +426,10 @@ services:
       - type: bind
         source: ./redis/certs
         target: /app/redis_certs
+        read_only: true
+      - type: bind
+        source: ./secrets/jwt_secret.txt
+        target: /run/secrets/jwt_secret
         read_only: true
     networks:
       - reminder-network
@@ -566,6 +576,8 @@ secrets:
     file: ./secrets/redis_password.txt
   opensearch_password:
     file: ./secrets/opensearch_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
 
 networks:
   reminder-network:

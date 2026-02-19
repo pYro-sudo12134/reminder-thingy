@@ -100,6 +100,7 @@ public class AuthResource {
     public Response register(
             @FormParam("username") String username,
             @FormParam("password") String password,
+            @FormParam("email") String email,
             @Context HttpServletRequest request) {
 
         if (username == null || username.isBlank() ||
@@ -116,7 +117,7 @@ public class AuthResource {
         }
 
         try {
-            userRepository.createUser(username, password);
+            userRepository.createUser(username, password, email);
 
             HttpSession session = request.getSession(true);
             session.setAttribute("username", username);

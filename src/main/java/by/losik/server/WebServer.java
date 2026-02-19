@@ -4,6 +4,7 @@ import by.losik.filter.CorsFilter;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.filter.SessionAuthFilter;
 import by.losik.resource.MetricsResource;
+import by.losik.resource.PasswordResetResource;
 import by.losik.resource.ReminderResource;
 import by.losik.resource.AuthResource;
 import com.google.inject.Inject;
@@ -36,17 +37,20 @@ public class WebServer implements AutoCloseable {
     private final RateLimiterFilter rateLimiterFilter;
     private final AuthResource authResource;
     private final MetricsResource metricsResource;
+    private final PasswordResetResource passwordResetResource;
 
     @Inject
     public WebServer(int port,
                      ReminderResource reminderResource,
                      AuthResource authResource,
                      MetricsResource metricsResource,
+                     PasswordResetResource passwordResetResource,
                      RateLimiterFilter rateLimiterFilter) {
         this.port = port;
         this.metricsResource = metricsResource;
         this.reminderResource = reminderResource;
         this.rateLimiterFilter = rateLimiterFilter;
+        this.passwordResetResource = passwordResetResource;
         this.authResource = authResource;
     }
 
@@ -105,6 +109,7 @@ public class WebServer implements AutoCloseable {
         apiConfig.register(reminderResource);
         apiConfig.register(authResource);
         apiConfig.register(metricsResource);
+        apiConfig.register(passwordResetResource);
         apiConfig.register(SessionAuthFilter.class);
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);

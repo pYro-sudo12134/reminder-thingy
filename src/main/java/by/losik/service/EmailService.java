@@ -45,7 +45,7 @@ public class EmailService implements EmailSender, AutoCloseable {
         this.executorService = Executors.newFixedThreadPool(5);
     }
 
-    private Session createMailSession() {
+    protected Session createMailSession() {
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true");
         props.put("mail.smtp.host", smtpHost);
@@ -152,6 +152,7 @@ public class EmailService implements EmailSender, AutoCloseable {
             </html>
             """, action, scheduledTime, reminderId);
 
+        log.info("Sending mail: {}", htmlBody);
         return sendEmail(toEmail, subject, htmlBody, true);
     }
 
