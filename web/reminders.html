@@ -157,28 +157,36 @@
         .autocomplete-container {
             position: relative;
         }
-
+        .autocomplete-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
         .autocomplete-item {
             padding: 8px 12px;
             cursor: pointer;
             border-bottom: 1px solid #eee;
         }
-
         .autocomplete-item:hover {
             background: #f5f5f5;
         }
-
         .autocomplete-item:last-child {
             border-bottom: none;
         }
-
         .autocomplete-highlight {
             background-color: #fff9c4;
             font-weight: bold;
             padding: 1px 2px;
             border-radius: 2px;
         }
-
         .clear-btn {
             padding: 10px;
             background: #6c757d;
@@ -189,18 +197,15 @@
             font-size: 18px;
             line-height: 1;
         }
-
         .clear-btn:hover {
             background: #5a6268;
         }
-
         .autocomplete-info {
             color: #666;
             font-style: italic;
             padding: 8px 12px;
             border-bottom: 1px solid #eee;
         }
-
         .autocomplete-error {
             color: #f44336;
             padding: 8px 12px;
@@ -223,243 +228,244 @@
     <button class="refresh-btn" onclick="loadReminders()" title="Обновить">↻</button>
 </div>
 <div class="form-group autocomplete-container">
-    <input type="text" id="reminderText" placeholder="Начните вводить текст напоминания...">
+    <input type="text" id="reminderText" placeholder="Начните вводить текст напоминания..." autocomplete="off">
     <button class="clear-btn" onclick="clearAutocomplete()" title="Очистить">×</button>
 </div>
 
 <div id="stats" class="stats hidden"></div>
-
 <div id="loading" class="loading hidden">Загружаю напоминания...</div>
-
 <div id="error" class="error hidden"></div>
-
 <div id="remindersList"></div>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const userId = localStorage.getItem('userId') || document.getElementById('userId')?.value;
+    let autocompleteDebounceTimer;
+    let activeUserId = '';
 
-        if (userId) {
-            setupAutocomplete('reminderText', userId);
-        }
-    });
-
-    async function checkAuthAndRedirect() {
+    document.addEventListener('DOMContentLoaded', async () => {
         try {
             const response = await fetch('/api/auth/me');
-            if (!response.ok) {
-                window.location.href = '/';
+            if (!response.ok) window.location.href = '/';
+
+            const userId = localStorage.getItem('userId') || document.getElementById('userId').value;
+            if (userId) {
+                document.getElementById('userId').value = userId;
+                activeUserId = userId;
+                loadReminders();
+                setupAutocomplete('reminderText', userId);
             }
-        } catch (error) {
+        } catch {
             window.location.href = '/';
         }
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-        checkAuthAndRedirect();
     });
 
     function loadReminders() {
         const userId = document.getElementById('userId').value.trim();
-        if (!userId) {
-            alert('Введите ID пользователя');
-            return;
-        }
+        if (!userId) return alert('Введите ID пользователя');
 
+        activeUserId = userId;
+        localStorage.setItem('userId', userId);
         showLoading(true);
         hideError();
 
-        loadStats(userId);
-        loadRemindersList(userId);
-    }
-
-    function loadStats(userId) {
-        fetch(`/api/stats/${userId}`)
-            .then(response => {
-                if (!response.ok) {
-                    if (response.status === 404) return null;
-                    throw new Error(`HTTP error ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(stats => {
-                displayStats(stats);
-            })
-            .catch(error => {
-                console.error('Error loading stats:', error);
-            });
-    }
-
-    function loadRemindersList(userId) {
-        fetch(`/api/user/${userId}/reminders?limit=20`)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                displayReminders(data);
-                showLoading(false);
-            })
-            .catch(error => {
-                console.error('Error loading reminders:', error);
-                showError(`Ошибка загрузки: ${error.message}`);
-                showLoading(false);
-            });
+        Promise.all([
+            fetch(`/api/stats/${userId}`).then(r => r.ok ? r.json() : null),
+            fetch(`/api/user/${userId}/reminders?limit=20`).then(r => r.json())
+        ]).then(([stats, reminders]) => {
+            displayStats(stats);
+            displayReminders(reminders);
+            showLoading(false);
+        }).catch(error => {
+            showError(`Ошибка загрузки: ${error.message}`);
+            showLoading(false);
+        });
     }
 
     function displayStats(stats) {
         const statsDiv = document.getElementById('stats');
-
         if (!stats || stats.error) {
             statsDiv.classList.add('hidden');
             return;
         }
 
-        let html = '';
+        statsDiv.innerHTML = Object.entries(stats)
+            .filter(([key]) => ['total', 'scheduled', 'completed', 'cancelled'].includes(key))
+            .map(([key, value]) => `
+                <div class="stat-card">
+                    <div class="stat-value">${value}</div>
+                    <div class="stat-label">${key === 'total' ? 'Всего' :
+                key === 'scheduled' ? 'Запланировано' :
+                    key === 'completed' ? 'Выполнено' : 'Отменено'}</div>
+                </div>
+            `).join('');
 
-        if (stats.total !== undefined) {
-            html += `
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.total}</div>
-                        <div class="stat-label">Всего</div>
-                    </div>`;
-        }
-
-        if (stats.scheduled !== undefined) {
-            html += `
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.scheduled}</div>
-                        <div class="stat-label">Запланировано</div>
-                    </div>`;
-        }
-
-        if (stats.completed !== undefined) {
-            html += `
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.completed}</div>
-                        <div class="stat-label">Выполнено</div>
-                    </div>`;
-        }
-
-        if (stats.cancelled !== undefined) {
-            html += `
-                    <div class="stat-card">
-                        <div class="stat-value">${stats.cancelled}</div>
-                        <div class="stat-label">Отменено</div>
-                    </div>`;
-        }
-
-        statsDiv.innerHTML = html;
         statsDiv.classList.remove('hidden');
     }
 
     function displayReminders(data) {
         const listDiv = document.getElementById('remindersList');
 
-        if (!data.reminders || data.reminders.length === 0) {
-            listDiv.innerHTML = `
-                    <div class="empty-state">
-                        <p>Напоминаний нет</p>
-                        <p><a href="/" style="color: #007bff;">Создать первое напоминание</a></p>
-                    </div>`;
+        if (!data.reminders?.length) {
+            listDiv.innerHTML = '<div class="empty-state"><p>Напоминаний нет</p><p><a href="/" style="color: #007bff;">Создать первое напоминание</a></p></div>';
             return;
         }
 
-        let html = `<h3 style="margin-bottom: 15px;">Напоминания (${data.total})</h3>`;
+        listDiv.innerHTML = `<h3 style="margin-bottom: 15px;">Напоминания (${data.total})</h3>` +
+            data.reminders.map(reminder => {
+                const statusColor = {
+                    scheduled: '#4CAF50', completed: '#2196F3',
+                    cancelled: '#f44336', processing: '#FF9800'
+                }[reminder.status.toLowerCase()] || '#9E9E9E';
 
-        data.reminders.forEach(reminder => {
-            const statusColor = getStatusColor(reminder.status);
-            const scheduledTime = new Date(reminder.scheduledTime);
-            const createdAt = new Date(reminder.createdAt);
-
-            html += `
-                    <div class="reminder">
+                return `
+                    <div class="reminder" data-id="${reminder.reminderId}">
                         <div class="reminder-header">
-                            <span class="reminder-id">ID: ${reminder.reminderId}</span>
-                            <span class="status-badge" style="background: ${statusColor}">
-                                ${reminder.status}
-                            </span>
+                            <span class="reminder-id">ID: ${reminder.reminderId.substring(0, 8)}...</span>
+                            <span class="status-badge" style="background: ${statusColor}">${reminder.status}</span>
                         </div>
                         <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
                         <div class="reminder-time">
-                            <strong>Когда:</strong> ${scheduledTime.toLocaleString('ru-RU')}
-                            <br>
-                            <strong>Создано:</strong> ${createdAt.toLocaleString('ru-RU')}
-                            ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
+                            <strong>Когда:</strong> ${new Date(reminder.scheduledTime + 'Z').toLocaleString('ru-RU')}<br>
+                            <strong>Создано:</strong> ${new Date(reminder.createdAt + 'Z').toLocaleString('ru-RU')}
+                            ${reminder.notificationSent ? '<br><strong>Уведомление отправлено</strong>' : ''}
                         </div>
                         <div class="actions">
-                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')">
-                                Удалить
-                            </button>
-                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')">
-                                Подробности
-                            </button>
+                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')">Удалить</button>
+                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')">Подробности</button>
                         </div>
                     </div>
                 `;
-        });
-
-        listDiv.innerHTML = html;
-    }
-
-    function getStatusColor(status) {
-        switch(status.toLowerCase()) {
-            case 'scheduled': return '#4CAF50';
-            case 'completed': return '#2196F3';
-            case 'cancelled': return '#f44336';
-            case 'processing': return '#FF9800';
-            default: return '#9E9E9E';
-        }
+            }).join('');
     }
 
     function deleteReminder(reminderId) {
         if (!confirm('Удалить это напоминание?')) return;
 
         fetch(`/api/reminder/${reminderId}`, { method: 'DELETE' })
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
                 if (data.deleted) {
-                    const element = document.getElementById(`reminder-${reminderId}`);
-                    if (element) element.remove();
-                    alert('Напоминание удалено');
-
-                    const userId = document.getElementById('userId').value.trim();
-                    if (userId) loadStats(userId);
-                } else {
-                    alert('Не удалось удалить напоминание');
+                    document.querySelector(`.reminder[data-id="${reminderId}"]`)?.remove();
+                    if (activeUserId) loadStats(activeUserId);
                 }
             })
-            .catch(error => {
-                console.error('Error deleting reminder:', error);
-                alert(`Ошибка удаления: ${error.message}`);
-            });
+            .catch(error => alert(`Ошибка удаления: ${error.message}`));
     }
 
     function viewDetails(reminderId) {
         fetch(`/api/reminder/${reminderId}`)
-            .then(response => response.json())
+            .then(r => r.json())
             .then(data => {
-                if (data.error) {
-                    alert(data.error);
+                if (data.error) return alert(data.error);
+                alert([
+                    `ID: ${data.reminderId}`,
+                    `Пользователь: ${data.userId}`,
+                    `Действие: ${data.extractedAction}`,
+                    `Оригинальный текст: ${data.originalText}`,
+                    `Запланировано: ${new Date(data.scheduledTime + 'Z').toLocaleString('ru-RU')}`,
+                    `Статус: ${data.status}`,
+                    `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`
+                ].join('\n'));
+            });
+    }
+
+    function setupAutocomplete(inputId, userId) {
+        const input = document.getElementById(inputId);
+        const container = input.parentNode;
+        let dropdown = container.querySelector('.autocomplete-dropdown');
+
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.className = 'autocomplete-dropdown hidden';
+            container.appendChild(dropdown);
+        }
+
+        let lastQuery = '';
+        const cache = new Map();
+
+        input.addEventListener('input', () => {
+            const query = input.value.trim();
+
+            if (query.length < 2) {
+                dropdown.classList.add('hidden');
+                return;
+            }
+
+            clearTimeout(autocompleteDebounceTimer);
+            autocompleteDebounceTimer = setTimeout(() => {
+                if (query === lastQuery) return;
+                lastQuery = query;
+
+                const cacheKey = `${userId}:${query}`;
+                if (cache.has(cacheKey)) {
+                    renderAutocomplete(cache.get(cacheKey), query, dropdown);
                     return;
                 }
 
-                let details = `ID: ${data.reminderId}\n`;
-                details += `Пользователь: ${data.userId}\n`;
-                details += `Действие: ${data.extractedAction}\n`;
-                details += `Оригинальный текст: ${data.originalText}\n`;
-                details += `Запланировано на: ${new Date(data.scheduledTime).toLocaleString('ru-RU')}\n`;
-                details += `Статус: ${data.status}\n`;
-                details += `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`;
+                dropdown.innerHTML = '<div class="autocomplete-item">Ищу...</div>';
+                dropdown.classList.remove('hidden');
 
-                alert(details);
-            })
-            .catch(error => {
-                console.error('Error getting reminder details:', error);
-                alert(`Ошибка получения деталей: ${error.message}`);
+                fetch(`/api/autocomplete?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=5`)
+                    .then(r => r.ok ? r.json() : { suggestions: [] })
+                    .then(data => {
+                        cache.set(cacheKey, data);
+                        renderAutocomplete(data, query, dropdown);
+                    })
+                    .catch(() => {
+                        dropdown.innerHTML = '<div class="autocomplete-error">Ошибка поиска</div>';
+                        setTimeout(() => dropdown.classList.add('hidden'), 1500);
+                    });
+            }, 400);
+        });
+
+        input.addEventListener('blur', () => {
+            setTimeout(() => dropdown.classList.add('hidden'), 200);
+        });
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') dropdown.classList.add('hidden');
+        });
+    }
+
+    function renderAutocomplete(data, query, dropdown) {
+        if (!data.suggestions?.length) {
+            dropdown.innerHTML = '<div class="autocomplete-info">Ничего не найдено</div>';
+            return;
+        }
+
+        dropdown.innerHTML = data.suggestions.map(s => {
+            const text = s.action || s.text;
+            const escapedText = text.replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+
+            const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            const highlighted = escapedText.replace(regex, '<span class="autocomplete-highlight">$1</span>');
+
+            return `
+                <div class="autocomplete-item" data-id="${s.reminderId}" data-text="${text.replace(/"/g, '&quot;')}">
+                    ${highlighted}
+                    <div style="font-size: 12px; color: #666;">ID: ${s.reminderId.substring(0, 8)}...</div>
+                </div>
+            `;
+        }).join('');
+
+        dropdown.querySelectorAll('.autocomplete-item').forEach(el => {
+            el.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const id = el.dataset.id;
+                const text = el.dataset.text;
+                document.getElementById('reminderText').value = text;
+                dropdown.classList.add('hidden');
+                if (id) viewDetails(id);
             });
+        });
+    }
+
+    function clearAutocomplete() {
+        const input = document.getElementById('reminderText');
+        input.value = '';
+        input.focus();
+        document.querySelector('.autocomplete-dropdown')?.classList.add('hidden');
     }
 
     function showLoading(show) {
@@ -477,185 +483,12 @@
     }
 
     document.getElementById('userId').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            loadReminders();
-        }
+        if (e.key === 'Enter') loadReminders();
     });
 
-    const urlParams = new URLSearchParams(window.location.search);
-    const userIdFromUrl = urlParams.get('userId');
-    if (userIdFromUrl) {
-        document.getElementById('userId').value = userIdFromUrl;
-        setTimeout(() => loadReminders(), 500);
-    }
-
     setInterval(() => {
-        const userId = document.getElementById('userId').value.trim();
-        if (userId) {
-            loadStats(userId);
-            loadRemindersList(userId);
-        }
+        if (activeUserId) loadReminders();
     }, 30000);
-
-    let autocompleteDebounceTimer;
-
-    function setupAutocomplete(inputId, userId) {
-        const input = document.getElementById(inputId);
-        const dropdown = document.createElement('div');
-        dropdown.className = 'autocomplete-dropdown';
-        dropdown.id = inputId + '-dropdown';
-        input.parentNode.appendChild(dropdown);
-
-        input.addEventListener('input', function() {
-            clearTimeout(autocompleteDebounceTimer);
-            const query = input.value.trim();
-
-            if (query.length < 2) {
-                showInfo(dropdown, 'Введите минимум 2 символа');
-                return;
-            }
-
-            autocompleteDebounceTimer = setTimeout(() => {
-                fetchAutocomplete(userId, query, dropdown);
-            }, 300);
-        });
-
-        input.addEventListener('blur', function() {
-            setTimeout(() => hideAutocomplete(dropdown), 200);
-        });
-
-        input.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                hideAutocomplete(dropdown);
-            }
-            if (e.key === 'Enter' && dropdown.style.display === 'block') {
-                const firstItem = dropdown.querySelector('.autocomplete-item');
-                if (firstItem) {
-                    const reminderId = firstItem.getAttribute('data-reminder-id');
-                    const action = firstItem.getAttribute('data-action');
-                    selectAutocomplete(reminderId, action);
-                }
-            }
-        });
-    }
-
-    function fetchAutocomplete(userId, query, dropdown) {
-        if (!userId) {
-            showInfo(dropdown, 'Введите ID пользователя');
-            return;
-        }
-
-        if (query.length < 2) {
-            showInfo(dropdown, 'Введите минимум 2 символа');
-            return;
-        }
-
-        dropdown.innerHTML = '<div class="autocomplete-item">Ищу...</div>';
-        dropdown.style.display = 'block';
-
-        fetch(`/api/autocomplete?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=5`)
-            .then(response => {
-                if (!response.ok) {
-                    if (response.status === 404) {
-                        return { suggestions: [] };
-                    }
-                    throw new Error(`HTTP error ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                showAutocomplete(data, query, dropdown);
-            })
-            .catch(error => {
-                console.error('Autocomplete error:', error);
-                dropdown.innerHTML = '<div class="autocomplete-error">Ошибка поиска</div>';
-                setTimeout(() => hideAutocomplete(dropdown), 2000);
-            });
-    }
-
-    function showAutocomplete(data, query, dropdown) {
-        if (!data.suggestions || data.suggestions.length === 0) {
-            showInfo(dropdown, 'Ничего не найдено');
-            return;
-        }
-
-        let html = '';
-        data.suggestions.forEach(suggestion => {
-            const displayText = suggestion.action || suggestion.text;
-            const highlightedText = highlightQuery(displayText, query);
-
-            html += `
-            <div class="autocomplete-item"
-                 data-reminder-id="${suggestion.reminderId}"
-                 data-action="${escapeSingleQuotes(displayText)}"
-                 onclick="selectAutocomplete('${escapeSingleQuotes(suggestion.reminderId)}', '${escapeSingleQuotes(displayText)}')">
-                ${highlightedText}
-                <div style="font-size: 12px; color: #666; margin-top: 2px;">
-                    ID: ${suggestion.reminderId.substring(0, 8)}...
-                </div>
-            </div>
-        `;
-        });
-
-        dropdown.innerHTML = html;
-        dropdown.style.display = 'block';
-    }
-
-    function escapeSingleQuotes(str) {
-        if (!str) return '';
-        return str.replace(/'/g, "\\'").replace(/"/g, '\\"');
-    }
-
-    function hideAutocomplete(dropdown) {
-        if (dropdown) {
-            dropdown.style.display = 'none';
-        }
-    }
-
-    function showInfo(dropdown, message) {
-        dropdown.innerHTML = `<div class="autocomplete-info">${message}</div>`;
-        dropdown.style.display = 'block';
-    }
-
-    function clearAutocomplete() {
-        const input = document.getElementById('reminderText');
-        input.value = '';
-        input.focus();
-
-        const dropdown = document.getElementById('reminderText-dropdown');
-        hideAutocomplete(dropdown);
-    }
-
-    function selectAutocomplete(reminderId, action) {
-        const input = document.getElementById('reminderText');
-        if (input && action) {
-            input.value = action;
-        }
-
-        if (reminderId) {
-            viewDetails(reminderId);
-        }
-
-        const dropdown = document.getElementById('reminderText-dropdown');
-        hideAutocomplete(dropdown);
-    }
-
-    function highlightQuery(text, query) {
-        if (!text || !query) return escapeHtml(text);
-
-        const escapedText = escapeHtml(text);
-        const cleanQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(${cleanQuery})`, 'gi');
-
-        return escapedText.replace(regex, '<span class="autocomplete-highlight">$1</span>');
-    }
-
-    function escapeHtml(text) {
-        if (!text) return '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
 </script>
 </body>
 </html>

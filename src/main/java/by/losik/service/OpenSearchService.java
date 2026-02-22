@@ -608,8 +608,6 @@ public class OpenSearchService {
                 HighlightBuilder highlightBuilder = new HighlightBuilder();
                 highlightBuilder.field("extracted_action");
                 highlightBuilder.field("original_text");
-                highlightBuilder.preTags("<u>");
-                highlightBuilder.postTags("</u>");
                 highlightBuilder.fragmentSize(50);
                 highlightBuilder.numOfFragments(1);
                 sourceBuilder.highlighter(highlightBuilder);
