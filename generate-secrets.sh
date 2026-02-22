@@ -203,7 +203,7 @@ keytool -importkeystore \
   -deststorepass changeit \
   -noprompt
 
-cat > postgres-init/01-create-schema.sql << EOF
+cat > postgres-init/01-create-schema.sql << 'EOF'
 CREATE SCHEMA IF NOT EXISTS voice_schema;
 
 GRANT USAGE ON SCHEMA voice_schema TO postgres;
@@ -339,6 +339,7 @@ OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
 # NLP Service
 NLP_SERVICE_HOST=nlp-service
 NLP_SERVICE_PORT=50051
+NLP_GRPC_API_KEY=$(cat secrets/nlp_grpc_key.txt)
 GRPC_USE_TLS=true
 
 # Application

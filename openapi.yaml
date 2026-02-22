@@ -7,8 +7,6 @@ info:
   contact:
     name: Voice Reminder Team
     email: losik2006@gmail.com
-  license:
-    name: Proprietary
 
 servers:
   - url: https://api.voicereminder.example.com/v1
