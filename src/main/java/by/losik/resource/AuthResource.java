@@ -117,7 +117,7 @@ public class AuthResource {
         }
 
         try {
-            userRepository.createUser(username, password, email);
+            userRepository.createUser(username, email, password);
 
             HttpSession session = request.getSession(true);
             session.setAttribute("username", username);
