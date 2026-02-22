@@ -12,12 +12,14 @@ services:
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
-      - GRPC_USE_TLS=true
+      - GRPC_USE_TLS=false
     volumes:
       - "./nlp/models:/app/models"
       - "./nlp/data:/app/data"
       - "./nlp/nlp_service:/app/nlp_service"
       - "./nlp/proto:/app/proto"
+      - "./secrets/nlp_grpc_key.txt:/app/secrets/nlp_grpc_key.txt:ro"
+      - "./secrets/secrets.json:/app/secrets/secrets.json:ro"
     networks:
       - reminder-network
     healthcheck:
@@ -123,8 +125,6 @@ services:
       -c min_wal_size=1GB 
       -c max_wal_size=4GB
 
-
-
   redis:
     image: redis:7-alpine
     container_name: redis-reminder
@@ -174,6 +174,8 @@ services:
       - OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
+      - GRPC_USE_TLS=false
       - WS_PORT=8090
       - DB_ENABLED=true
       - DB_HOST=postgres
@@ -220,6 +222,7 @@ services:
       - REDIS_SSL_CIPHER_SUITES=TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256
     volumes:
       - "./web:/app/web"
+      - "./secrets/secrets.json:/app/secrets/secrets.json:ro"
       - "./secrets/application.properties:/app/config/application.properties:ro"
       - "./opensearch_certs:/app/certs:ro"
       - "./db/migration:/app/db/migration:ro"

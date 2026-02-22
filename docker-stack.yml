@@ -133,10 +133,10 @@ services:
       - NER_MODEL_PATH=/app/models/ner_model
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
-      - GRPC_USE_TLS=true
+      - GRPC_USE_TLS=false
     secrets:
       - source: nlp_grpc_key
-        target: /run/secrets/nlp_grpc_key.txt
+        target: /run/secrets/nlp_grpc_key
         mode: 0440
     volumes:
       - type: volume
@@ -363,6 +363,8 @@ services:
       - OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
+      - GRPC_USE_TLS=false
       - WS_PORT=8090
       - DB_ENABLED=true
       - DB_HOST=postgres
@@ -431,6 +433,10 @@ services:
         source: ./secrets/jwt_secret.txt
         target: /run/secrets/jwt_secret
         read_only: true
+    secrets:
+      - source: nlp_grpc_key
+        target: /run/secrets/nlp_grpc_key
+        mode: 0440
     networks:
       - reminder-network
     healthcheck:
@@ -578,6 +584,10 @@ secrets:
     file: ./secrets/opensearch_password.txt
   jwt_secret:
     file: ./secrets/jwt_secret.txt
+  aws_secret_key:
+    file: ./secrets/aws_secret_key.txt
+  aws_access_key:
+    file: ./secrets/aws_access_key.txt
 
 networks:
   reminder-network:
