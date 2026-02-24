@@ -1,6 +1,7 @@
 package by.losik.resource;
 
 import by.losik.dto.ReminderRecord;
+import by.losik.dto.UpdateReminderRequest;
 import by.losik.service.OpenSearchService;
 import by.losik.service.VoiceReminderService;
 import com.google.inject.Inject;
@@ -10,6 +11,7 @@ import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -430,6 +432,120 @@ public class ReminderResource {
                     errorResponse.put("message", ex.getMessage());
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                             .entity(errorResponse)
+                            .build();
+                })
+                .thenAccept(asyncResponse::resume);
+    }
+
+    @PUT
+    @Path("/reminder/{id}")
+    @Consumes(MediaType.APPLICATION_JSON)
+    public void updateReminder(
+            @Suspended AsyncResponse asyncResponse,
+            @PathParam("id") String reminderId,
+            UpdateReminderRequest updateRequest) {
+
+        log.info("Updating reminder: {}", reminderId);
+
+        if (!reminderId.equals(updateRequest.reminderId())) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Reminder ID in path and body must match"))
+                    .build());
+            return;
+        }
+
+        LocalDateTime scheduledTime = null;
+        if (updateRequest.scheduledTime() != null && !updateRequest.scheduledTime().isEmpty()) {
+            try {
+                scheduledTime = LocalDateTime.parse(updateRequest.scheduledTime());
+            } catch (Exception e) {
+                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", "Invalid scheduled time format. Use ISO format: yyyy-MM-ddTHH:mm:ss"))
+                        .build());
+                return;
+            }
+        }
+
+        ReminderRecord.ReminderStatus status = null;
+        if (updateRequest.status() != null && !updateRequest.status().isEmpty()) {
+            try {
+                status = ReminderRecord.ReminderStatus.valueOf(updateRequest.status().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", "Invalid status. Allowed values: SCHEDULED, COMPLETED, CANCELLED, PROCESSING"))
+                        .build());
+                return;
+            }
+        }
+
+        voiceReminderService.updateReminder(
+                reminderId,
+                updateRequest.extractedAction(),
+                scheduledTime,
+                updateRequest.reminderTime(),
+                status
+        ).thenApply(success -> {
+            Map<String, Object> response = Map.of(
+                    "reminderId", reminderId,
+                    "updated", success,
+                    "timestamp", LocalDateTime.now().toString()
+            );
+
+            if (success) {
+                return Response.ok(response).build();
+            } else {
+                return Response.status(Response.Status.NOT_FOUND)
+                        .entity(Map.of(
+                                "error", "Reminder not found or update failed",
+                                "reminderId", reminderId
+                        ))
+                        .build();
+            }
+        }).exceptionally(ex -> {
+            log.error("Error updating reminder: {}", reminderId, ex);
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                    .entity(Map.of(
+                            "error", "Failed to update reminder",
+                            "message", ex.getMessage()
+                    ))
+                    .build();
+        }).thenAccept(asyncResponse::resume);
+    }
+
+    @POST
+    @Path("/reminder/{id}/cancel")
+    public void cancelReminder(
+            @Suspended AsyncResponse asyncResponse,
+            @PathParam("id") String reminderId) {
+
+        log.info("Cancelling reminder: {}", reminderId);
+
+        voiceReminderService.cancelReminder(reminderId)
+                .thenApply(success -> {
+                    Map<String, Object> response = Map.of(
+                            "reminderId", reminderId,
+                            "cancelled", success,
+                            "timestamp", LocalDateTime.now().toString()
+                    );
+
+                    if (success) {
+                        return Response.ok(response).build();
+                    } else {
+                        return Response.status(Response.Status.NOT_FOUND)
+                                .entity(Map.of(
+                                        "error", "Reminder not found",
+                                        "reminderId", reminderId
+                                ))
+                                .build();
+                    }
+                })
+                .exceptionally(ex -> {
+                    log.error("Error cancelling reminder: {}", reminderId, ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of(
+                                    "error", "Failed to cancel reminder",
+                                    "message", ex.getMessage()
+                            ))
                             .build();
                 })
                 .thenAccept(asyncResponse::resume);

@@ -654,4 +654,52 @@ public class OpenSearchService {
             }
         });
     }
+
+    public CompletableFuture<Boolean> updateReminder(ReminderRecord reminder) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                Map<String, Object> source = new HashMap<>();
+                source.put("user_id", reminder.userId());
+                source.put("original_text", reminder.originalText());
+                source.put("extracted_action", reminder.extractedAction());
+                source.put("scheduled_time", reminder.scheduledTime());
+                source.put("reminder_time", reminder.reminderTime());
+                source.put("status", reminder.status().toString());
+                source.put("notification_sent", reminder.notificationSent());
+                source.put("created_at", reminder.createdAt());
+                source.put("updated_at", LocalDateTime.now());
+                source.put("intent", reminder.intent());
+                source.put("eventbridge_rule_name", reminder.eventBridgeRuleName());
+
+                IndexRequest request = new IndexRequest(REMINDER_INDEX)
+                        .id(reminder.reminderId())
+                        .source(source, XContentType.JSON);
+
+                var response = openSearchClient.index(request, RequestOptions.DEFAULT);
+                log.info("Reminder updated: {}", response.getId());
+                return true;
+            } catch (IOException e) {
+                log.error("Failed to update reminder: {}", reminder.reminderId(), e);
+                throw new RuntimeException("Failed to update reminder", e);
+            }
+        });
+    }
+
+    public CompletableFuture<Boolean> updateReminderFields(String reminderId, Map<String, Object> fields) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                fields.put("updated_at", LocalDateTime.now());
+
+                UpdateRequest request = new UpdateRequest(REMINDER_INDEX, reminderId)
+                        .doc(fields, XContentType.JSON);
+
+                UpdateResponse response = openSearchClient.update(request, RequestOptions.DEFAULT);
+                log.info("Reminder fields updated: {}", reminderId);
+                return response.getResult() == UpdateResponse.Result.UPDATED;
+            } catch (IOException e) {
+                log.error("Failed to update reminder fields: {}", reminderId, e);
+                throw new RuntimeException("Failed to update reminder fields", e);
+            }
+        });
+    }
 }

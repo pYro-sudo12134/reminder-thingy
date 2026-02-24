@@ -33,7 +33,7 @@
             gap: 10px;
             margin-bottom: 20px;
         }
-        input {
+        input, select {
             flex: 1;
             padding: 10px;
             border: 1px solid #ddd;
@@ -99,12 +99,25 @@
             display: flex;
             gap: 10px;
             margin-top: 10px;
+            flex-wrap: wrap;
         }
         .delete-btn {
             background: #f44336;
         }
         .delete-btn:hover {
             background: #d32f2f;
+        }
+        .edit-btn {
+            background: #FF9800;
+        }
+        .edit-btn:hover {
+            background: #F57C00;
+        }
+        .cancel-btn {
+            background: #9C27B0;
+        }
+        .cancel-btn:hover {
+            background: #7B1FA2;
         }
         .details-btn {
             background: #2196F3;
@@ -211,6 +224,103 @@
             padding: 8px 12px;
             border-bottom: 1px solid #eee;
         }
+
+        /* Модальное окно */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+        .modal.show {
+            display: block;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 25px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            position: relative;
+        }
+        .close {
+            position: absolute;
+            right: 20px;
+            top: 15px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #666;
+        }
+        .close:hover {
+            color: #333;
+        }
+        #editForm .form-group {
+            margin-bottom: 20px;
+            flex-direction: column;
+            gap: 5px;
+        }
+        #editForm label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        #editForm input, #editForm select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        #editForm input:focus, #editForm select:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 2px rgba(0,123,255,0.25);
+        }
+        .save-btn {
+            background: #4CAF50;
+            flex: 2;
+        }
+        .save-btn:hover {
+            background: #45a049;
+        }
+        .cancel-edit-btn {
+            background: #f44336;
+            flex: 1;
+        }
+        .cancel-edit-btn:hover {
+            background: #d32f2f;
+        }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #333;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 5px;
+            z-index: 3000;
+            animation: slideIn 0.3s ease;
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -237,9 +347,40 @@
 <div id="error" class="error hidden"></div>
 <div id="remindersList"></div>
 
+<div id="editModal" class="modal">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3 style="margin-bottom: 20px; color: #333;">Редактировать напоминание</h3>
+        <form id="editForm" onsubmit="event.preventDefault(); saveReminder();">
+            <input type="hidden" id="editReminderId">
+            <div class="form-group">
+                <label for="editAction">Действие:</label>
+                <input type="text" id="editAction" placeholder="Что нужно сделать" required>
+            </div>
+            <div class="form-group">
+                <label for="editScheduledTime">Дата и время:</label>
+                <input type="datetime-local" id="editScheduledTime" required>
+            </div>
+            <div class="form-group">
+                <label for="editStatus">Статус:</label>
+                <select id="editStatus">
+                    <option value="SCHEDULED">Запланировано</option>
+                    <option value="COMPLETED">Выполнено</option>
+                    <option value="CANCELLED">Отменено</option>
+                </select>
+            </div>
+            <div class="actions">
+                <button type="submit" class="save-btn">Сохранить</button>
+                <button type="button" class="cancel-edit-btn" onclick="closeEditModal()">Отмена</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
     let autocompleteDebounceTimer;
     let activeUserId = '';
+    let toastTimeout;
 
     document.addEventListener('DOMContentLoaded', async () => {
         try {
@@ -258,7 +399,9 @@
         }
     });
 
+    // Определяем ВСЕ функции ДО их использования
     function loadReminders() {
+        console.log('loadReminders called');
         const userId = document.getElementById('userId').value.trim();
         if (!userId) return alert('Введите ID пользователя');
 
@@ -280,7 +423,27 @@
         });
     }
 
+    // Функция загрузки статистики - определяем ДО deleteReminder
+    function loadStats(userId) {
+        console.log('loadStats called with userId:', userId);
+        if (!userId) return;
+
+        fetch(`/api/stats/${userId}`)
+            .then(r => {
+                console.log('Stats response status:', r.status);
+                return r.ok ? r.json() : null;
+            })
+            .then(stats => {
+                console.log('Stats data:', stats);
+                displayStats(stats);
+            })
+            .catch(error => {
+                console.error('Ошибка загрузки статистики:', error);
+            });
+    }
+
     function displayStats(stats) {
+        console.log('displayStats called with:', stats);
         const statsDiv = document.getElementById('stats');
         if (!stats || stats.error) {
             statsDiv.classList.add('hidden');
@@ -302,6 +465,7 @@
     }
 
     function displayReminders(data) {
+        console.log('displayReminders called with:', data);
         const listDiv = document.getElementById('remindersList');
 
         if (!data.reminders?.length) {
@@ -312,9 +476,13 @@
         listDiv.innerHTML = `<h3 style="margin-bottom: 15px;">Напоминания (${data.total})</h3>` +
             data.reminders.map(reminder => {
                 const statusColor = {
-                    scheduled: '#4CAF50', completed: '#2196F3',
-                    cancelled: '#f44336', processing: '#FF9800'
+                    scheduled: '#4CAF50',
+                    completed: '#2196F3',
+                    cancelled: '#f44336',
+                    processing: '#FF9800'
                 }[reminder.status.toLowerCase()] || '#9E9E9E';
+
+                const canEdit = reminder.status !== 'COMPLETED' && reminder.status !== 'CANCELLED';
 
                 return `
                     <div class="reminder" data-id="${reminder.reminderId}">
@@ -326,11 +494,15 @@
                         <div class="reminder-time">
                             <strong>Когда:</strong> ${new Date(reminder.scheduledTime + 'Z').toLocaleString('ru-RU')}<br>
                             <strong>Создано:</strong> ${new Date(reminder.createdAt + 'Z').toLocaleString('ru-RU')}
-                            ${reminder.notificationSent ? '<br><strong>Уведомление отправлено</strong>' : ''}
+                            ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
                         </div>
                         <div class="actions">
-                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')">Удалить</button>
-                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')">Подробности</button>
+                            ${canEdit ? `
+                                <button class="edit-btn" onclick="editReminder('${reminder.reminderId}')" title="Редактировать">✎</button>
+                                <button class="cancel-btn" onclick="cancelReminder('${reminder.reminderId}')" title="Отменить">✕</button>
+                            ` : ''}
+                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')" title="Удалить">🗑</button>
+                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')" title="Подробности">ℹ</button>
                         </div>
                     </div>
                 `;
@@ -338,37 +510,204 @@
     }
 
     function deleteReminder(reminderId) {
-        if (!confirm('Удалить это напоминание?')) return;
+        console.log('deleteReminder called with:', reminderId);
+        if (!confirm('Удалить это напоминание? Это действие нельзя отменить.')) return;
 
+        showLoading(true);
         fetch(`/api/reminder/${reminderId}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
+                console.log('Delete response:', data);
+                showLoading(false);
                 if (data.deleted) {
-                    document.querySelector(`.reminder[data-id="${reminderId}"]`)?.remove();
-                    if (activeUserId) loadStats(activeUserId);
+                    // Удаляем элемент из DOM
+                    const reminderElement = document.querySelector(`.reminder[data-id="${reminderId}"]`);
+                    if (reminderElement) {
+                        reminderElement.remove();
+                    }
+
+                    // Проверяем, остались ли напоминания
+                    const remainingReminders = document.querySelectorAll('.reminder').length;
+                    console.log('Remaining reminders:', remainingReminders);
+
+                    if (remainingReminders === 0) {
+                        document.getElementById('remindersList').innerHTML =
+                            '<div class="empty-state"><p>Напоминаний нет</p></div>';
+                    }
+
+                    // Обновляем статистику
+                    if (activeUserId) {
+                        console.log('Calling loadStats with:', activeUserId);
+                        loadStats(activeUserId);
+                    }
+                    showToast('Напоминание удалено');
+                } else {
+                    showError('Не удалось удалить напоминание');
                 }
             })
-            .catch(error => alert(`Ошибка удаления: ${error.message}`));
-    }
-
-    function viewDetails(reminderId) {
-        fetch(`/api/reminder/${reminderId}`)
-            .then(r => r.json())
-            .then(data => {
-                if (data.error) return alert(data.error);
-                alert([
-                    `ID: ${data.reminderId}`,
-                    `Пользователь: ${data.userId}`,
-                    `Действие: ${data.extractedAction}`,
-                    `Оригинальный текст: ${data.originalText}`,
-                    `Запланировано: ${new Date(data.scheduledTime + 'Z').toLocaleString('ru-RU')}`,
-                    `Статус: ${data.status}`,
-                    `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`
-                ].join('\n'));
+            .catch(error => {
+                console.error('Delete error:', error);
+                showLoading(false);
+                showError(`Ошибка удаления: ${error.message}`);
             });
     }
 
+    function editReminder(reminderId) {
+        console.log('editReminder called with:', reminderId);
+        showLoading(true);
+        fetch(`/api/reminder/${reminderId}`)
+            .then(r => r.json())
+            .then(reminder => {
+                console.log('Edit reminder data:', reminder);
+                if (reminder.error) {
+                    throw new Error(reminder.error);
+                }
+
+                document.getElementById('editReminderId').value = reminder.reminderId;
+                document.getElementById('editAction').value = reminder.extractedAction || '';
+
+                if (reminder.scheduledTime) {
+                    const date = new Date(reminder.scheduledTime + 'Z');
+                    const year = date.getFullYear();
+                    const month = String(date.getMonth() + 1).padStart(2, '0');
+                    const day = String(date.getDate()).padStart(2, '0');
+                    const hours = String(date.getHours()).padStart(2, '0');
+                    const minutes = String(date.getMinutes()).padStart(2, '0');
+                    document.getElementById('editScheduledTime').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+                }
+
+                document.getElementById('editStatus').value = reminder.status || 'SCHEDULED';
+                document.getElementById('editModal').classList.add('show');
+                showLoading(false);
+            })
+            .catch(error => {
+                console.error('Edit error:', error);
+                showLoading(false);
+                showError('Ошибка загрузки данных: ' + error.message);
+            });
+    }
+
+    function saveReminder() {
+        console.log('saveReminder called');
+        const reminderId = document.getElementById('editReminderId').value;
+        const scheduledTime = document.getElementById('editScheduledTime').value;
+
+        if (!scheduledTime) {
+            showError('Выберите дату и время');
+            return;
+        }
+
+        const data = {
+            reminderId: reminderId,
+            extractedAction: document.getElementById('editAction').value,
+            scheduledTime: scheduledTime + ':00',
+            status: document.getElementById('editStatus').value
+        };
+
+        console.log('Save data:', data);
+
+        showLoading(true);
+        fetch(`/api/reminder/${reminderId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        })
+            .then(r => r.json())
+            .then(response => {
+                console.log('Save response:', response);
+                showLoading(false);
+                if (response.updated) {
+                    closeEditModal();
+                    loadReminders();
+                    showToast('Напоминание обновлено');
+                } else {
+                    showError('Не удалось обновить напоминание');
+                }
+            })
+            .catch(error => {
+                console.error('Save error:', error);
+                showLoading(false);
+                showError('Ошибка: ' + error.message);
+            });
+    }
+
+    function cancelReminder(reminderId) {
+        console.log('cancelReminder called with:', reminderId);
+        if (!confirm('Отменить это напоминание? Статус изменится на "Отменено".')) return;
+
+        showLoading(true);
+        fetch(`/api/reminder/${reminderId}/cancel`, { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                console.log('Cancel response:', data);
+                showLoading(false);
+                if (data.cancelled) {
+                    loadReminders();
+                    showToast('Напоминание отменено');
+                } else {
+                    showError('Не удалось отменить напоминание');
+                }
+            })
+            .catch(error => {
+                console.error('Cancel error:', error);
+                showLoading(false);
+                showError('Ошибка: ' + error.message);
+            });
+    }
+
+    function viewDetails(reminderId) {
+        console.log('viewDetails called with:', reminderId);
+        fetch(`/api/reminder/${reminderId}`)
+            .then(r => r.json())
+            .then(data => {
+                console.log('Details data:', data);
+                if (data.error) return alert(data.error);
+
+                const details = [
+                    `ID: ${data.reminderId}`,
+                    `Пользователь: ${data.userId}`,
+                    `Действие: ${data.extractedAction || '—'}`,
+                    `Оригинальный текст: ${data.originalText || '—'}`,
+                    `Запланировано: ${new Date(data.scheduledTime + 'Z').toLocaleString('ru-RU')}`,
+                    `Статус: ${data.status}`,
+                    `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`,
+                    `Уведомление: ${data.notificationSent ? 'Отправлено' : 'Не отправлено'}`,
+                    data.intent ? `🎯 Намерение: ${data.intent}` : null
+                ].filter(Boolean).join('\n');
+
+                alert(details);
+            })
+            .catch(error => {
+                console.error('Details error:', error);
+                alert('Ошибка загрузки: ' + error.message);
+            });
+    }
+
+    function closeEditModal() {
+        console.log('closeEditModal called');
+        document.getElementById('editModal').classList.remove('show');
+    }
+
+    function showToast(message) {
+        console.log('showToast called with:', message);
+        const existingToast = document.querySelector('.toast');
+        if (existingToast) {
+            existingToast.remove();
+            clearTimeout(toastTimeout);
+        }
+
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        toastTimeout = setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
     function setupAutocomplete(inputId, userId) {
+        console.log('setupAutocomplete called for:', inputId, userId);
         const input = document.getElementById(inputId);
         const container = input.parentNode;
         let dropdown = container.querySelector('.autocomplete-dropdown');
@@ -427,6 +766,7 @@
     }
 
     function renderAutocomplete(data, query, dropdown) {
+        console.log('renderAutocomplete called with query:', query);
         if (!data.suggestions?.length) {
             dropdown.innerHTML = '<div class="autocomplete-info">Ничего не найдено</div>';
             return;
@@ -462,6 +802,7 @@
     }
 
     function clearAutocomplete() {
+        console.log('clearAutocomplete called');
         const input = document.getElementById('reminderText');
         input.value = '';
         input.focus();
@@ -473,9 +814,14 @@
     }
 
     function showError(message) {
+        console.log('showError called with:', message);
         const errorDiv = document.getElementById('error');
         errorDiv.textContent = message;
         errorDiv.classList.remove('hidden');
+
+        setTimeout(() => {
+            errorDiv.classList.add('hidden');
+        }, 5000);
     }
 
     function hideError() {
@@ -484,6 +830,13 @@
 
     document.getElementById('userId').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') loadReminders();
+    });
+
+    window.addEventListener('click', (e) => {
+        const modal = document.getElementById('editModal');
+        if (e.target === modal) {
+            closeEditModal();
+        }
     });
 
     setInterval(() => {

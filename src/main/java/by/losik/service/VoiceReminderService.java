@@ -183,6 +183,116 @@ public class VoiceReminderService {
         );
     }
 
+    public CompletableFuture<Boolean> updateReminder(String reminderId,
+                                                     String extractedAction,
+                                                     LocalDateTime scheduledTime,
+                                                     String reminderTime,
+                                                     ReminderRecord.ReminderStatus status) {
+        log.info("Updating reminder: {}", reminderId);
+
+        return openSearchService.getReminderById(reminderId)
+                .thenCompose(optionalReminder -> {
+                    if (optionalReminder.isEmpty()) {
+                        return CompletableFuture.completedFuture(false);
+                    }
+
+                    ReminderRecord existingReminder = optionalReminder.get();
+
+                    boolean timeChanged = scheduledTime != null &&
+                            !scheduledTime.equals(existingReminder.scheduledTime());
+
+                    ReminderRecord updatedReminder = new ReminderRecord(
+                            existingReminder.reminderId(),
+                            existingReminder.userId(),
+                            existingReminder.originalText(),
+                            extractedAction != null ? extractedAction : existingReminder.extractedAction(),
+                            scheduledTime != null ? scheduledTime : existingReminder.scheduledTime(),
+                            reminderTime != null ? reminderTime :
+                                    (scheduledTime != null ? formatForDisplay(scheduledTime) : existingReminder.reminderTime()),
+                            existingReminder.createdAt(),
+                            status != null ? status : existingReminder.status(),
+                            existingReminder.notificationSent(),
+                            existingReminder.intent(),
+                            existingReminder.eventBridgeRuleName()
+                    );
+
+                    CompletableFuture<Boolean> updateFuture = openSearchService.updateReminder(updatedReminder);
+
+                    if (timeChanged && existingReminder.eventBridgeRuleName() != null) {
+                        return eventBridgeService.deleteRule(existingReminder.eventBridgeRuleName())
+                                .thenCompose(deleted -> {
+                                    if (!deleted) {
+                                        log.warn("Failed to delete old EventBridge rule: {}",
+                                                existingReminder.eventBridgeRuleName());
+                                    }
+
+                                    Map<String, Object> inputData = Map.of(
+                                            "reminderId", updatedReminder.reminderId(),
+                                            "userEmail", "",
+                                            "action", updatedReminder.extractedAction(),
+                                            "scheduledTime", updatedReminder.scheduledTime().toString(),
+                                            "intent", updatedReminder.intent()
+                                    );
+
+                                    CreateRuleRequest ruleRequest = new CreateRuleRequest(
+                                            "reminder-" + updatedReminder.reminderId(),
+                                            updatedReminder.scheduledTime(),
+                                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                                            inputData,
+                                            "Напоминание: " + updatedReminder.extractedAction(),
+                                            updatedReminder.intent()
+                                    );
+
+                                    return eventBridgeService.createScheduleRule(ruleRequest)
+                                            .thenCompose(rule ->
+                                                    openSearchService.updateReminderEventBridgeRule(
+                                                            updatedReminder.reminderId(), rule.ruleName()
+                                                    ).thenApply(updated -> {
+                                                        log.info("EventBridge rule updated for reminder: {}", reminderId);
+                                                        return updated;
+                                                    }));
+                                });
+                    }
+
+                    return updateFuture;
+                });
+    }
+
+    public CompletableFuture<Boolean> cancelReminder(String reminderId) {
+        log.info("Cancelling reminder: {}", reminderId);
+
+        return openSearchService.getReminderById(reminderId)
+                .thenCompose(optionalReminder -> {
+                    if (optionalReminder.isEmpty()) {
+                        return CompletableFuture.completedFuture(false);
+                    }
+
+                    ReminderRecord reminder = optionalReminder.get();
+
+                    CompletableFuture<Boolean> updateFuture = openSearchService.updateReminderStatus(
+                            reminderId,
+                            ReminderRecord.ReminderStatus.CANCELLED,
+                            reminder.notificationSent()
+                    );
+
+                    if (reminder.eventBridgeRuleName() != null && !reminder.eventBridgeRuleName().isEmpty()) {
+                        return eventBridgeService.deleteRule(reminder.eventBridgeRuleName())
+                                .thenCompose(success -> {
+                                    log.info("EventBridge rule deleted for cancelled reminder: {}",
+                                            reminder.eventBridgeRuleName());
+                                    return updateFuture;
+                                });
+                    }
+
+                    return updateFuture;
+                });
+    }
+
+    private String formatForDisplay(LocalDateTime dateTime) {
+        if (dateTime == null) return "";
+        return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
+    }
+
     public OpenSearchService getOpenSearchService() {
         return openSearchService;
     }
