@@ -250,6 +250,8 @@ services:
   dlq-processor:
     image: pyrodocker1/reminder-dlq-processor:1.0
     container_name: dlq-processor
+    ports:
+      - "8085:8085"
     restart: unless-stopped
     environment:
       - AWS_ACCESS_KEY_ID=test
