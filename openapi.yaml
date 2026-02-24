@@ -3,6 +3,25 @@ info:
   title: Voice Reminder API
   description: |
     ## Intelligent Voice Reminder Assistant
+    
+    ### Complete CRUD Operations
+    - Create reminders via voice recording
+    - Read reminders with full details
+    - Update existing reminders (action, time, status)
+    - Delete reminders (hard delete)
+    - Cancel reminders (soft delete - status change)
+    
+    ### Processing Flow
+    1. Audio upload and transcription (AWS Transcribe)
+    2. NLP parsing for intent and entities (gRPC service)
+    3. Schedule creation (EventBridge)
+    4. Email notification delivery (SES)
+    5. Search and analytics (OpenSearch)
+    
+    ### Authentication
+    - Session-based authentication via JSESSIONID cookie
+    - Optional API key for machine clients
+    - Rate limiting per user/endpoint
   version: 2.0.0
   contact:
     name: Voice Reminder Team
@@ -18,7 +37,7 @@ servers:
 
 tags:
   - name: Reminders
-    description: Voice reminder operations
+    description: Complete reminder management (CRUD operations)
     x-displayName: "Reminders"
   - name: Search
     description: Contextual search and autocomplete
@@ -501,15 +520,106 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimit'
 
+    put:
+      tags:
+        - Reminders
+      summary: Update reminder
+      description: |
+        Update existing reminder details. Can modify action, scheduled time, and status.
+        
+        **Update Behavior:**
+        - If scheduled time changes: Old EventBridge rule is deleted, new rule created
+        - If status changes: Reminder state updated in OpenSearch
+        - If action changes: Text updated in OpenSearch
+        
+        **Validation Rules:**
+        - Cannot update completed or cancelled reminders
+        - Scheduled time must be in the future
+        - Status must be a valid enum value
+      operationId: updateReminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Reminder ID to update
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateReminderRequest'
+      responses:
+        '200':
+          description: Reminder updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminderId:
+                    type: string
+                    format: uuid
+                    example: "123e4567-e89b-12d3-a456-426614174000"
+                  updated:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-02-19T10:30:00Z"
+        '400':
+          description: |
+            Invalid update request:
+            - Reminder ID mismatch
+            - Invalid date format
+            - Invalid status value
+            - Future date required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            Cannot update reminder in current state:
+            - Reminder already completed
+            - Reminder already cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+        '500':
+          description: |
+            Internal error during update:
+            - EventBridge rule update failed
+            - OpenSearch update failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
     delete:
       tags:
         - Reminders
       summary: Delete reminder
       description: |
-        Remove reminder and associated resources:
-        - Delete from OpenSearch
-        - Remove EventBridge rule
-        - Clean up any temporary files
+        Permanently delete reminder and associated resources:
+        - Remove from OpenSearch (hard delete)
+        - Delete EventBridge rule
+        - Clean up any associated files
+        
+        **Note:** This action is irreversible. Use cancel endpoint for soft delete.
       operationId: deleteReminder
       parameters:
         - name: id
@@ -521,7 +631,7 @@ paths:
           description: Reminder ID to delete
       responses:
         '200':
-          description: Reminder deleted
+          description: Reminder deleted successfully
           content:
             application/json:
               schema:
@@ -544,6 +654,87 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/RateLimit'
+        '500':
+          description: Error during deletion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /reminder/{id}/cancel:
+    post:
+      tags:
+        - Reminders
+      summary: Cancel reminder
+      description: |
+        Soft delete - cancel reminder without removing it from history.
+        
+        **What happens:**
+        - Status changes from SCHEDULED to CANCELLED
+        - EventBridge rule is deleted (prevents future triggers)
+        - Reminder remains in OpenSearch with CANCELLED status
+        - User can view cancelled reminders in history
+        
+        **Use cases:**
+        - User no longer needs reminder
+        - Mistakenly created reminder
+        - Event cancelled/postponed indefinitely
+      operationId: cancelReminder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Reminder ID to cancel
+          example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Reminder cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  reminderId:
+                    type: string
+                    format: uuid
+                    example: "123e4567-e89b-12d3-a456-426614174000"
+                  cancelled:
+                    type: boolean
+                    example: true
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-02-19T10:30:00Z"
+        '400':
+          description: |
+            Cannot cancel reminder:
+            - Reminder already completed
+            - Reminder already cancelled
+            - Reminder in invalid state
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Reminder not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/RateLimit'
+        '500':
+          description: |
+            Error during cancellation:
+            - EventBridge rule deletion failed
+            - OpenSearch update failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /reminder/{id}/transcription:
     get:
@@ -670,6 +861,7 @@ paths:
         - Fuzzy matching for typos
         - Context-aware suggestions
         - Real-time performance via OpenSearch completion suggester
+        - Highlighted matches in results
         
         **Example queries:**
         - `купи` → "купить молоко", "купить хлеб"
@@ -838,6 +1030,51 @@ paths:
 
 components:
   schemas:
+    UpdateReminderRequest:
+      type: object
+      description: Request payload for updating a reminder
+      properties:
+        reminderId:
+          type: string
+          format: uuid
+          description: Reminder ID (must match path parameter)
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        extractedAction:
+          type: string
+          description: Updated action text
+          minLength: 1
+          maxLength: 500
+          example: "купить молоко и хлеб"
+        scheduledTime:
+          type: string
+          format: date-time
+          description: |
+            New scheduled time in ISO format (UTC)
+            
+            **Validation:** Must be in the future
+          example: "2026-02-20T16:00:00Z"
+        reminderTime:
+          type: string
+          pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+          description: Display time in HH:mm format (24-hour)
+          example: "16:00"
+        status:
+          type: string
+          enum: [SCHEDULED, COMPLETED, CANCELLED]
+          description: |
+            New status for reminder
+            
+            **Note:** Cannot change from COMPLETED or CANCELLED
+          example: "SCHEDULED"
+      required:
+        - reminderId
+      example:
+        reminderId: "123e4567-e89b-12d3-a456-426614174000"
+        extractedAction: "купить молоко и хлеб"
+        scheduledTime: "2026-02-20T16:00:00Z"
+        reminderTime: "16:00"
+        status: "SCHEDULED"
+
     ReminderRecord:
       type: object
       description: Full reminder record with all metadata from OpenSearch
