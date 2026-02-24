@@ -640,40 +640,4 @@ volumes:
       o: addr=nfs-server,nolock,soft,rw,timeo=600,retrans=2,vers=4
       device: ":/exports/app_static"
 
-#volumes:
-#  postgres_data:
-#    driver: local
-#    driver_opts:
-#      type: none
-#      o: bind
-#      device: /mnt/d/zfs/postgres
-#
-#  redis_data:
-#    driver: local
-#    driver_opts:
-#      type: none
-#      o: bind
-#      device: /mnt/d/zfs/redis
-#
-#  nfs_nlp_models:
-#    driver: local
-#    driver_opts:
-#      type: none
-#      o: bind
-#      device: /mnt/d/zfs/nlp-models
-#
-#  nfs_app_static:
-#    driver: local
-#    driver_opts:
-#      type: none
-#      o: bind
-#      device: /mnt/d/zfs/app-static
-#
-#  nfs_localstack_data:
-#    driver: local
-#    driver_opts:
-#      type: none
-#      o: bind
-#      device: /mnt/d/zfs/localstack
-
 # export $(cat .env | xargs) && docker stack deploy -c docker-stack.yml swarm
