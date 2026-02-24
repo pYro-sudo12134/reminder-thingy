@@ -86,7 +86,7 @@ services:
         mode: host
     volumes:
       - type: bind
-        source: /nfs-storage
+        source: /exports
         target: /exports
       - type: bind
         source: ./nfs-config/exports
