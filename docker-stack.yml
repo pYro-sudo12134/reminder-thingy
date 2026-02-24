@@ -534,6 +534,8 @@ services:
         parallelism: 1
         delay: 30s
         order: start-first
+    ports:
+      - "8085:8085"
     environment:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
