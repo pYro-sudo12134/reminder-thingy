@@ -47,6 +47,11 @@ Parameters:
     Default: 10.10.0.2
     Description: IP address of Traefik
 
+  NFSIP:
+    Type: String
+    Default: 10.10.0.3
+    Description: IP address of NFS server
+
   MainHostedZoneId:
     Type: String
     Description: ID of existing main hosted zone
@@ -95,6 +100,16 @@ Resources:
       TTL: 60
       ResourceRecords:
         - !Ref NLPServiceIP
+
+  NFSInternalRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref InternalHostedZoneId
+      Name: !Sub "nfs.internal.${DomainName}"
+      Type: A
+      TTL: 60
+      ResourceRecords:
+        - !Ref NFSIP
 
   PostgresRecord:
     Type: AWS::Route53::RecordSet
