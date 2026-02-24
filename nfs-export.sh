@@ -9,12 +9,12 @@ cat > nfs-config/exports << EOF
 /exports/app_static *(rw,sync,no_subtree_check,no_root_squash,nohide)
 EOF
 
-mkdir -p /nfs-storage
-mkdir -p /nfs-storage/nlp_models
-mkdir -p /nfs-storage/nlp_data
-mkdir -p /nfs-storage/localstack_data
-mkdir -p /nfs-storage/postgres_backup
-mkdir -p /nfs-storage/app_static
+mkdir -p /exports
+mkdir -p /exports/nlp_models
+mkdir -p /exports/nlp_data
+mkdir -p /exports/localstack_data
+mkdir -p /exports/postgres_backup
+mkdir -p /exports/app_static
 
-chown -R nobody:nogroup /nfs-storage
-chmod -R 777 /nfs-storage
+chown -R nobody:nogroup /exports
+chmod -R 777 /exports
