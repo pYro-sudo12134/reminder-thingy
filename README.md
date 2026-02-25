@@ -10,14 +10,19 @@ Audio input → S3 → Transcribe → Parsing → OpenSearch → EventBridge →
 
 ```shell
 ./generate-secrets.sh
-docker-compose up --build -d
+ docker-compose -f docker-compose.yaml up -d
 ```
 
-But first make sure you have the required images, as I didn't publish them.
+Or if you want to launch Swarm version, I recommend to adjust labels and install ZFS.
 
 ```shell
-docker build -t reminder-nlp:1.0 . # when you are in `nlp` dir
-docker build -t reminder-backend:1.0 # in the root of the project
+# First you can apply labels by using similar command
+# docker node update --label-add type=queue worker1
+# After that you need to do the following
+
+./init-zfs.sh
+./generate-secrets.sh
+export $(cat .env | xargs) && docker stack deploy -c docker-stack.yml swarm
 ```
 
 If you want to check out whether it is working
