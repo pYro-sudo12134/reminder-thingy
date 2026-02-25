@@ -49,19 +49,19 @@ EOF
 sudo chown -R nobody:nogroup /exports
 sudo chmod -R 777 /exports
 
-echo "=== ZFS Pool Status ==="
+echo "ZFS Pool Status:"
 sudo zpool status data-pool
 
-echo -e "\n=== ZFS Datasets ==="
+echo -e "\nZFS Datasets:"
 sudo zfs list -r data-pool
 
-echo -e "\n=== Exports Directory Structure ==="
+echo -e "\nExports Directory Structure:"
 ls -la /exports/
 
-echo -e "\n=== NFS Exports Config ==="
+echo -e "\nNFS Exports Config:"
 cat ./nfs-config/exports
 
-echo -e "\n=== Ownership ==="
+echo -e "\nOwnership:"
 ls -la /exports/ | awk '{print $3, $4, $9}'
 
 sudo zpool set cachefile=/etc/zfs/zpool.cache data-pool

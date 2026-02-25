@@ -21,6 +21,13 @@ Or if you want to launch Swarm version, I recommend to adjust labels and install
 # After that you need to do the following
 
 ./init-zfs.sh
+
+# However, if you don't want to use ZFS, you can just use
+
+./nfs-export.sh
+
+# Since it is heavily reliant on NFSv4 for file sharing across multiple devices
+
 ./generate-secrets.sh
 export $(cat .env | xargs) && docker stack deploy -c docker-stack.yml swarm
 ```
