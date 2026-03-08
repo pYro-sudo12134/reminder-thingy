@@ -121,9 +121,6 @@ services:
       -c default_statistics_target=100
       -c random_page_cost=1.1 
       -c effective_io_concurrency=200 
-      -c work_mem=4MB 
-      -c min_wal_size=1GB 
-      -c max_wal_size=4GB
 
   redis:
     image: redis:7-alpine

@@ -47,7 +47,7 @@ services:
       - reminder-network
 
   nfs-server:
-    image: itsthenetwork/nfs-server-alpine:latest
+    image: itsthenetwork/nfs-server-alpine:12
     deploy:
       mode: replicated
       replicas: 1
@@ -252,7 +252,7 @@ services:
       - "traefik.http.services.localstack.loadbalancer.server.port=4566"
       - "traefik.http.middlewares.localstack-cors.headers.accesscontrolalloworiginlist=*"
       - "traefik.http.middlewares.localstack-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
-      - "traefik.http.middlewares.localstack-cors.headers.accesscontrolallowheaders=Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token"
+      - "traefik.http.middlewares.localstack-cors.headers.accesscontrolallowheaders=Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Access-Control-Allow-Methods,Access-Control-Allow-Headers,Authorization,Accept,Access-Control-Allow-Credentials,X-XSS-Protection,X-Content-Type-Options,X-Frame-Options"
       - "traefik.http.routers.localstack.middlewares=localstack-cors"
 
   postgres:

@@ -46,6 +46,6 @@ public class DLQMessage {
     public void setRawBody(String rawBody) { this.rawBody = rawBody; }
 
     public boolean isParsed() {
-        return source != null && !source.equals("parse-error");
+        return source != null && !source.contains("parse-error");
     }
 }

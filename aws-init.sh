@@ -153,9 +153,9 @@ while true; do
         --dimensions "QueueName=dev-reminder-dlq" \
         --region us-east-1 || true
 
-    REMINDERS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 10 + 1}')
-    EMAILS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 5}')
-    UPLOADS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 3}')
+    REMINDERS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 100 + 1}')
+    EMAILS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 50}')
+    UPLOADS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 30}')
 
     log "Generated: Reminders=$REMINDERS, Emails=$EMAILS, Uploads=$UPLOADS"
 

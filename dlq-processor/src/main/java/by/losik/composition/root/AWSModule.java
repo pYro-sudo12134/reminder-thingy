@@ -51,7 +51,6 @@ public class AWSModule extends AbstractModule {
                                 "/" + environment + queueSuffix));
         bind(String.class).annotatedWith(Names.named("notification.email"))
                 .toInstance(System.getenv().getOrDefault("NOTIFICATION_EMAIL", "losik2006@gmail.com"));
-
         bind(String.class).annotatedWith(Names.named("smtp.host"))
                 .toInstance(System.getenv().getOrDefault("SMTP_HOST", "smtp.gmail.com"));
         bind(String.class).annotatedWith(Names.named("smtp.port"))

@@ -117,6 +117,4 @@ public class AWSModule extends AbstractModule {
                                                                  SecretsManagerConfig secretsManagerConfig) {
         return new MonitoringConfig(localStackConfig, secretsManagerConfig);
     }
-
-
 }
