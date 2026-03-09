@@ -1,11 +1,12 @@
 import os
 import json
 import requests
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 from datetime import datetime
 import logging
 import re
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,9 @@ class ReminderParseResult:
     """Структура результата парсинга напоминания"""
     action: str
     time_type: str  # "absolute", "relative", "recurring", "unspecified"
-    datetime: Optional[str] = None  # ISO формат для absolute времени
-    relative_seconds: Optional[int] = None  # секунды для relative времени
-    cron_expression: Optional[str] = None  # cron для recurring времени
+    datetime: Optional[str] = None
+    relative_seconds: Optional[int] = None
+    cron_expression: Optional[str] = None
     natural_language_time: str = ""
     confidence: float = 0.0
     intent: str = "reminder"
@@ -25,9 +26,8 @@ class ReminderParseResult:
     normalized_text: str = ""
 
 class OllamaAgent:
-    """Агент на базе локальной Ollama"""
+    """Агент на базе локальной Ollama с RAG поддержкой"""
 
-    # Обновленный системный промпт с акцентом на распознавание времени
     SYSTEM_PROMPT = """Ты помощник для парсинга напоминаний из текста на русском языке.
 
 Из текста нужно извлечь структурированные данные и вернуть их в JSON формате.
@@ -116,24 +116,28 @@ class OllamaAgent:
 Верни ТОЛЬКО JSON, никаких пояснений.
 """
 
-    def __init__(self):
-        # Получаем настройки из окружения
+    def __init__(self, rag_client=None):
         self.ollama_host = os.getenv('OLLAMA_HOST', 'localhost')
         self.ollama_port = os.getenv('OLLAMA_PORT', '11434')
         self.model = os.getenv('OLLAMA_MODEL', 'llama3.2:latest')
         self.temperature = float(os.getenv('OLLAMA_TEMPERATURE', '0.1'))
-        # Увеличиваем таймаут до 60 секунд
         self.timeout = int(os.getenv('OLLAMA_TIMEOUT', '60'))
 
-        # Формируем URL для API
+        self.rag = rag_client
+        self.use_rag = rag_client is not None
+        self.rag_top_k = int(os.getenv('RAG_TOP_K', '5'))
+        self.rag_min_score = float(os.getenv('RAG_MIN_SCORE', '0.5'))
+        self.rag_save_confidence = float(os.getenv('RAG_SAVE_CONFIDENCE', '0.8'))
+
         self.base_url = f"http://{self.ollama_host}:{self.ollama_port}"
         self.chat_url = f"{self.base_url}/api/chat"
 
         logger.info(f" Ollama Agent initialized with model: {self.model}")
         logger.info(f"   API URL: {self.base_url}")
         logger.info(f"   Timeout: {self.timeout}s")
+        logger.info(f"   RAG enabled: {self.use_rag}")
+        logger.info(f"   RAG top_k: {self.rag_top_k}, min_score: {self.rag_min_score}")
 
-        # Проверяем доступность Ollama при инициализации
         self._check_connection()
         self._ensure_model()
 
@@ -148,15 +152,99 @@ class OllamaAgent:
                 if self.model in model_names:
                     logger.info(f" Model {self.model} is available")
                 else:
-                    logger.warning(f"️ Model {self.model} not found. Available: {model_names}")
-                    logger.warning(f"   You can pull it with: docker exec ollama ollama pull {self.model}")
+                    logger.warning(f"Model {self.model} not found. Available: {model_names}")
             else:
-                logger.warning(f"️ Ollama returned status {response.status_code}")
-        except requests.exceptions.ConnectionError:
-            logger.error(f" Cannot connect to Ollama at {self.base_url}")
-            logger.error("   Make sure Ollama container is running: docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama")
+                logger.warning(f"Ollama returned status {response.status_code}")
         except Exception as e:
             logger.error(f" Error checking Ollama connection: {e}")
+
+    def _get_text_hash(self, text: str) -> str:
+        """Получает хеш текста для поиска"""
+        return hashlib.md5(text.lower().encode()).hexdigest()[:8]
+
+    def _find_similar_examples(self, text: str, language: str) -> List[Dict]:
+        """Ищет похожие примеры в RAG с использованием векторов"""
+        if not self.use_rag or not self.rag:
+            return []
+
+        try:
+            examples = self.rag.search_similar_by_text(
+                text=text,
+                k=self.rag_top_k,
+                language=language,
+                min_score=self.rag_min_score
+            )
+
+            if examples:
+                logger.info(f"Found {len(examples)} similar examples in RAG (vector search)")
+
+            return examples
+
+        except Exception as e:
+            logger.warning(f"RAG vector search failed: {e}")
+            return []
+
+    def _build_rag_prompt(self, text: str, language: str, examples: List[Dict]) -> str:
+        """Строит промпт с примерами из RAG"""
+
+        today = datetime.now().strftime('%Y-%m-%d')
+
+        if not examples:
+            return f"""Сегодня: {today}
+Текст напоминания: {text}
+Язык: {language}"""
+
+        prompt_parts = [f"Сегодня: {today}"]
+        prompt_parts.append("\nВот похожие примеры напоминаний (используй их как образец):")
+
+        for i, ex in enumerate(examples[:3]):
+            ex_text = ex.get('text', '')
+            ex_type = ex.get('format_type', 'unknown')
+            ex_time = ex.get('time_expression', '')
+
+            prompt_parts.append(f"\nПример {i+1}:")
+            prompt_parts.append(f'  Текст: "{ex_text}"')
+            prompt_parts.append(f'  Тип: {ex_type}')
+            if ex_time:
+                prompt_parts.append(f'  Время: {ex_time}')
+
+        prompt_parts.append(f"\nТеперь разбери новое напоминание по этому же образцу:")
+        prompt_parts.append(f'Текст: "{text}"')
+        prompt_parts.append(f"Язык: {language}")
+
+        return "\n".join(prompt_parts)
+
+    def _save_to_rag(self, text: str, result: ReminderParseResult):
+        """Сохраняет удачный парсинг в RAG"""
+        if not self.use_rag or not self.rag or result.confidence < self.rag_save_confidence:
+            return
+
+        try:
+            time_expr = ""
+            if result.time_type == "absolute" and result.datetime:
+                time_expr = result.datetime
+            elif result.time_type == "relative" and result.relative_seconds:
+                time_expr = f"через {result.relative_seconds} сек"
+            elif result.time_type == "recurring" and result.cron_expression:
+                time_expr = result.cron_expression
+
+            example = {
+                'text': text,
+                'format_type': result.time_type,
+                'language': result.language,
+                'time_expression': time_expr,
+                'entities': result.entities or [],
+                'count': 1,
+                'source': 'ollama_agent'
+            }
+
+            success = self.rag.add_format_examples([example])
+
+            if success > 0:
+                logger.info(f"💾 Saved to RAG: {text[:50]}...")
+
+        except Exception as e:
+            logger.warning(f"Failed to save to RAG: {e}")
 
     def _call_ollama(self, prompt: str) -> str:
         """Вызывает Ollama API с системным промптом"""
@@ -192,10 +280,7 @@ class OllamaAgent:
             return result.get('message', {}).get('content', '')
 
         except requests.exceptions.Timeout:
-            logger.error(f"Ollama request timeout after {self.timeout}s")
-            raise
-        except requests.exceptions.ConnectionError:
-            logger.error(f"Connection error to Ollama at {self.base_url}")
+            logger.error(f" Ollama request timeout after {self.timeout}s")
             raise
         except Exception as e:
             logger.error(f" Ollama API error: {e}")
@@ -203,35 +288,25 @@ class OllamaAgent:
 
     def parse_reminder(self, text: str, language: str = "ru") -> ReminderParseResult:
         try:
-            # Добавляем сегодняшнюю дату в контекст
-            today = datetime.now().strftime('%Y-%m-%d')
-            prompt = f"Сегодня: {today}\nТекст напоминания: {text}\nЯзык: {language}"
-            logger.info(f"Sending to LLM: {text}")
+            examples = self._find_similar_examples(text, language)
+
+            prompt = self._build_rag_prompt(text, language, examples)
+            logger.info(f"Sending to LLM with {len(examples)} RAG examples")
 
             response = self._call_ollama(prompt)
 
-            # Логируем сырой ответ
-            logger.info(f"Raw LLM response: {response}")
+            logger.info(f" Raw LLM response: {response}")
 
-            # Очищаем ответ от markdown
             response = response.strip()
             response = response.replace('```json', '').replace('```', '').strip()
 
-            logger.info(f"Cleaned response: {response}")
-
-            # Находим JSON
             json_match = re.search(r'\{.*\}', response, re.DOTALL)
             if json_match:
                 json_str = json_match.group()
-                logger.info(f"🔍 Found JSON: {json_str}")
                 data = json.loads(json_str)
             else:
-                logger.warning(f"No JSON found in response, trying full parse")
                 data = json.loads(response)
 
-            logger.info(f"Parsed data: {data}")
-
-            # Создаем результат напрямую из данных, полученных от LLM
             result = ReminderParseResult(
                 action=data.get('action', text[:50]),
                 time_type=data.get('time_type', 'unspecified'),
@@ -246,19 +321,15 @@ class OllamaAgent:
                 normalized_text=text
             )
 
-            logger.info(f"Final result: action='{result.action}', time_type={result.time_type}, conf={result.confidence}")
-            if result.relative_seconds:
-                logger.info(f"   Relative seconds: {result.relative_seconds}")
-            elif result.datetime:
-                logger.info(f"   Datetime: {result.datetime}")
-            elif result.cron_expression:
-                logger.info(f"   Cron: {result.cron_expression}")
+            logger.info(f" Final result: action='{result.action}', time_type={result.time_type}, conf={result.confidence}")
+
+            if result.confidence >= self.rag_save_confidence:
+                self._save_to_rag(text, result)
 
             return result
 
         except Exception as e:
-            logger.error(f"Error parsing reminder: {e}", exc_info=True)
-            # Возвращаем fallback результат
+            logger.error(f" Error parsing reminder: {e}", exc_info=True)
             return ReminderParseResult(
                 action=text[:50],
                 time_type='unspecified',
@@ -268,21 +339,17 @@ class OllamaAgent:
             )
 
     def _ensure_model(self):
-        """Проверяет наличие модели и скачивает если нужно"""
+        """Проверяет наличие модели"""
         try:
-            # Проверяем список моделей
             response = requests.get(f"{self.base_url}/api/tags", timeout=5)
             models = response.json().get('models', [])
             model_names = [m['name'] for m in models]
 
             if self.model in model_names:
-                logger.info(f"Model {self.model} is available")
+                logger.info(f" Model {self.model} is available")
                 return True
 
-            # Модели нет - скачиваем
-            logger.info(f"Model {self.model} not found. Starting download...")
-            logger.info(f"   This may take a few minutes depending on your internet connection")
-
+            logger.info(f" Model {self.model} not found. Pulling...")
             pull_response = requests.post(
                 f"{self.base_url}/api/pull",
                 json={"name": self.model},
@@ -298,16 +365,15 @@ class OllamaAgent:
                             if 'status' in data:
                                 if 'completed' in data and 'total' in data:
                                     percent = (data['completed'] / data['total']) * 100
-                                    logger.info(f"📥 Downloading {self.model}: {percent:.1f}% - {data['status']}")
+                                    logger.info(f"Downloading: {percent:.1f}%")
                                 else:
-                                    logger.info(f"📥 {data['status']}")
+                                    logger.info(f"{data['status']}")
                         except:
                             pass
-
-                logger.info(f"Successfully pulled model {self.model}")
+                logger.info(f" Successfully pulled model {self.model}")
                 return True
             else:
-                logger.error(f"Failed to pull model: {pull_response.status_code}")
+                logger.error(f" Failed to pull model: {pull_response.status_code}")
                 return False
 
         except Exception as e:

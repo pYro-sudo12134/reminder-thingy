@@ -6,7 +6,6 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-# Добавляем путь для импорта
 current_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(current_dir))
 
@@ -18,7 +17,6 @@ except ImportError as e:
     print(f"Import error: {e}")
     sys.exit(1)
 
-# Импортируем агента Ollama
 from llm_agent.ollama_agent import OllamaAgent, ReminderParseResult
 from llm_agent.opensearch_rag import OpenSearchReminderRAG
 
@@ -33,28 +31,24 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
 
         # Загружаем секреты
         self.secrets = SecretLoader.load_secrets()
-
-        # API ключ для аутентификации
         self.api_key = self.secrets.get("NLP_GRPC_API_KEY") or os.getenv("NLP_GRPC_API_KEY")
 
-        # Инициализируем Ollama агента
         logger.info("Initializing Ollama agent...")
 
-        self.agent = OllamaAgent()
-
-        # Инициализируем OpenSearch RAG если нужно
         self.use_rag = os.getenv('NLP_MODE', 'ollama').lower() == 'ollama-rag'
         self.rag = None
         if self.use_rag:
             try:
                 self.rag = OpenSearchReminderRAG()
-                logger.info("✅ OpenSearch RAG initialized")
+                logger.info("OpenSearch RAG initialized")
             except Exception as e:
-                logger.warning(f"⚠️ Failed to initialize OpenSearch RAG: {e}")
+                logger.warning(f"Failed to initialize OpenSearch RAG: {e}")
 
-        logger.info("✅ Ollama Agent initialized")
-        logger.info(f"🔐 Authentication enabled: {bool(self.api_key)}")
-        logger.info(f"📚 RAG enabled: {self.use_rag}")
+        self.agent = OllamaAgent(rag_client=self.rag)
+
+        logger.info("Ollama Agent initialized")
+        logger.info(f"Authentication enabled: {bool(self.api_key)}")
+        logger.info(f"RAG enabled: {self.use_rag}")
 
     def _validate_auth(self, context) -> bool:
         if not self.api_key:
@@ -84,23 +78,20 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
         self.request_count += 1
 
         try:
-            logger.info(f"📝 Processing request from user: {request.user_id}")
+            logger.info(f"Processing request from user: {request.user_id}")
             logger.info(f"   Text: '{request.text}'")
 
-            # Определяем язык
             language = None
             if request.language_code:
                 language = request.language_code[:2].lower()
 
-            # Используем Ollama агента для парсинга
             result = self.agent.parse_reminder(
                 text=request.text,
                 language=language or 'ru'
             )
 
-            logger.info(f"✅ Parsed: action='{result.action}', intent={result.intent}, confidence={result.confidence:.2f}")
+            logger.info(f"Parsed: action='{result.action}', intent={result.intent}, confidence={result.confidence:.2f}")
 
-            # Конвертируем в protobuf
             response = self._to_protobuf(result, request)
 
             return response
@@ -124,8 +115,7 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
 
     def _to_protobuf(self, result: ReminderParseResult, request: pb.ParseRequest) -> pb.ParseResponse:
         """Конвертирует результат агента в protobuf"""
-
-        # Создаем TemporalExpression
+        # ... (код без изменений) ...
         temporal_expr = pb.TemporalExpression()
 
         if result.time_type == "absolute" and result.datetime:
@@ -133,7 +123,6 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
             temporal_expr.absolute.natural_language = result.natural_language_time
         elif result.time_type == "relative" and result.relative_seconds:
             temporal_expr.relative.seconds_from_now = result.relative_seconds
-            # Определяем единицу измерения
             seconds = result.relative_seconds
             if seconds % 3600 == 0:
                 temporal_expr.relative.unit = "hours"
@@ -148,7 +137,6 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
             temporal_expr.recurring.cron_expression = result.cron_expression
             temporal_expr.recurring.natural_language = result.natural_language_time
 
-        # Создаем сущности
         entities = []
         for entity in (result.entities or []):
             entities.append(pb.Entity(
@@ -159,7 +147,6 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
                 confidence=entity.get('confidence', 0.0)
             ))
 
-        # Создаем parsed reminder
         parsed_reminder = pb.ParsedReminder(
             action=result.action,
             time_expression=temporal_expr,
@@ -168,7 +155,6 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
             entities=entities
         )
 
-        # Создаем ответ
         response = pb.ParseResponse(
             reminder_id=f"{request.user_id}_{int(datetime.now().timestamp())}",
             parsed=parsed_reminder,
@@ -188,15 +174,22 @@ def serve():
 
     logger.info("🚀 Starting Ollama-based NLP server...")
 
-    # Проверяем доступность Ollama
     try:
-        test_agent = OllamaAgent()
+        test_rag = None
+        if os.getenv('NLP_MODE', 'ollama').lower() == 'ollama-rag':
+            try:
+                test_rag = OpenSearchReminderRAG()
+                logger.info("Test RAG initialized")
+            except Exception as e:
+                logger.warning(f"Test RAG failed: {e}")
+
+        test_agent = OllamaAgent(rag_client=test_rag)
+        logger.info("Test agent initialized successfully")
     except Exception as e:
         logger.error(f" Failed to initialize Ollama agent: {e}")
         logger.error("   Make sure Ollama is running: docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama")
         sys.exit(1)
 
-    # Создаем сервер
     server = grpc.server(
         futures.ThreadPoolExecutor(
             max_workers=int(os.getenv('GRPC_WORKERS', '10'))
@@ -209,9 +202,9 @@ def serve():
         ]
     )
 
-    # Добавляем сервис
     service = OllamaReminderParserService()
     pb_grpc.add_ReminderParserServiceServicer_to_server(service, server)
+
     port = int(os.getenv('GRPC_PORT', '50051'))
     use_tls = os.getenv('GRPC_USE_TLS', 'false').lower() == 'true'
 
@@ -224,7 +217,6 @@ def serve():
                 with open(certs_dir / 'node.pem', 'rb') as f:
                     certificate_chain = f.read()
 
-                # Если есть CA цепочка
                 ca_cert = None
                 ca_path = certs_dir / 'ca-chain.pem'
                 if ca_path.exists():
@@ -237,25 +229,25 @@ def serve():
                     require_client_auth=False
                 )
                 server.add_secure_port(f'[::]:{port}', server_credentials)
-                logger.info(f"🔒 TLS enabled for gRPC server on port {port}")
+                logger.info(f"TLS enabled for gRPC server on port {port}")
             except Exception as e:
                 logger.error(f" Failed to load TLS certificates: {e}")
-                logger.warning(f"⚠️ Falling back to insecure connection")
+                logger.warning(f"Falling back to insecure connection")
                 server.add_insecure_port(f'[::]:{port}')
         else:
-            logger.warning(f"⚠️ TLS requested but certificates directory not found at {certs_dir}")
-            logger.warning(f"⚠️ Falling back to insecure connection")
+            logger.warning(f"TLS requested but certificates directory not found at {certs_dir}")
+            logger.warning(f"Falling back to insecure connection")
             server.add_insecure_port(f'[::]:{port}')
     else:
         server.add_insecure_port(f'[::]:{port}')
-        logger.info(f"🔓 TLS disabled, using insecure connection on port {port}")
+        logger.info(f"TLS disabled, using insecure connection on port {port}")
 
     server.start()
 
-    logger.info(f"🚀 Ollama NLP gRPC Server started on port {port}")
-    logger.info(f"   Authentication: {'🔐 enabled' if service.api_key else '🔓 disabled'}")
-    logger.info(f"   TLS: {'🔒 enabled' if use_tls else '🔓 disabled'}")
-    logger.info(f"   RAG: {'📚 enabled' if service.use_rag else '📕 disabled'}")
+    logger.info(f"Ollama NLP gRPC Server started on port {port}")
+    logger.info(f"   Authentication: {'🔐 enabled' if service.api_key else 'disabled'}")
+    logger.info(f"   TLS: {'enabled' if use_tls else 'disabled'}")
+    logger.info(f"   RAG: {'enabled' if service.use_rag else 'disabled'}")
 
     server.wait_for_termination()
 

@@ -10,6 +10,7 @@ Audio input → S3 → Transcribe → Parsing → OpenSearch → EventBridge →
 
 ```shell
 ./generate-secrets.sh
+./pull_embedding_model.sh
  docker-compose -f docker-compose.yaml up -d
 ```
 
@@ -29,6 +30,7 @@ Or if you want to launch Swarm version, I recommend to adjust labels and install
 # Since it is heavily reliant on NFSv4 for file sharing across multiple devices
 
 ./generate-secrets.sh
+./pull_embedding_model.sh
 export $(cat .env | xargs) && docker stack deploy -c docker-stack.yml swarm
 ```
 

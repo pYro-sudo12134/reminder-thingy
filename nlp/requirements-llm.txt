@@ -1,23 +1,23 @@
-# === CORE DEPENDENCIES для LLM сервера ===
-grpcio>=1.48.0
-grpcio-tools>=1.48.0
-protobuf>=3.20.0
-requests>=2.28.0
+grpcio==1.60.0
+grpcio-tools==1.60.0
+protobuf==4.25.0
+googleapis-common-protos==1.63.0
 
-# === TIME PROCESSING ===
-dateparser>=1.1.0
-pytz>=2023.3
-python-dateutil>=2.8.2
+spacy==3.7.2
+pymorphy3==2.0.0
+langdetect==1.0.9
 
-# === OPENSEARCH RAG (опционально) ===
-# Для работы RAG режима:
-opensearch-py>=2.0.0
-requests-aws4auth>=1.1.0
+dateparser==1.1.8
+croniter==2.0.2
+pytz==2023.3
+python-dateutil==2.8.2
 
-# === UTILS ===
-python-dotenv>=1.0.0
+numpy==1.24.3
 
-# === EMBEDDINGS (для полноценного RAG) ===
-# sentence-transformers>=2.2.0
-# transformers>=4.35.0
-# torch>=2.0.0
+opensearch-py==2.4.2
+requests-aws4auth==1.2.3
+certifi==2024.2.2
+
+python-dotenv==1.0.0
+pyyaml==6.0
+requests==2.31.0
