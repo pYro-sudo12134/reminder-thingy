@@ -108,8 +108,45 @@ services:
     labels:
       - "traefik.enable=false"
 
+  ollama:
+    image: ollama/ollama:latest
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == worker
+          - node.label.ollama == true
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+      restart_policy:
+        condition: on-failure
+        delay: 30s
+        max_attempts: 3
+        window: 120s
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+    volumes:
+      - type: volume
+        source: ollama_data
+        target: /root/.ollama
+    networks:
+      - reminder-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    labels:
+      - "traefik.enable=false"
+
   nlp-service:
-    image: pyrodocker1/reminder-nlp:1.0
+    image: pyrodocker1/reminder-nlp-ollama:1.0
     deploy:
       mode: replicated
       replicas: 1
@@ -119,21 +156,43 @@ services:
           - node.label.nlp == true
       resources:
         limits:
-          memory: 2G
+          memory: 4G
         reservations:
-          memory: 256M
+          memory: 2G
       restart_policy:
         condition: on-failure
         delay: 30s
         max_attempts: 3
         window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        order: start-first
+    ports:
+      - "50051:50051"
     environment:
-      - MODEL_DIR=/app/models
-      - INTENT_MODEL_PATH=/app/models/intent_classifier
-      - NER_MODEL_PATH=/app/models/ner_model
+      - NLP_MODE=ollama-rag
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
-      - GRPC_USE_TLS=false
+      - GRPC_WORKERS=10
+      - GRPC_USE_TLS=${GRPC_USE_TLS:-false}
+      - MODEL_VERSION=3.0.0-ollama
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=llama3.2:latest
+      - OLLAMA_TEMPERATURE=0.1
+      - OLLAMA_TIMEOUT=30
+      - OPENSEARCH_HOST=localstack
+      - OPENSEARCH_PORT=4510
+      - OPENSEARCH_USE_SSL=false
+      - OPENSEARCH_DISABLE_SSL_VERIFICATION=true
+      - OPENSEARCH_SSL_VERIFICATION_MODE=none
+      - OPENSEARCH_USER=${OPENSEARCH_USER:-admin}
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_INDEX=reminder_formats
+      - RAG_TOP_K=5
+      - RAG_MIN_SCORE=0.3
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
     secrets:
       - source: nlp_grpc_key
         target: /run/secrets/nlp_grpc_key
@@ -146,19 +205,20 @@ services:
         source: nfs_nlp_data
         target: /app/data
       - type: bind
-        source: ./nlp/nlp_service
-        target: /app/nlp_service
-      - type: bind
-        source: ./nlp/proto
-        target: /app/proto
+        source: ./opensearch_certs
+        target: /app/certs
+        read_only: true
     networks:
       - reminder-network
+    depends_on:
+      - ollama
+      - localstack
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; import sys; sys.exit(0)"]
+      test: ["CMD", "python", "-c", "import grpc; exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     labels:
       - "traefik.enable=false"
 

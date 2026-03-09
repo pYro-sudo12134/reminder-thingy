@@ -17,7 +17,7 @@
 *.pkl
 .grpc_api_key
 .jwt_secret
-.env
+*.env
 *.key
 *.pem
 nlp/models/intent_classifier/vocab.txt

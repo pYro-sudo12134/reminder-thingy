@@ -2,29 +2,31 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
+# Установка системных зависимостей
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
-    git \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Копирование зависимостей
 COPY requirements.txt .
+COPY requirements-llm.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Установка Python зависимостей
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir -r requirements-llm.txt && \
+    pip install --no-cache-dir boto3 certifi
 
-RUN pip install https://github.com/explosion/spacy-models/releases/download/en_core_web_md-3.7.1/en_core_web_md-3.7.1.tar.gz
-RUN pip install https://github.com/explosion/spacy-models/releases/download/ru_core_news_md-3.7.0/ru_core_news_md-3.7.0.tar.gz
-
+# Копирование кода
 COPY . .
 
-RUN useradd -m -u 1000 nlpuser && \
-    chown -R nlpuser:nlpuser /app
+# Создание директорий
+RUN mkdir -p /app/models /app/data /app/logs /app/certs
 
-RUN mkdir -p /run/secrets
+# Настройка переменных окружения
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
 
-USER nlpuser
-
-EXPOSE 50051
-
+# Запуск
 CMD ["python", "run_server.py"]

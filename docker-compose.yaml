@@ -1,33 +1,76 @@
 version: '3.8'
 
 services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+    networks:
+      - reminder-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
   nlp-service:
-    image: pyrodocker1/reminder-nlp:1.0
+    build:
+      context: ./nlp
+      dockerfile: Dockerfile
+    image: pyrodocker1/reminder-nlp-ollama:1.0
     container_name: nlp-service
     ports:
       - "50051:50051"
     environment:
-      - MODEL_DIR=/app/models
-      - INTENT_MODEL_PATH=/app/models/intent_classifier
-      - NER_MODEL_PATH=/app/models/ner_model
+      - NLP_MODE=ollama-rag
       - LOG_LEVEL=INFO
       - GRPC_PORT=50051
+      - GRPC_WORKERS=10
       - GRPC_USE_TLS=false
+      - MODEL_VERSION=3.0.0-ollama
+      - OLLAMA_HOST=ollama
+      - OLLAMA_PORT=11434
+      - OLLAMA_MODEL=llama3.2:latest
+      - OLLAMA_TEMPERATURE=0.1
+      - OLLAMA_TIMEOUT=30
+      - OPENSEARCH_HOST=${OPENSEARCH_HOST:-localstack}
+      - OPENSEARCH_PORT=${OPENSEARCH_PORT:-4510}
+      - OPENSEARCH_USE_SSL=false
+      - OPENSEARCH_DISABLE_SSL_VERIFICATION=true
+      - OPENSEARCH_SSL_VERIFICATION_MODE=none
+      - OPENSEARCH_USER=${OPENSEARCH_USER:-admin}
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_INDEX=reminder_formats
+      - RAG_TOP_K=5
+      - RAG_MIN_SCORE=0.3
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
     volumes:
       - "./nlp/models:/app/models"
       - "./nlp/data:/app/data"
-      - "./nlp/nlp_service:/app/nlp_service"
-      - "./nlp/proto:/app/proto"
-      - "./secrets/nlp_grpc_key.txt:/app/secrets/nlp_grpc_key.txt:ro"
-      - "./secrets/secrets.json:/app/secrets/secrets.json:ro"
+      - "./secrets:/run/secrets:ro"
+      - "./opensearch_certs:/app/certs:ro"
     networks:
       - reminder-network
+    depends_on:
+      ollama:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; import sys; sys.exit(0)"]
+      test: ["CMD", "python", "-c", "import grpc; exit(0)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
+    restart: unless-stopped
 
   localstack:
     image: localstack/localstack:4.12
@@ -69,7 +112,7 @@ services:
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
       - "./localstack_data:/var/lib/localstack"
-      - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh"
+      - "./aws-init.sh:/etc/localstack/init/ready.d/init.sh:rw"
       - "./template.yaml:/etc/localstack/init/ready.d/template.yaml"
       - "./metrics-config.yaml:/etc/localstack/init/ready.d/metrics-config.yaml"
       - "./route53.yaml:/etc/localstack/init/ready.d/route53.yaml"
@@ -294,6 +337,8 @@ networks:
 volumes:
   postgres_data:
     name: postgres-data
+  ollama:
+    name: ollama-data
 
 secrets:
   nlp_grpc_key:

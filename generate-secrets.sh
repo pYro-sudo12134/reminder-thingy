@@ -17,6 +17,31 @@ openssl rand -base64 32 > secrets/jwt_secret.txt
 echo "test" > secrets/aws_access_key.txt
 echo "test" > secrets/aws_secret_key.txt
 
+echo ""
+echo "=== Ollama Setup ==="
+echo "Для работы с Ollama дополнительные ключи не требуются"
+echo "Убедитесь, что в docker-compose.yml указана правильная модель:"
+echo "  OLLAMA_MODEL=llama3.2:latest  # или mistral, phi, qwen"
+echo ""
+
+echo "Какую модель Ollama вы хотите использовать?"
+echo "  1) llama3.2:latest (рекомендуется, хороший баланс)"
+echo "  2) mistral (быстрая)"
+echo "  3) phi (очень легкая)"
+echo "  4) qwen:7b (хороша для русского)"
+echo "  5) другая (введите название)"
+read -p "Выберите [1]: " MODEL_CHOICE
+
+case $MODEL_CHOICE in
+    2) OLLAMA_MODEL="mistral" ;;
+    3) OLLAMA_MODEL="phi" ;;
+    4) OLLAMA_MODEL="qwen:7b" ;;
+    5) read -p "Введите название модели: " OLLAMA_MODEL ;;
+    *) OLLAMA_MODEL="llama3.2:latest" ;;
+esac
+
+echo "$OLLAMA_MODEL" > secrets/ollama_model.txt
+
 openssl genrsa -out opensearch_certs/root-ca-key.pem 2048
 
 cat > opensearch_certs/root-ca.cnf << EOF
@@ -336,11 +361,19 @@ OPENSEARCH_DISABLE_SSL_VERIFICATION=true
 OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
 OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
 
-# NLP Service
+# NLP Service - Ollama
 NLP_SERVICE_HOST=nlp-service
 NLP_SERVICE_PORT=50051
 NLP_GRPC_API_KEY=$(cat secrets/nlp_grpc_key.txt)
 GRPC_USE_TLS=true
+NLP_MODE=ollama-rag  # Изменили с llm-rag на ollama-rag
+
+# Ollama Configuration
+OLLAMA_HOST=ollama
+OLLAMA_PORT=11434
+OLLAMA_MODEL=$(cat secrets/ollama_model.txt)
+OLLAMA_TEMPERATURE=0.1
+OLLAMA_TIMEOUT=30
 
 # Application
 ENVIRONMENT_NAME=dev
@@ -408,6 +441,7 @@ cat > secrets/secrets.json << EOF
   "POSTGRES_PASSWORD": "$(cat secrets/postgres_password.txt)",
   "REDIS_PASSWORD": "$(cat secrets/redis_password.txt)",
   "JWT_SECRET": "$(cat secrets/jwt_secret.txt)",
+  "OLLAMA_MODEL": "$(cat secrets/ollama_model.txt)",
   "OPENSEARCH_USER": "admin",
   "OPENSEARCH_HOST": "localstack",
   "OPENSEARCH_HTTPS_PORT": "9200",
@@ -416,83 +450,91 @@ cat > secrets/secrets.json << EOF
   "OPENSEARCH_TRUSTSTORE_PASSWORD": "changeit",
   "NLP_SERVICE_HOST": "nlp-service",
   "NLP_SERVICE_PORT": "50051",
-  "GRPC_USE_TLS": "true",
+  "GRPC_USE_TLS": "false",
   "WS_PORT": "8090",
   "AWS_ACCESS_KEY_ID": "test",
   "AWS_SECRET_ACCESS_KEY": "test"
 }
 EOF
 
-cat > secrets/application.properties << EOF
+cat > secrets/application.properties << 'EOF'
 # Application
 app.name=VoiceReminder
 app.version=1.0.0
-app.environment=\${ENVIRONMENT_NAME:dev}
+app.environment=${ENVIRONMENT_NAME:dev}
 
-# NLP Service
-nlp.service.host=\${NLP_SERVICE_HOST:nlp-service}
-nlp.service.port=\${NLP_SERVICE_PORT:50051}
-nlp.grpc.use_tls=\${GRPC_USE_TLS:true}
+# NLP Service - Ollama
+nlp.service.host=${NLP_SERVICE_HOST:nlp-service}
+nlp.service.port=${NLP_SERVICE_PORT:50051}
+nlp.grpc.use_tls=${GRPC_USE_TLS:true}
+nlp.mode=${NLP_MODE:ollama-rag}
+
+# Ollama specific
+ollama.host=${OLLAMA_HOST:ollama}
+ollama.port=${OLLAMA_PORT:11434}
+ollama.model=${OLLAMA_MODEL:llama3.2:latest}
+ollama.temperature=${OLLAMA_TEMPERATURE:0.1}
+ollama.timeout=${OLLAMA_TIMEOUT:30}
 
 # OpenSearch
-opensearch.host=\${OPENSEARCH_HOST:localstack}
-opensearch.port=\${OPENSEARCH_PORT:4510}
-opensearch.https_port=\${OPENSEARCH_HTTPS_PORT:9200}
-opensearch.user=\${OPENSEARCH_USER:admin}
-opensearch.password=\${OPENSEARCH_ADMIN_PASSWORD}
-opensearch.use_ssl=\${OPENSEARCH_USE_SSL:true}
-opensearch.disable_ssl_verification=\${OPENSEARCH_DISABLE_SSL_VERIFICATION:true}
-opensearch.truststore.path=\${OPENSEARCH_TRUSTSTORE_PATH:/app/certs/truststore.jks}
-opensearch.truststore.password=\${OPENSEARCH_TRUSTSTORE_PASSWORD:changeit}
+opensearch.host=${OPENSEARCH_HOST:localstack}
+opensearch.port=${OPENSEARCH_PORT:4510}
+opensearch.https_port=${OPENSEARCH_HTTPS_PORT:9200}
+opensearch.user=${OPENSEARCH_USER:admin}
+opensearch.password=${OPENSEARCH_ADMIN_PASSWORD}
+opensearch.use_ssl=${OPENSEARCH_USE_SSL:true}
+opensearch.disable_ssl_verification=${OPENSEARCH_DISABLE_SSL_VERIFICATION:true}
+opensearch.truststore.path=${OPENSEARCH_TRUSTSTORE_PATH:/app/certs/truststore.jks}
+opensearch.truststore.password=${OPENSEARCH_TRUSTSTORE_PASSWORD:changeit}
 
 # Redis
-redis.host=\${REDIS_HOST:redis}
-redis.port=\${REDIS_PORT:6379}
-redis.password=\${REDIS_PASSWORD}
-redis.use_ssl=\${REDIS_USE_SSL:true}
+redis.host=${REDIS_HOST:redis}
+redis.port=${REDIS_PORT:6379}
+redis.password=${REDIS_PASSWORD}
+redis.use_ssl=${REDIS_USE_SSL:true}
 redis.ssl.truststore.path=/app/certs/redis_truststore.jks
 redis.ssl.truststore.password=changeit
 redis.ssl.keystore.path=/app/certs/redis_keystore.jks
 redis.ssl.keystore.password=changeit
-redis.ssl.verify_mode=\${REDIS_SSL_VERIFY_MODE:full}
-redis.ssl.protocol=\${REDIS_SSL_PROTOCOL:TLSv1.2}
-redis.timeout=\${REDIS_TIMEOUT:2000}
-redis.max.total=\${REDIS_MAX_TOTAL:50}
-redis.max.idle=\${REDIS_MAX_IDLE:10}
-redis.min.idle=\${REDIS_MIN_IDLE:5}
+redis.ssl.verify_mode=${REDIS_SSL_VERIFY_MODE:full}
+redis.ssl.protocol=${REDIS_SSL_PROTOCOL:TLSv1.2}
+redis.timeout=${REDIS_TIMEOUT:2000}
+redis.max.total=${REDIS_MAX_TOTAL:50}
+redis.max.idle=${REDIS_MAX_IDLE:10}
+redis.min.idle=${REDIS_MIN_IDLE:5}
 
 # Server
 server.port=8090
-ws.port=\${WS_PORT:8090}
+ws.port=${WS_PORT:8090}
 
 # AWS
-aws.region=\${AWS_REGION:us-east-1}
-aws.endpoint=\${AWS_ENDPOINT_URL:http://localhost:4566}
-security.grpc.api-key=\${NLP_GRPC_API_KEY}
+aws.region=${AWS_REGION:us-east-1}
+aws.endpoint=${AWS_ENDPOINT_URL:http://localhost:4566}
+security.grpc.api-key=${NLP_GRPC_API_KEY}
 
 # PostgreSQL Database
-db.enabled=\${DB_ENABLED:true}
-db.host=\${DB_HOST:postgres}
-db.port=\${DB_PORT:5432}
-db.name=\${DB_NAME:voice_reminder}
-db.username=\${POSTGRES_USER:postgres}
-db.password=\${POSTGRES_PASSWORD}
-db.schema=\${DB_SCHEMA:voice_schema}
-db.pool.size=\${DB_POOL_SIZE:10}
-db.pool.minIdle=\${DB_POOL_MIN_IDLE:5}
+db.enabled=${DB_ENABLED:true}
+db.host=${DB_HOST:postgres}
+db.port=${DB_PORT:5432}
+db.name=${DB_NAME:voice_reminder}
+db.username=${POSTGRES_USER:postgres}
+db.password=${POSTGRES_PASSWORD}
+db.schema=${DB_SCHEMA:voice_schema}
+db.pool.size=${DB_POOL_SIZE:10}
+db.pool.minIdle=${DB_POOL_MIN_IDLE:5}
 db.connection.timeout=30000
 db.pool.maxLifetime=1800000
 
 # JPA
-jpa.show_sql=\${JPA_SHOW_SQL:false}
+jpa.show_sql=${JPA_SHOW_SQL:false}
 jpa.format_sql=true
-jpa.ddl.generation=\${JPA_DDL_GENERATION:none}
+jpa.ddl.generation=${JPA_DDL_GENERATION:none}
 
 # Flyway
-flyway.enabled=\${FLYWAY_ENABLED:true}
-flyway.baseline.version=\${FLYWAY_BASELINE_VERSION:1}
+flyway.enabled=${FLYWAY_ENABLED:true}
+flyway.baseline.version=${FLYWAY_BASELINE_VERSION:1}
 flyway.locations=classpath:db/migration,filesystem:/app/db/migration
-flyway.schemas=\${DB_SCHEMA:voice_schema}
+flyway.schemas=${DB_SCHEMA:voice_schema}
 flyway.table=flyway_schema_history
 flyway.validate-on-migrate=true
 flyway.baseline-on-migrate=true
@@ -519,3 +561,24 @@ chmod 600 redis/certs/*.p12
 chmod 644 postgres-init/*.sql
 chmod 644 src/main/resources/db/migration/*.sql
 chmod 644 redis/config/*.conf
+
+echo ""
+echo "=========================================="
+echo "Все секреты успешно сгенерированы!"
+echo "=========================================="
+echo ""
+echo "Сгенерированные файлы:"
+ls -la secrets/
+echo ""
+echo "Выбрана модель Ollama: $(cat secrets/ollama_model.txt)"
+echo ""
+echo "Для запуска выполните:"
+echo "   docker-compose up -d"
+echo ""
+echo "При первом запуске Ollama скачает модель (может занять несколько минут)"
+echo "   Проверить статус: docker-compose logs -f ollama"
+echo ""
+echo "Протестировать сервис:"
+echo "   python nlp/llm_agent/test_ollama_client.py"
+echo ""
+echo "=========================================="

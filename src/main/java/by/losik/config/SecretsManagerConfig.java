@@ -333,6 +333,7 @@ public class SecretsManagerConfig implements AutoCloseable {
         defaults.put("NLP_SERVICE_PORT", getEnv("NLP_SERVICE_PORT", "50051"));
         defaults.put("GRPC_USE_TLS", getEnv("GRPC_USE_TLS", "false"));
         defaults.put("WS_PORT", getEnv("WS_PORT", "8090"));
+        defaults.put("NLP_GRPC_API_KEY", getEnv("NLP_GRPC_API_KEY"));
 
         defaults.forEach((key, value) -> {
             if (!cachedSecrets.containsKey(key) && value != null) {

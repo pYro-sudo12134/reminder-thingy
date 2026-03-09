@@ -60,7 +60,7 @@ public class GRPCConfig {
                     channel = builder
                             .maxInboundMessageSize(100 * 1024 * 1024)
                             .keepAliveTime(30, TimeUnit.SECONDS)
-                            .keepAliveTimeout(5, TimeUnit.SECONDS)
+                            .keepAliveTimeout(30, TimeUnit.SECONDS)
                             .build();
                 }
             }

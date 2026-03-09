@@ -57,7 +57,7 @@ public class GRPCService implements AutoCloseable {
                     .build();
 
             ParseResponse response = blockingStub
-                    .withDeadlineAfter(5, TimeUnit.SECONDS)
+                    .withDeadlineAfter(30, TimeUnit.SECONDS)
                     .parseReminder(request);
 
             return mapResponseToResult(response);
@@ -149,7 +149,7 @@ public class GRPCService implements AutoCloseable {
         return new ParsedResult(
                 scheduledTime,
                 text,
-                0.5,
+                0.0,
                 language != null ? language : "ru",
                 null,
                 "reminder",
@@ -162,7 +162,7 @@ public class GRPCService implements AutoCloseable {
     public void checkHealth() {
         try {
             HealthResponse response = blockingStub
-                    .withDeadlineAfter(3, TimeUnit.SECONDS)
+                    .withDeadlineAfter(5, TimeUnit.SECONDS)
                     .healthCheck(HealthRequest.newBuilder().build());
 
             grpcAvailable = response.getHealthy();
