@@ -325,4 +325,4 @@ volumes:
   grafana_data:
     driver: local
 
-# docker stack deploy -c docker-stack-monitoring.yml monitoring
+# export $(cat .env | xargs) && docker stack deploy -c docker-stack-monitoring.yml monitoring
