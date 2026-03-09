@@ -343,10 +343,6 @@ volumes:
     name: postgres-data
   ollama:
     name: ollama-data
-  embedding_cache:
-    name: embedding-cache
-  huggingface_cache:
-    name: huggingface_cache
 
 secrets:
   nlp_grpc_key:

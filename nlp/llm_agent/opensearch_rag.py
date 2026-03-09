@@ -9,7 +9,6 @@ import logging
 import urllib3
 import hashlib
 
-# Отключаем предупреждения
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 logger = logging.getLogger(__name__)
@@ -18,19 +17,15 @@ class OpenSearchReminderRAG:
     """RAG агент на базе OpenSearch для напоминаний с векторизацией через Ollama"""
 
     def __init__(self):
-        # Получаем конфигурацию из окружения
         self.host = os.getenv('OPENSEARCH_HOST', 'localstack')
         self.port = int(os.getenv('OPENSEARCH_PORT', '4510'))
         self.use_ssl = os.getenv('OPENSEARCH_USE_SSL', 'false').lower() == 'true'
         self.user = os.getenv('OPENSEARCH_USER', 'admin')
         self.password = os.getenv('OPENSEARCH_ADMIN_PASSWORD', '')
 
-        # Настройки Ollama для эмбеддингов
         self.ollama_host = os.getenv('OLLAMA_HOST', 'ollama')
         self.ollama_port = os.getenv('OLLAMA_PORT', '11434')
         self.ollama_embedding_model = os.getenv('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text')
-
-        # Размерность эмбеддингов (для nomic-embed-text = 768)
         self.embedding_dimension = int(os.getenv('EMBEDDING_DIMENSION', '768'))
 
         logger.info(f"OpenSearch Config:")
@@ -40,16 +35,10 @@ class OpenSearchReminderRAG:
         logger.info(f"   Ollama embeddings: {self.ollama_embedding_model}")
         logger.info(f"   Embedding dimension: {self.embedding_dimension}")
 
-        # Настройки подключения
         self.http_auth = (self.user, self.password) if self.password else None
-
-        # Создаем клиент
         self.client = self._create_client()
-
-        # Имя индекса
         self.index_name = os.getenv('OPENSEARCH_INDEX', 'reminder_formats')
 
-        # Проверяем подключение и создаем индекс
         if self.client:
             self._check_connection()
             self._create_index_if_not_exists()
