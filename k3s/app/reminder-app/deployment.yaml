@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: reminder-app
+  namespace: default
+  labels:
+    app: reminder-app
+    component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: reminder-app
+  template:
+    metadata:
+      labels:
+        app: reminder-app
+        component: backend
+    spec:
+      containers:
+      - name: reminder-app
+        image: pyrodocker1/reminder-backend:1.1-1
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8090
+          name: http
+        envFrom:
+        - configMapRef:
+            name: reminder-app-config
+        - secretRef:
+            name: reminder-app-secrets
+        env:
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: reminder-app-secrets
+              key: POSTGRES_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: reminder-app-secrets
+              key: POSTGRES_PASSWORD
+        volumeMounts:
+        - name: app-static
+          mountPath: /app/web/static
+        - name: app-config
+          mountPath: /app/config/application.properties
+          subPath: application.properties
+        - name: opensearch-certs
+          mountPath: /app/certs
+          readOnly: true
+        - name: db-migration
+          mountPath: /app/db/migration
+          readOnly: true
+        - name: redis-certs
+          mountPath: /app/redis_certs
+          readOnly: true
+        - name: jwt-secret
+          mountPath: /run/secrets/jwt_secret
+          subPath: jwt_secret
+          readOnly: true
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "768Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /api/test
+            port: 8090
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          timeoutSeconds: 10
+          failureThreshold: 5
+        readinessProbe:
+          httpGet:
+            path: /api/test
+            port: 8090
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+      volumes:
+      - name: app-static
+        persistentVolumeClaim:
+          claimName: nfs-app-static-pvc
+      - name: app-config
+        configMap:
+          name: reminder-app-config-files
+      - name: opensearch-certs
+        configMap:
+          name: opensearch-certs
+      - name: db-migration
+        configMap:
+          name: db-migration-files
+      - name: redis-certs
+        configMap:
+          name: redis-certs
+      - name: jwt-secret
+        secret:
+          secretName: reminder-app-files
+          items:
+          - key: jwt_secret
+            path: jwt_secret

@@ -1,0 +1,118 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+  namespace: monitoring
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    alerting:
+      alertmanagers:
+        - static_configs:
+            - targets: []
+
+    rule_files:
+      - "alerts.yml"
+
+    scrape_configs:
+      - job_name: 'prometheus'
+        static_configs:
+          - targets: ['localhost:9090']
+
+      - job_name: 'cadvisor'
+        static_configs:
+          - targets: ['cadvisor:8080']
+
+      - job_name: 'node-exporter'
+        static_configs:
+          - targets: ['node-exporter:9100']
+
+      - job_name: 'reminder-app'
+        static_configs:
+          - targets: ['reminder-app.app.svc.cluster.local:8090']
+        metrics_path: '/api/metrics'
+
+      - job_name: 'postgres-exporter'
+        static_configs:
+          - targets: ['postgres-exporter.monitoring.svc.cluster.local:9187']
+
+      - job_name: 'redis-exporter'
+        static_configs:
+          - targets: ['redis-exporter.monitoring.svc.cluster.local:9121']
+
+      - job_name: 'opensearch-exporter'
+        static_configs:
+          - targets: ['opensearch-exporter.monitoring.svc.cluster.local:9114']
+
+      - job_name: 'cloudwatch-exporter'
+        static_configs:
+          - targets: ['cloudwatch-exporter.monitoring.svc.cluster.local:9106']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+
+      - job_name: 'dlq-processor'
+        static_configs:
+          - targets: ['dlq-processor.app.svc.cluster.local:8085']
+        metrics_path: '/metrics'
+        scrape_interval: 30s
+
+  alerts.yml: |
+    groups:
+      - name: reminder_alerts
+        rules:
+          - alert: HighReminderCreationRate
+            expr: rate(aws_voicereminderapp_reminders_created_sum[5m]) > 10
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High reminder creation rate"
+              description: "Reminder creation rate is {{ $value }} per second"
+
+          - alert: ServiceDown
+            expr: up == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Service {{ $labels.job }} is down"
+              description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 1 minute."
+
+          - alert: JVMHeapUsageHigh
+            expr: (aws_voicereminderapp_jvm_memory_used_value_average{area="heap"} / aws_voicereminderapp_jvm_memory_max_value_maximum{area="heap"}) * 100 > 85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "JVM Heap usage high"
+              description: "JVM Heap usage is {{ $value }}%"
+
+          - alert: OpenSearchClusterHealth
+            expr: aws_aws_es_clusterstatus_red_average > 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "OpenSearch cluster health is RED"
+              description: "OpenSearch cluster health status is RED"
+
+          - alert: QueueSizeGrowing
+            expr: aws_aws_sqs_approximatenumberofmessagesvisible_average{queuename="dev-reminder-dlq"} > 100
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "DLQ queue is growing"
+              description: "DLQ has {{ $value }} visible messages"
+
+          - alert: HighEmailFailureRate
+            expr: rate(aws_voicereminderapp_emails_sent_sum{type="failed"}[5m]) > 0.1
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High email failure rate"
+              description: "Email failures are {{ $value }} per second"

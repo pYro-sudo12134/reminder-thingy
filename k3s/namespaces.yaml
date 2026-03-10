@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: app
+  labels:
+    name: app
+    environment: dev
+    component: application
+    monitoring: enabled
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    quota: medium
+    db-access: allowed
+    redis-access: allowed
+    nlp-access: allowed
+    aws-access: allowed
+    ingress: internal
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloud
+  labels:
+    name: cloud
+    environment: dev
+    component: aws-emulation
+    monitoring: enabled
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: baseline
+    pod-security.kubernetes.io/warn: baseline
+    aws-service: localstack
+    opensearch: enabled
+    s3: enabled
+    sqs: enabled
+    sns: enabled
+    lambda: enabled
+    quota: large
+    ingress: external
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: database
+  labels:
+    name: database
+    environment: dev
+    component: data-storage
+    monitoring: enabled
+    metrics-collection: enabled
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    postgres: enabled
+    redis: enabled
+    quota: medium
+    ingress: internal
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: storage
+  labels:
+    name: storage
+    environment: dev
+    component: persistent-storage
+    monitoring: enabled
+    zfs-monitoring: enabled
+    storage-type: zfs
+    csi-driver: openebs
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+    quota: large
+    ingress: disabled
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring
+  labels:
+    name: monitoring
+    environment: dev
+    component: observability
+    prometheus: enabled
+    grafana: enabled
+    metrics: enabled
+    logs: disabled
+    pod-security.kubernetes.io/enforce: restricted
+    quota: small
+    ingress: external
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openebs
+  labels:
+    name: openebs
+    component: storage-system
+    monitoring: enabled
+    csi-driver: zfs
+    pod-security.kubernetes.io/enforce: privileged
+    quota: small
+    ingress: disabled

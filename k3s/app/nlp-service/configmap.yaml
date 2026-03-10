@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nlp-service-config
+  namespace: app
+data:
+  NLP_MODE: "ollama-rag"
+  LOG_LEVEL: "INFO"
+  GRPC_PORT: "50051"
+  GRPC_WORKERS: "10"
+  MODEL_VERSION: "3.1.0-ollama-rag"
+  OLLAMA_HOST: "ollama"
+  OLLAMA_PORT: "11434"
+  OLLAMA_MODEL: "llama3.2:latest"
+  OLLAMA_EMBEDDING_MODEL: "nomic-embed-text"
+  OPENSEARCH_HOST: "localstack.cloud"
+  OPENSEARCH_PORT: "4510"
+  OPENSEARCH_USE_SSL: "false"
+  OPENSEARCH_DISABLE_SSL_VERIFICATION: "true"
+  OPENSEARCH_USER: "admin"
+  OPENSEARCH_INDEX: "reminder_formats"
+  RAG_TOP_K: "5"
+  RAG_MIN_SCORE: "0.3"
+  RAG_SAVE_CONFIDENCE: "0.8"
+  EMBEDDING_DIMENSION: "768"

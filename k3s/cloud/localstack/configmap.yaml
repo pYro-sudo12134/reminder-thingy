@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: localstack-config
+  namespace: cloud
+data:
+  SERVICES: "lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53"
+  DEBUG: "1"
+  AWS_ACCESS_KEY_ID: "test"
+  AWS_SECRET_ACCESS_KEY: "test"
+  PERSISTENCE: "0"
+  LAMBDA_EXECUTOR: "docker"
+  AWS_DEFAULT_REGION: "us-east-1"
+  EDGE_PORT: "4566"
+  OPENSEARCH_ENDPOINT_STRATEGY: "port"
+  OPENSEARCH_PORT: "4510"
+  OPENSEARCH_HOST: "0.0.0.0"
+  OPENSEARCH_PORT_EXTERNAL: "4510"
+  OPENSEARCH_HTTPS_PORT: "4510"
+  OPENSEARCH_JAVA_OPTS: "-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs"
+  OPENSEARCH_ENABLE_SECURITY: "true"
+  OPENSEARCH_ENABLE_SSL: "true"
+  OPENSEARCH_PLUGINS_LIST: "opensearch-security"
+  DISABLE_OPENSEARCH_SECURITY_PLUGIN: "false"
+  OPENSEARCH_NODE_TO_NODE_ENCRYPTION: "true"
+  OPENSEARCH_SSL_CERTIFICATE_PATH: "/etc/localstack/opensearch/certs/node.pem"
+  OPENSEARCH_SSL_KEY_PATH: "/etc/localstack/opensearch/certs/node-key.pem"
+  OPENSEARCH_ROOT_CA_PATH: "/etc/localstack/opensearch/certs/root-ca.pem"
+  OPENSEARCH_ADMIN_CERTIFICATE_PATH: "/etc/localstack/opensearch/certs/admin.pem"
+  OPENSEARCH_ADMIN_KEY_PATH: "/etc/localstack/opensearch/certs/admin-key.pem"
+  INIT_SCRIPTS_PATH: "/etc/localstack/init/ready.d/"

@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reminder-app-properties
+  namespace: app
+data:
+  application.properties: |
+    # Application
+    app.name=VoiceReminder
+    app.version=1.0.0
+    app.environment=${ENVIRONMENT_NAME:dev}
+
+    # NLP Service - Ollama
+    nlp.service.host=${NLP_SERVICE_HOST:nlp-service}
+    nlp.service.port=${NLP_SERVICE_PORT:50051}
+    nlp.grpc.use_tls=${GRPC_USE_TLS:true}
+    nlp.mode=${NLP_MODE:ollama-rag}
+
+    # Ollama specific
+    ollama.host=${OLLAMA_HOST:ollama}
+    ollama.port=${OLLAMA_PORT:11434}
+    ollama.model=${OLLAMA_MODEL:llama3.2:latest}
+    ollama.temperature=${OLLAMA_TEMPERATURE:0.1}
+    ollama.timeout=${OLLAMA_TIMEOUT:30}
+
+    # OpenSearch
+    opensearch.host=${OPENSEARCH_HOST:localstack}
+    opensearch.port=${OPENSEARCH_PORT:4510}
+    opensearch.https_port=${OPENSEARCH_HTTPS_PORT:9200}
+    opensearch.user=${OPENSEARCH_USER:admin}
+    opensearch.password=${OPENSEARCH_ADMIN_PASSWORD}
+    opensearch.use_ssl=${OPENSEARCH_USE_SSL:true}
+    opensearch.disable_ssl_verification=${OPENSEARCH_DISABLE_SSL_VERIFICATION:true}
+    opensearch.truststore.path=${OPENSEARCH_TRUSTSTORE_PATH:/app/certs/truststore.jks}
+    opensearch.truststore.password=${OPENSEARCH_TRUSTSTORE_PASSWORD:changeit}
+
+    # Redis
+    redis.host=${REDIS_HOST:redis}
+    redis.port=${REDIS_PORT:6379}
+    redis.password=${REDIS_PASSWORD}
+    redis.use_ssl=${REDIS_USE_SSL:true}
+    redis.ssl.truststore.path=/app/certs/redis_truststore.jks
+    redis.ssl.truststore.password=changeit
+    redis.ssl.keystore.path=/app/certs/redis_keystore.jks
+    redis.ssl.keystore.password=changeit
+    redis.ssl.verify_mode=${REDIS_SSL_VERIFY_MODE:full}
+    redis.ssl.protocol=${REDIS_SSL_PROTOCOL:TLSv1.2}
+    redis.timeout=${REDIS_TIMEOUT:2000}
+    redis.max.total=${REDIS_MAX_TOTAL:50}
+    redis.max.idle=${REDIS_MAX_IDLE:10}
+    redis.min.idle=${REDIS_MIN_IDLE:5}
+
+    # Server
+    server.port=8090
+    ws.port=${WS_PORT:8090}
+
+    # AWS
+    aws.region=${AWS_REGION:us-east-1}
+    aws.endpoint=${AWS_ENDPOINT_URL:http://localhost:4566}
+    security.grpc.api-key=${NLP_GRPC_API_KEY}
+
+    # PostgreSQL Database
+    db.enabled=${DB_ENABLED:true}
+    db.host=${DB_HOST:postgres}
+    db.port=${DB_PORT:5432}
+    db.name=${DB_NAME:voice_reminder}
+    db.username=${POSTGRES_USER:postgres}
+    db.password=${POSTGRES_PASSWORD}
+    db.schema=${DB_SCHEMA:voice_schema}
+    db.pool.size=${DB_POOL_SIZE:10}
+    db.pool.minIdle=${DB_POOL_MIN_IDLE:5}
+    db.connection.timeout=30000
+    db.pool.maxLifetime=1800000
+
+    # JPA
+    jpa.show_sql=${JPA_SHOW_SQL:false}
+    jpa.format_sql=true
+    jpa.ddl.generation=${JPA_DDL_GENERATION:none}
+
+    # Flyway
+    flyway.enabled=${FLYWAY_ENABLED:true}
+    flyway.baseline.version=${FLYWAY_BASELINE_VERSION:1}
+    flyway.locations=classpath:db/migration,filesystem:/app/db/migration
+    flyway.schemas=${DB_SCHEMA:voice_schema}
+    flyway.table=flyway_schema_history
+    flyway.validate-on-migrate=true
+    flyway.baseline-on-migrate=true
+
+    jwt.secret-key=${JWT_SECRET}
+    jwt.expiration=${TOKEN_EXPIRATION:-86400000}
+    jwt.issuer=${ISSUER:-voice-reminder-app}
+    app.base-url=${APP_BASE_URL:-http://localhost:8090}

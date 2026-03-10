@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: database
+data:
+  01-create-schema.sql: |
+    CREATE SCHEMA IF NOT EXISTS voice_schema;
+
+    GRANT USAGE ON SCHEMA voice_schema TO postgres;
+    GRANT CREATE ON SCHEMA voice_schema TO postgres;
+
+    ALTER DATABASE voice_reminder SET search_path TO voice_schema, public;
+
+    COMMENT ON SCHEMA voice_schema IS 'Main schema for Voice Reminder Application';
+
+  02-create-extensions.sql: |
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "citext";
+
+    COMMENT ON EXTENSION "uuid-ossp" IS 'Generate UUIDs';
+    COMMENT ON EXTENSION "pgcrypto" IS 'Cryptographic functions';
+    COMMENT ON EXTENSION "citext" IS 'Case-insensitive text type';

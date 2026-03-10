@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: database
+  labels:
+    app: redis
+    component: cache
+spec:
+  selector:
+    app: redis
+  ports:
+    - name: redis-tls
+      port: 6379
+      targetPort: 6379
+    - name: redis-plain
+      port: 6380
+      targetPort: 6380
+  type: ClusterIP

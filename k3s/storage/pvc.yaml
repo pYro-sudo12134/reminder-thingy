@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nlp-models-pvc
+  namespace: app
+  labels:
+    app: nlp-service
+    type: models
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadOnlyMany
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nlp-data-pvc
+  namespace: app
+  labels:
+    app: nlp-service
+    type: data
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: localstack-data-pvc
+  namespace: cloud
+  labels:
+    app: localstack
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup-pvc
+  namespace: database
+  labels:
+    app: postgres
+    type: backup
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-static-pvc
+  namespace: app
+  labels:
+    app: reminder-app
+    type: static
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data-pvc
+  namespace: database
+  labels:
+    app: postgres
+    type: data
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data-pvc
+  namespace: app
+  labels:
+    app: ollama
+    type: models
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 30Gi
