@@ -115,3 +115,35 @@ spec:
   resources:
     requests:
       storage: 30Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data-pvc
+  namespace: monitoring
+  labels:
+    app: prometheus
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data-pvc
+  namespace: monitoring
+  labels:
+    app: grafana
+    storage: zfs
+spec:
+  storageClassName: zfs-local
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
