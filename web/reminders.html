@@ -492,8 +492,8 @@
                         </div>
                         <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
                         <div class="reminder-time">
-                            <strong>Когда:</strong> ${new Date(reminder.scheduledTime + 'Z').toLocaleString('ru-RU')}<br>
-                            <strong>Создано:</strong> ${new Date(reminder.createdAt + 'Z').toLocaleString('ru-RU')}
+                            <strong>Когда:</strong> ${new Date(reminder.scheduledTime).toLocaleString('ru-RU')}<br>
+                            <strong>Создано:</strong> ${new Date(reminder.createdAt).toLocaleString('ru-RU')}
                             ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
                         </div>
                         <div class="actions">
@@ -668,7 +668,7 @@
                     `Пользователь: ${data.userId}`,
                     `Действие: ${data.extractedAction || '—'}`,
                     `Оригинальный текст: ${data.originalText || '—'}`,
-                    `Запланировано: ${new Date(data.scheduledTime + 'Z').toLocaleString('ru-RU')}`,
+                    `Запланировано: ${new Date(data.scheduledTime).toLocaleString('ru-RU')}`,
                     `Статус: ${data.status}`,
                     `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`,
                     `Уведомление: ${data.notificationSent ? 'Отправлено' : 'Не отправлено'}`,
