@@ -46,6 +46,7 @@ data
 nlp/data
 gen
 k3s/
+undefined-build/
 
 hs_err_pid*
 replay_pid*
