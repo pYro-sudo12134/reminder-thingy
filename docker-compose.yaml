@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.17.8-rc1-rocm
     container_name: ollama
     ports:
       - "11434:11434"
@@ -194,6 +194,9 @@ services:
       start_period: 15s
 
   reminder-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: pyrodocker1/reminder-backend:1.1-1
     container_name: reminder-app
     ports:
@@ -292,6 +295,9 @@ services:
       start_period: 120s
 
   dlq-processor:
+    build:
+      context: ./dlq-processor
+      dockerfile: Dockerfile
     image: pyrodocker1/reminder-dlq-processor:1.0
     container_name: dlq-processor
     ports:
