@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opensearch-exporter
+  namespace: monitoring
+  labels:
+    app: opensearch-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opensearch-exporter
+  template:
+    metadata:
+      labels:
+        app: opensearch-exporter
+        component: monitoring
+    spec:
+      containers:
+        - name: opensearch-exporter
+          image: quay.io/prometheuscommunity/elasticsearch-exporter:latest
+          args:
+            - '--es.uri=http://localstack.cloud.svc.cluster.local:4510'
+            - '--es.all'
+            - '--es.indices'
+            - '--es.timeout=30s'
+          ports:
+            - containerPort: 9114
+              name: metrics
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
