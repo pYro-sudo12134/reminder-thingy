@@ -145,6 +145,7 @@ services:
       context: ./monitoring/cloudwatch-exporter
       dockerfile: Dockerfile
     container_name: cloudwatch-exporter
+    image: pyrodocker1/reminder-cloudwatch-exporter:1.0
     ports:
       - "9106:9106"
     environment:

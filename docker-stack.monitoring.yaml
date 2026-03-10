@@ -237,9 +237,7 @@ services:
       - "traefik.enable=false"
 
   cloudwatch-exporter:
-    build:
-      context: ./monitoring/cloudwatch-exporter
-      dockerfile: Dockerfile
+    image: pyrodocker1/reminder-cloudwatch-exporter:1.0
     deploy:
       mode: replicated
       replicas: 1
