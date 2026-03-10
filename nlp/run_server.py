@@ -97,20 +97,16 @@ def generate_protobuf():
                 ]
                 subprocess.run(cmd, check=True)
 
-                # Создаем nlp_service директорию если её нет
                 nlp_service_dir = current_dir / "nlp_service"
                 nlp_service_dir.mkdir(exist_ok=True)
 
-                # Перемещаем сгенерированные файлы
                 for file in ["reminder_parser_pb2.py", "reminder_parser_pb2_grpc.py"]:
                     src = current_dir / file
                     if src.exists():
                         dst = nlp_service_dir / file
-                        # Читаем и исправляем импорты
                         with open(src, 'r', encoding='utf-8') as f:
                             content = f.read()
 
-                        # Исправляем импорт для корректной работы в пакете
                         content = content.replace(
                             'import reminder_parser_pb2 as reminder__parser__pb2',
                             'from . import reminder_parser_pb2 as reminder__parser__pb2'
@@ -132,25 +128,20 @@ def main():
     print(" NLP Service Launcher")
     print("=" * 60)
 
-    # Генерируем protobuf если нужно
     generate_protobuf()
-
-    # Определяем режим запуска из переменной окружения
     mode = os.getenv('NLP_MODE', 'ollama').lower()
 
     print(f"\n Mode: {mode}")
 
     if mode in ['ollama', 'ollama-rag']:
-        # Проверяем доступность Ollama
         if not check_ollama():
             logger.error(f" Ollama not available for {mode} mode")
             logger.info("Falling back to rule-based mode...")
             mode = 'rule'
         else:
             if mode == 'ollama-rag':
-                check_opensearch()  # Просто логируем статус, не критично
+                check_opensearch()
 
-    # Запускаем соответствующий сервер
     try:
         if mode in ['ollama', 'ollama-rag']:
             print(f"\n Запуск Ollama сервера...")

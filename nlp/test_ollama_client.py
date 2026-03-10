@@ -39,26 +39,26 @@ def test_ollama_parser():
             response = stub.ParseReminder(request)
 
             print(f"\n{'='*60}")
-            print(f"📝 Текст: {text}")
-            print(f"🌐 Язык: {response.language_detected}")
-            print(f"🎯 Действие: {response.parsed.action}")
-            print(f"💡 Intent: {response.parsed.intent}")
-            print(f"📊 Уверенность: {response.confidence:.2%}")
+            print(f"Текст: {text}")
+            print(f"Язык: {response.language_detected}")
+            print(f"Действие: {response.parsed.action}")
+            print(f"Intent: {response.parsed.intent}")
+            print(f"Уверенность: {response.confidence:.2%}")
 
             # Выводим время
             if response.parsed.HasField('time_expression'):
                 te = response.parsed.time_expression
                 if te.HasField('absolute'):
-                    print(f"⏰ Абсолютное время: {te.absolute.iso_datetime}")
+                    print(f"Абсолютное время: {te.absolute.iso_datetime}")
                 elif te.HasField('relative'):
-                    print(f"⏰ Относительное время: через {te.relative.amount} {te.relative.unit}")
+                    print(f"Относительное время: через {te.relative.amount} {te.relative.unit}")
                 elif te.HasField('recurring'):
-                    print(f"⏰ Повторяющееся: {te.recurring.cron_expression}")
+                    print(f"Повторяющееся: {te.recurring.cron_expression}")
 
         except grpc.RpcError as e:
-            print(f"❌ Ошибка: {e.code()} - {e.details()}")
+            print(f"Ошибка: {e.code()} - {e.details()}")
 
 if __name__ == '__main__':
-    print("🚀 Тестирование Ollama агента для парсинга напоминаний")
+    print("Тестирование Ollama агента для парсинга напоминаний")
     print("="*60)
     test_ollama_parser()

@@ -115,7 +115,6 @@ class OllamaReminderParserService(pb_grpc.ReminderParserServiceServicer):
 
     def _to_protobuf(self, result: ReminderParseResult, request: pb.ParseRequest) -> pb.ParseResponse:
         """Конвертирует результат агента в protobuf"""
-        # ... (код без изменений) ...
         temporal_expr = pb.TemporalExpression()
 
         if result.time_type == "absolute" and result.datetime:
@@ -172,7 +171,7 @@ def serve():
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
 
-    logger.info("🚀 Starting Ollama-based NLP server...")
+    logger.info("Starting Ollama-based NLP server...")
 
     try:
         test_rag = None
@@ -245,7 +244,7 @@ def serve():
     server.start()
 
     logger.info(f"Ollama NLP gRPC Server started on port {port}")
-    logger.info(f"   Authentication: {'🔐 enabled' if service.api_key else 'disabled'}")
+    logger.info(f"   Authentication: {'enabled' if service.api_key else 'disabled'}")
     logger.info(f"   TLS: {'enabled' if use_tls else 'disabled'}")
     logger.info(f"   RAG: {'enabled' if service.use_rag else 'disabled'}")
 

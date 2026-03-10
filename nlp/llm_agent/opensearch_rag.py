@@ -51,7 +51,7 @@ class OpenSearchReminderRAG:
             use_ssl = os.getenv('OPENSEARCH_USE_SSL', 'false').lower() == 'true'
             disable_ssl_verification = os.getenv('OPENSEARCH_DISABLE_SSL_VERIFICATION', 'true').lower() == 'true'
 
-            logger.info(f"🔌 Connecting to OpenSearch at {self.host}:{self.port} with SSL={use_ssl}")
+            logger.info(f"Connecting to OpenSearch at {self.host}:{self.port} with SSL={use_ssl}")
 
             client_params = {
                 'hosts': [{'host': self.host, 'port': self.port}],
@@ -223,7 +223,7 @@ class OpenSearchReminderRAG:
                 request_timeout=60,
                 refresh=True
             )
-            logger.info(f"✅ Indexed {success} format examples with Ollama embeddings")
+            logger.info(f"Indexed {success} format examples with Ollama embeddings")
             return success
         except Exception as e:
             logger.error(f"Bulk indexing error: {e}")
@@ -281,7 +281,7 @@ class OpenSearchReminderRAG:
                     'entities': hit['_source'].get('entities', [])
                 })
 
-            logger.info(f"🔍 Vector search found {len(results)} similar formats")
+            logger.info(f"Vector search found {len(results)} similar formats")
             return results
 
         except Exception as e:

@@ -241,7 +241,7 @@ class OllamaAgent:
             success = self.rag.add_format_examples([example])
 
             if success > 0:
-                logger.info(f"💾 Saved to RAG: {text[:50]}...")
+                logger.info(f"Saved to RAG: {text[:50]}...")
 
         except Exception as e:
             logger.warning(f"Failed to save to RAG: {e}")
