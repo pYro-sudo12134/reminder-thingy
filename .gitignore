@@ -4,9 +4,6 @@
 !/k3s/**
 k3s/.vagrant
 
-**/secrets/
-**/secrets.*
-**/*secret*
 **/*.secret
 **/*.pem
 **/*.jks
@@ -17,9 +14,6 @@ k3s/.vagrant
 **/*.srl
 **/*.cnf
 
-app/*/secrets.yaml
-cloud/*/secrets.yaml
-database/*/secrets.yaml
 **/secrets.json
 **/secrets/*.txt
 **/secrets/*.properties

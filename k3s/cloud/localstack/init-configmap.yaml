@@ -1,0 +1,1805 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: localstack-init-scripts
+  namespace: cloud
+data:
+  aws-init.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Starting LocalStack initialization"
+    echo "Waiting for LocalStack to be ready"
+
+    until curl -s http://localhost:4566/_localstack/health > /dev/null 2>&1; do
+      echo "Waiting for LocalStack services to be available"
+      sleep 5
+    done
+
+    wait_for_stack() {
+        local stack_name=$1
+        local max_attempts=30
+        local attempt=1
+
+        echo "Waiting for stack $stack_name to complete..."
+
+        while [ $attempt -le $max_attempts ]; do
+            STATUS=$(aws --endpoint-url=http://localhost:4566 cloudformation describe-stacks \
+                --stack-name $stack_name \
+                --region us-east-1 \
+                --query 'Stacks[0].StackStatus' \
+                --output text 2>/dev/null || echo "NOT_FOUND")
+
+            if [[ "$STATUS" == "CREATE_COMPLETE" ]]; then
+                echo "Stack $stack_name created successfully"
+                return 0
+            elif [[ "$STATUS" == "CREATE_FAILED" || "$STATUS" == "ROLLBACK_COMPLETE" ]]; then
+                echo "Stack $stack_name creation failed with status: $STATUS"
+                return 1
+            fi
+
+            echo "Attempt $attempt: Stack status = $STATUS"
+            sleep 10
+            attempt=$((attempt + 1))
+        done
+
+        echo "Timeout waiting for stack $stack_name"
+        return 1
+    }
+
+    create_api_gateway() {
+        echo "Creating API Gateway"
+
+        API_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-rest-api \
+          --name "voice-reminder-api" \
+          --region us-east-1 \
+          --query 'id' \
+          --output text)
+
+        echo "API created with ID: $API_ID"
+
+        ROOT_RESOURCE_ID=$(aws --endpoint-url=http://localhost:4566 apigateway get-resources \
+          --rest-api-id $API_ID \
+          --region us-east-1 \
+          --query 'items[?path==`/`].id' \
+          --output text)
+
+        HEALTH_RESOURCE_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-resource \
+          --rest-api-id $API_ID \
+          --parent-id $ROOT_RESOURCE_ID \
+          --path-part "health" \
+          --region us-east-1 \
+          --query 'id' \
+          --output text)
+
+        aws --endpoint-url=http://localhost:4566 apigateway put-method \
+          --rest-api-id $API_ID \
+          --resource-id $HEALTH_RESOURCE_ID \
+          --http-method GET \
+          --authorization-type "NONE" \
+          --region us-east-1
+
+        aws --endpoint-url=http://localhost:4566 apigateway put-integration \
+          --rest-api-id $API_ID \
+          --resource-id $HEALTH_RESOURCE_ID \
+          --http-method GET \
+          --type MOCK \
+          --integration-http-method POST \
+          --request-templates '{"application/json":"{\"statusCode\": 200}"}' \
+          --region us-east-1
+
+        aws --endpoint-url=http://localhost:4566 apigateway put-method-response \
+          --rest-api-id $API_ID \
+          --resource-id $HEALTH_RESOURCE_ID \
+          --http-method GET \
+          --status-code 200 \
+          --response-models '{"application/json":"Empty"}' \
+          --region us-east-1
+
+        aws --endpoint-url=http://localhost:4566 apigateway put-integration-response \
+          --rest-api-id $API_ID \
+          --resource-id $HEALTH_RESOURCE_ID \
+          --http-method GET \
+          --status-code 200 \
+          --response-templates '{"application/json":"{\"status\": \"healthy\", \"timestamp\": \"$context.requestTime\"}"}' \
+          --region us-east-1
+
+        DEPLOYMENT_ID=$(aws --endpoint-url=http://localhost:4566 apigateway create-deployment \
+          --rest-api-id $API_ID \
+          --stage-name "dev" \
+          --region us-east-1 \
+          --query 'id' \
+          --output text)
+
+        echo "API Gateway created successfully!"
+    }
+
+    init_metrics() {
+        echo "Initializing CloudWatch metrics..."
+
+        mkdir -p /tmp/localstack-scripts
+
+        cat > /tmp/localstack-scripts/metrics-cron.sh << 'EOF'
+    #!/bin/bash
+    LOG_FILE="/var/log/metrics-cron.log"
+
+    log() {
+        echo "[$(date)] $1" >> $LOG_FILE
+    }
+
+    log "Starting fixed metrics generator"
+
+    while true; do
+        QUEUE_SIZE=$(aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+            --queue-url http://localhost:4566/000000000000/dev-reminder-queue \
+            --attribute-names ApproximateNumberOfMessages \
+            --region us-east-1 \
+            --query 'Attributes.ApproximateNumberOfMessages' \
+            --output text 2>/dev/null || echo "0")
+
+        DLQ_SIZE=$(aws --endpoint-url=http://localhost:4566 sqs get-queue-attributes \
+            --queue-url http://localhost:4566/000000000000/dev-reminder-dlq \
+            --attribute-names ApproximateNumberOfMessages \
+            --region us-east-1 \
+            --query 'Attributes.ApproximateNumberOfMessages' \
+            --output text 2>/dev/null || echo "0")
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "AWS/SQS" \
+            --metric-name "ApproximateNumberOfMessagesVisible" \
+            --value $QUEUE_SIZE \
+            --unit Count \
+            --dimensions "QueueName=dev-reminder-queue" \
+            --region us-east-1 || true
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "AWS/SQS" \
+            --metric-name "ApproximateNumberOfMessagesVisible" \
+            --value $DLQ_SIZE \
+            --unit Count \
+            --dimensions "QueueName=dev-reminder-dlq" \
+            --region us-east-1 || true
+
+        REMINDERS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 100 + 1}')
+        EMAILS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 50}')
+        UPLOADS=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 30}')
+
+        log "Generated: Reminders=$REMINDERS, Emails=$EMAILS, Uploads=$UPLOADS"
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "reminders.created" \
+            --value $REMINDERS \
+            --unit Count \
+            --dimensions "service=reminder-app" \
+            --region us-east-1
+
+        if [ $? -eq 0 ]; then
+            log "Sent reminders.created=$REMINDERS"
+        else
+            log "Failed to send reminders.created"
+        fi
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "emails.sent" \
+            --value $EMAILS \
+            --unit Count \
+            --dimensions "service=reminder-app,type=notification" \
+            --region us-east-1
+
+        if [ $? -eq 0 ]; then
+            log "Sent emails.sent=$EMAILS"
+        else
+            log "Failed to send emails.sent"
+        fi
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "audio.uploaded" \
+            --value $UPLOADS \
+            --unit Count \
+            --dimensions "bucket=voice-reminder-audio-bucket" \
+            --region us-east-1
+
+        if [ $? -eq 0 ]; then
+            log "Sent audio.uploaded=$UPLOADS"
+        else
+            log "Failed to send audio.uploaded"
+        fi
+
+        CPU=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 50 + 10}')
+        MEMORY=$(od -An -N2 -i /dev/urandom | awk '{print $1 % 40 + 30}')
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "AWS/ES" \
+            --metric-name "CPUUtilization" \
+            --value $CPU \
+            --unit Percent \
+            --dimensions "DomainName=reminder-domain,ClientId=000000000000" \
+            --region us-east-1 || true
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "AWS/ES" \
+            --metric-name "JVMMemoryPressure" \
+            --value $MEMORY \
+            --unit Percent \
+            --dimensions "DomainName=reminder-domain,ClientId=000000000000" \
+            --region us-east-1 || true
+
+        log "Sleeping 60 seconds..."
+        sleep 60
+    done
+    EOF
+
+        chmod +x /tmp/localstack-scripts/metrics-cron.sh
+
+        nohup /tmp/localstack-scripts/metrics-cron.sh > /dev/null 2>&1 &
+
+        echo "Metrics generator started with PID: $!"
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "reminders.created" \
+            --value 5 \
+            --unit Count \
+            --dimensions "service=reminder-app" \
+            --region us-east-1 || true
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "emails.sent" \
+            --value 3 \
+            --unit Count \
+            --dimensions "service=reminder-app,type=notification" \
+            --region us-east-1 || true
+
+        aws --endpoint-url=http://localhost:4566 cloudwatch put-metric-data \
+            --namespace "VoiceReminderApp" \
+            --metric-name "audio.uploaded" \
+            --value 2 \
+            --unit Count \
+            --dimensions "bucket=voice-reminder-audio-bucket" \
+            --region us-east-1 || true
+
+        echo "Initial test metrics created"
+    }
+
+    echo "Deploying main CloudFormation stack"
+    aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
+      --stack-name voice-reminder-stack \
+      --template-body file:///etc/localstack/init/ready.d/template.yaml \
+      --parameters \
+        ParameterKey=EnvironmentName,ParameterValue=dev \
+        ParameterKey=EmailAddress,ParameterValue=notifications@example.com \
+        ParameterKey=OpenSearchDomainName,ParameterValue=reminder-domain \
+        ParameterKey=S3BucketName,ParameterValue=voice-reminder-audio-bucket \
+        ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-lambda \
+      --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+      --region us-east-1 || true
+
+    wait_for_stack "voice-reminder-stack"
+
+    if [ -f "/etc/localstack/init/ready.d/metrics-config.yaml" ]; then
+        echo "Deploying metrics CloudFormation stack"
+        aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
+          --stack-name voice-reminder-metrics \
+          --template-body file:///etc/localstack/init/ready.d/metrics-config.yaml \
+          --parameters \
+            ParameterKey=EnvironmentName,ParameterValue=dev \
+            ParameterKey=ProcessingQueueName,ParameterValue=dev-reminder-queue \
+            ParameterKey=DLQName,ParameterValue=dev-reminder-dlq \
+            ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-lambda \
+            ParameterKey=OpenSearchDomainName,ParameterValue=reminder-domain \
+            ParameterKey=S3BucketName,ParameterValue=voice-reminder-audio-bucket \
+          --capabilities CAPABILITY_IAM \
+          --region us-east-1 || true
+
+        wait_for_stack "voice-reminder-metrics" || echo "Metrics stack warnings are expected"
+    else
+        echo "metrics-config.yaml not found, skipping metrics stack"
+    fi
+
+    init_metrics
+
+    echo "Creating S3 folders"
+    aws --endpoint-url=http://localhost:4566 s3api put-object \
+      --bucket voice-reminder-audio-bucket \
+      --key audio/ \
+      --region us-east-1 2>/dev/null || true
+
+    aws --endpoint-url=http://localhost:4566 s3api put-object \
+      --bucket voice-reminder-audio-bucket \
+      --key transcriptions/ \
+      --region us-east-1 2>/dev/null || true
+
+    SNS_TOPIC_ARN=$(aws --endpoint-url=http://localhost:4566 sns create-topic \
+      --name dev-reminder-notifications \
+      --region us-east-1 \
+      --query 'TopicArn' \
+      --output text)
+
+    aws --endpoint-url=http://localhost:4566 sns subscribe \
+      --topic-arn $SNS_TOPIC_ARN \
+      --protocol email \
+      --notification-endpoint notifications@example.com \
+      --region us-east-1 2>/dev/null || true
+
+    create_api_gateway
+
+    echo ""
+    echo "=== CloudWatch Metrics Summary ==="
+    echo ""
+
+    sleep 5
+
+    echo "Available metrics:"
+    aws --endpoint-url=http://localhost:4566 cloudwatch list-metrics \
+      --namespace VoiceReminderApp \
+      --region us-east-1 \
+      --query 'Metrics[*].MetricName' \
+      --output table || echo "No metrics yet"
+
+    echo ""
+    echo "Recent metrics values:"
+    for metric in reminders.created emails.sent audio.uploaded; do
+        VALUE=$(aws --endpoint-url=http://localhost:4566 cloudwatch get-metric-statistics \
+          --namespace VoiceReminderApp \
+          --metric-name $metric \
+          --start-time $(date -u -d '5 minutes ago' +%Y-%m-%dT%H:%M:%SZ) \
+          --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          --period 300 \
+          --statistics Sum \
+          --region us-east-1 \
+          --query 'Datapoints[0].Sum' \
+          --output text 2>/dev/null || echo "0")
+
+        echo "$metric: $VALUE"
+    done
+
+    if pgrep -f "metrics-cron.sh" > /dev/null; then
+        echo "Metrics generator is running"
+    else
+        echo "Warning: Metrics generator is not running"
+    fi
+
+    echo ""
+    echo "=== Deploying Route53 CloudFormation stack ==="
+    echo ""
+
+    if [ -f "/etc/localstack/init/ready.d/route53.yaml" ]; then
+        echo "Deploying Route53 CloudFormation stack..."
+
+        MAIN_ZONE_ID=$(aws --endpoint-url=http://localhost:4566 route53 create-hosted-zone \
+          --name reminder.local \
+          --caller-reference "main-$(date +%s)" \
+          --query 'HostedZone.Id' \
+          --output text 2>/dev/null | cut -d'/' -f3 || echo "")
+
+        INTERNAL_ZONE_ID=$(aws --endpoint-url=http://localhost:4566 route53 create-hosted-zone \
+          --name internal.reminder.local \
+          --caller-reference "internal-$(date +%s)" \
+          --query 'HostedZone.Id' \
+          --output text 2>/dev/null | cut -d'/' -f3 || echo "")
+
+        echo "Main Hosted Zone ID: $MAIN_ZONE_ID"
+        echo "Internal Hosted Zone ID: $INTERNAL_ZONE_ID"
+
+        export CFN_IGNORE_UNSUPPORTED_RESOURCE_TYPES=1
+
+        aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
+          --stack-name voice-reminder-route53 \
+          --template-body file:///etc/localstack/init/ready.d/route53.yaml \
+          --parameters \
+            ParameterKey=EnvironmentName,ParameterValue=dev \
+            ParameterKey=DomainName,ParameterValue=reminder.local \
+            ParameterKey=NLPServiceIP,ParameterValue=10.10.0.5 \
+            ParameterKey=PostgresIP,ParameterValue=10.10.0.6 \
+            ParameterKey=RedisIP,ParameterValue=10.10.0.7 \
+            ParameterKey=LocalStackIP,ParameterValue=10.10.0.4 \
+            ParameterKey=DLQProcessorIP,ParameterValue=10.10.0.12 \
+            ParameterKey=TraefikIP,ParameterValue=10.10.0.2 \
+            ParameterKey=AppIPs,ParameterValue=\"10.10.0.10,10.10.0.11\" \
+            ParameterKey=MainHostedZoneId,ParameterValue=$MAIN_ZONE_ID \
+            ParameterKey=InternalHostedZoneId,ParameterValue=$INTERNAL_ZONE_ID \
+          --capabilities CAPABILITY_IAM \
+          --region us-east-1 \
+          --query 'StackId' \
+          --output text || true
+
+        wait_for_stack "voice-reminder-route53"
+
+        echo ""
+        echo "Route53 stack deployed successfully!"
+        echo ""
+
+        if [ ! -z "$MAIN_ZONE_ID" ]; then
+            echo "DNS Records in main zone (reminder.local):"
+            aws --endpoint-url=http://localhost:4566 route53 list-resource-record-sets \
+              --hosted-zone-id "$MAIN_ZONE_ID" \
+              --region us-east-1 \
+              --query 'ResourceRecordSets[?Type!=`NS` && Type!=`SOA`].{Name:Name,Type:Type,Value:ResourceRecords[0].Value}' \
+              --output table 2>/dev/null || echo "  No records found"
+        fi
+
+        if [ ! -z "$INTERNAL_ZONE_ID" ]; then
+            echo ""
+            echo "DNS Records in internal zone (internal.reminder.local):"
+            aws --endpoint-url=http://localhost:4566 route53 list-resource-record-sets \
+              --hosted-zone-id "$INTERNAL_ZONE_ID" \
+              --region us-east-1 \
+              --query 'ResourceRecordSets[?Type!=`NS` && Type!=`SOA`].{Name:Name,Type:Type,Value:ResourceRecords[0].Value}' \
+              --output table 2>/dev/null || echo "  No records found"
+        fi
+
+        echo ""
+        echo "For local resolution, add these lines to /etc/hosts:"
+        echo "# Voice Reminder DNS"
+        echo "10.10.0.2 api.reminder.local app.reminder.local"
+        echo "10.10.0.4 localstack.reminder.local"
+        echo "10.10.0.5 nlp.internal.reminder.local"
+        echo "10.10.0.6 postgres.internal.reminder.local"
+        echo "10.10.0.7 redis.internal.reminder.local"
+        echo "10.10.0.4 localstack.internal.reminder.local"
+        echo "10.10.0.12 dlq.internal.reminder.local"
+        echo "10.10.0.10 app.internal.reminder.local"
+        echo "10.10.0.11 app.internal.reminder.local"
+
+    else
+        echo "route53.yaml not found, skipping Route53 deployment"
+    fi
+
+    echo ""
+    echo "LocalStack initialization complete!"
+  metrics-config.yaml: |
+    AWSTemplateFormatVersion: '2010-09-09'
+    Description: Voice Reminder Metrics Configuration
+    
+    Parameters:
+      EnvironmentName:
+        Type: String
+        Default: dev
+      ProcessingQueueName:
+        Type: String
+        Default: dev-reminder-queue
+      DLQName:
+        Type: String
+        Default: dev-reminder-dlq
+      LambdaFunctionName:
+        Type: String
+        Default: send-reminder-lambda
+      OpenSearchDomainName:
+        Type: String
+        Default: reminder-domain
+      S3BucketName:
+        Type: String
+        Default: voice-reminder-audio-bucket
+      ApiGatewayName:
+        Type: String
+        Default: voice-reminder-api
+      EventBusName:
+        Type: String
+        Default: default
+    
+    Resources:
+      RemindersHighRateAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-reminders-high-rate
+          AlarmDescription: "High rate of reminder creation"
+          Namespace: "VoiceReminderApp"
+          MetricName: "reminders.created"
+          Statistic: Sum
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 50
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: service
+              Value: reminder-app
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      EmailsHighRateAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-emails-high-rate
+          AlarmDescription: "High rate of email sending"
+          Namespace: "VoiceReminderApp"
+          MetricName: "emails.sent"
+          Statistic: Sum
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 30
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: service
+              Value: reminder-app
+            - Name: type
+              Value: notification
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      ApiGatewayHighRequestCountAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-apigateway-high-requests
+          AlarmDescription: "High number of API requests"
+          Namespace: "AWS/ApiGateway"
+          MetricName: "Count"
+          Statistic: Sum
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 1000
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: ApiName
+              Value: !Ref ApiGatewayName
+            - Name: Stage
+              Value: !Ref EnvironmentName
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      ApiGatewayHighErrorRateAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-apigateway-high-errors
+          AlarmDescription: "High error rate in API Gateway"
+          Metrics:
+            - Id: e1
+              Label: "Error Rate"
+              Expression: "m1 / m2 * 100"
+            - Id: m1
+              MetricStat:
+                Metric:
+                  Namespace: "AWS/ApiGateway"
+                  MetricName: "4XXError"
+                  Dimensions:
+                    - Name: ApiName
+                      Value: !Ref ApiGatewayName
+                    - Name: Stage
+                      Value: !Ref EnvironmentName
+                Period: 300
+                Stat: Sum
+            - Id: m2
+              MetricStat:
+                Metric:
+                  Namespace: "AWS/ApiGateway"
+                  MetricName: "Count"
+                  Dimensions:
+                    - Name: ApiName
+                      Value: !Ref ApiGatewayName
+                    - Name: Stage
+                      Value: !Ref EnvironmentName
+                Period: 300
+                Stat: Sum
+          Threshold: 5
+          ComparisonOperator: GreaterThanThreshold
+          EvaluationPeriods: 2
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      ApiGatewayHighLatencyAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-apigateway-high-latency
+          AlarmDescription: "High latency in API Gateway"
+          Namespace: "AWS/ApiGateway"
+          MetricName: "Latency"
+          Statistic: Average
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 1000
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: ApiName
+              Value: !Ref ApiGatewayName
+            - Name: Stage
+              Value: !Ref EnvironmentName
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      EventBridgeHighFailedInvocationsAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-eventbridge-high-failures
+          AlarmDescription: "High number of failed EventBridge invocations"
+          Namespace: "AWS/Events"
+          MetricName: "FailedInvocations"
+          Statistic: Sum
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 10
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: RuleName
+              Value: !Sub ${EnvironmentName}-transcribe-failure-rule
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      EventBridgeLowInvocationsAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-eventbridge-low-invocations
+          AlarmDescription: "Low number of EventBridge invocations"
+          Namespace: "AWS/Events"
+          MetricName: "Invocations"
+          Statistic: Sum
+          Period: 3600
+          EvaluationPeriods: 1
+          Threshold: 1
+          ComparisonOperator: LessThanThreshold
+          Dimensions:
+            - Name: RuleName
+              Value: !Sub ${EnvironmentName}-transcribe-failure-rule
+          AlarmActions:
+            - !Sub arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-notifications
+    
+      ApiGatewayDashboard:
+        Type: AWS::CloudWatch::Dashboard
+        Properties:
+          DashboardName: !Sub ${EnvironmentName}-apigateway-dashboard
+          DashboardBody:
+            Fn::Sub:
+              - |
+                {
+                  "widgets": [
+                    {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 0,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/ApiGateway", "Count", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum" }]
+                        ],
+                        "period": 300,
+                        "stat": "Sum",
+                        "region": "${AWSRegion}",
+                        "title": "API Gateway Request Count"
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 0,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/ApiGateway", "4XXError", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum", "color": "#ff9900" }],
+                          ["AWS/ApiGateway", "5XXError", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Sum", "color": "#d13212" }]
+                        ],
+                        "period": 300,
+                        "stat": "Sum",
+                        "region": "${AWSRegion}",
+                        "title": "API Gateway Errors"
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 6,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/ApiGateway", "Latency", "ApiName", "${ApiName}", "Stage", "${Stage}", { "stat": "Average" }],
+                          [".", "IntegrationLatency", ".", ".", ".", ".", { "stat": "Average" }]
+                        ],
+                        "period": 300,
+                        "stat": "Average",
+                        "region": "${AWSRegion}",
+                        "title": "API Gateway Latency"
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 12,
+                      "y": 6,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/Events", "Invocations", "RuleName", "${TranscribeRule}", { "stat": "Sum" }],
+                          [".", "FailedInvocations", ".", ".", { "stat": "Sum" }],
+                          [".", "TriggeredRules", ".", ".", { "stat": "Sum" }]
+                        ],
+                        "period": 300,
+                        "stat": "Sum",
+                        "region": "${AWSRegion}",
+                        "title": "EventBridge Metrics"
+                      }
+                    }
+                  ]
+                }
+              - ApiName: !Ref ApiGatewayName
+                Stage: !Ref EnvironmentName
+                TranscribeRule: !Sub ${EnvironmentName}-transcribe-failure-rule
+                AWSRegion: !Ref AWS::Region
+    
+      TestMetricsGenerator:
+        Type: AWS::CloudFormation::CustomResource
+        Properties:
+          ServiceToken: !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:test-metrics-generator
+          ApiName: !Ref ApiGatewayName
+          Environment: !Ref EnvironmentName
+    
+    Outputs:
+      MetricsEnabled:
+        Description: Metrics are enabled
+        Value: "true"
+    
+      ApiGatewayDashboardUrl:
+        Description: URL for API Gateway Dashboard
+        Value: !Sub https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-apigateway-dashboard
+    
+      EventBridgeAlarmsCreated:
+        Description: EventBridge alarms created
+        Value: "true"
+  route53.yaml: |
+    AWSTemplateFormatVersion: '2010-09-09'
+    Description: 'Route53 Configuration for Voice Reminder in LocalStack'
+    
+    Parameters:
+      EnvironmentName:
+        Type: String
+        Default: dev
+        Description: Environment name
+    
+      DomainName:
+        Type: String
+        Default: reminder.local
+        Description: Base domain name for the application
+    
+      NLPServiceIP:
+        Type: String
+        Default: 10.10.0.5
+        Description: IP address of NLP service
+    
+      PostgresIP:
+        Type: String
+        Default: 10.10.0.6
+        Description: IP address of PostgreSQL
+    
+      RedisIP:
+        Type: String
+        Default: 10.10.0.7
+        Description: IP address of Redis
+    
+      LocalStackIP:
+        Type: String
+        Default: 10.10.0.4
+        Description: IP address of LocalStack
+    
+      AppIPs:
+        Type: CommaDelimitedList
+        Default: "10.10.0.10,10.10.0.11"
+        Description: IP addresses of reminder-app instances
+    
+      DLQProcessorIP:
+        Type: String
+        Default: 10.10.0.12
+        Description: IP address of DLQ processor
+    
+      TraefikIP:
+        Type: String
+        Default: 10.10.0.2
+        Description: IP address of Traefik
+    
+      NFSIP:
+        Type: String
+        Default: 10.10.0.3
+        Description: IP address of NFS server
+    
+      MainHostedZoneId:
+        Type: String
+        Description: ID of existing main hosted zone
+    
+      InternalHostedZoneId:
+        Type: String
+        Description: ID of existing internal hosted zone
+    
+    Resources:
+      ApiRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref MainHostedZoneId
+          Name: !Sub "api.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref TraefikIP
+    
+      AppRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref MainHostedZoneId
+          Name: !Sub "app.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref TraefikIP
+    
+      LocalStackRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref MainHostedZoneId
+          Name: !Sub "localstack.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref LocalStackIP
+    
+      NLPServiceRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "nlp.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref NLPServiceIP
+    
+      NFSInternalRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "nfs.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref NFSIP
+    
+      PostgresRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "postgres.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref PostgresIP
+    
+      RedisRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "redis.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref RedisIP
+    
+      LocalStackInternalRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "localstack.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref LocalStackIP
+    
+      DLQProcessorRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "dlq.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref DLQProcessorIP
+    
+      AppInternalRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "app.internal.${DomainName}"
+          Type: A
+          TTL: 30
+          ResourceRecords: !Ref AppIPs
+    
+      GrpcSRVRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "_grpc._tcp.nlp.internal.${DomainName}"
+          Type: SRV
+          TTL: 60
+          ResourceRecords:
+            - !Sub "10 10 50051 nlp.internal.${DomainName}"
+    
+      PostgresSRVRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "_postgres._tcp.postgres.internal.${DomainName}"
+          Type: SRV
+          TTL: 60
+          ResourceRecords:
+            - !Sub "10 10 5432 postgres.internal.${DomainName}"
+    
+      RedisSRVRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "_redis._tcp.redis.internal.${DomainName}"
+          Type: SRV
+          TTL: 60
+          ResourceRecords:
+            - !Sub "10 10 6379 redis.internal.${DomainName}"
+    
+      OpenSearchCNAME:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "opensearch.internal.${DomainName}"
+          Type: CNAME
+          TTL: 60
+          ResourceRecords:
+            - "localhost"
+    
+      S3CNAME:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "s3.internal.${DomainName}"
+          Type: CNAME
+          TTL: 60
+          ResourceRecords:
+            - "localhost"
+    
+      ConfigTXTRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "config.internal.${DomainName}"
+          Type: TXT
+          TTL: 300
+          ResourceRecords:
+            - !Sub '"environment=${EnvironmentName}"'
+            - '"region=us-east-1"'
+            - '"aws-endpoint=http://localstack:4566"'
+    
+      WildcardInternalRecord:
+        Type: AWS::Route53::RecordSet
+        Properties:
+          HostedZoneId: !Ref InternalHostedZoneId
+          Name: !Sub "*.internal.${DomainName}"
+          Type: A
+          TTL: 60
+          ResourceRecords:
+            - !Ref TraefikIP
+    
+    Outputs:
+      ServiceEndpoints:
+        Description: Service endpoints for configuration
+        Value: !Sub |
+          API: http://api.${DomainName}
+          App: http://app.${DomainName}
+          LocalStack: http://localstack.${DomainName}:4566
+          
+          Internal Endpoints:
+          - NLP Service: nlp.internal.${DomainName}:50051
+          - PostgreSQL: postgres.internal.${DomainName}:5432
+          - Redis: redis.internal.${DomainName}:6379
+          - LocalStack: localstack.internal.${DomainName}:4566
+          - DLQ Processor: dlq.internal.${DomainName}:8085
+          - App (round-robin): app.internal.${DomainName}:8090
+  template.yaml: |
+    AWSTemplateFormatVersion: '2010-09-09'
+    Description: Voice Reminder
+    
+    Parameters:
+      EnvironmentName:
+        Type: String
+        Default: dev
+        Description: Environment name
+    
+      EmailAddress:
+        Type: String
+        Default: notifications@example.com
+        Description: Email address for sending reminders
+    
+      OpenSearchDomainName:
+        Type: String
+        Default: reminder-domain
+        Description: OpenSearch domain name
+    
+      S3BucketName:
+        Type: String
+        Default: voice-reminder-audio-bucket
+        Description: S3 bucket for audio files
+    
+      LambdaFunctionName:
+        Type: String
+        Default: send-reminder-lambda
+        Description: Lambda function name
+    
+    Resources:
+      AudioBucket:
+        Type: AWS::S3::Bucket
+        Properties:
+          BucketName: !Ref S3BucketName
+          VersioningConfiguration:
+            Status: Enabled
+          LifecycleConfiguration:
+            Rules:
+              - Id: ExpireOldAudio
+                Status: Enabled
+                ExpirationInDays: 30
+    
+      OpenSearchDomain:
+        Type: AWS::OpenSearchService::Domain
+        Properties:
+          DomainName: !Ref OpenSearchDomainName
+          EngineVersion: "OpenSearch_2.5"
+          ClusterConfig:
+            InstanceType: "t3.small.search"
+            InstanceCount: 1
+          EBSOptions:
+            EBSEnabled: true
+            VolumeType: "gp2"
+            VolumeSize: 10
+          SnapshotOptions:
+            AutomatedSnapshotStartHour: 2
+    
+      TranscribeServiceRole:
+        Type: AWS::IAM::Role
+        Properties:
+          RoleName: !Sub ${EnvironmentName}-transcribe-service-role
+          AssumeRolePolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Principal:
+                  Service: transcribe.amazonaws.com
+                Action: sts:AssumeRole
+          Policies:
+            - PolicyName: TranscribeS3Access
+              PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - s3:GetObject
+                      - s3:ListBucket
+                    Resource:
+                      - !Sub arn:aws:s3:::${S3BucketName}
+                      - !Sub arn:aws:s3:::${S3BucketName}/*
+                  - Effect: Allow
+                    Action:
+                      - s3:PutObject
+                    Resource: !Sub arn:aws:s3:::${S3BucketName}/transcriptions/*
+    
+      AppExecutionRole:
+        Type: AWS::IAM::Role
+        Properties:
+          RoleName: !Sub ${EnvironmentName}-reminder-app-role
+          AssumeRolePolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Principal:
+                  Service: ec2.amazonaws.com
+                Action: sts:AssumeRole
+          Policies:
+            - PolicyName: AppReminderPolicy
+              PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - s3:PutObject
+                      - s3:GetObject
+                      - s3:DeleteObject
+                      - s3:ListBucket
+                    Resource:
+                      - !Sub arn:aws:s3:::${S3BucketName}
+                      - !Sub arn:aws:s3:::${S3BucketName}/*
+    
+                  - Effect: Allow
+                    Action:
+                      - transcribe:StartTranscriptionJob
+                      - transcribe:GetTranscriptionJob
+                      - transcribe:ListTranscriptionJobs
+                    Resource: "*"
+    
+                  - Effect: Allow
+                    Action:
+                      - events:PutRule
+                      - events:PutTargets
+                      - events:EnableRule
+                      - events:DisableRule
+                      - events:ListRules
+                    Resource: "*"
+    
+                  - Effect: Allow
+                    Action:
+                      - es:ESHttpPost
+                      - es:ESHttpGet
+                      - es:ESHttpPut
+                      - es:ESHttpDelete
+                    Resource: !Sub arn:aws:es:*:*:domain/${OpenSearchDomainName}/*
+    
+                  - Effect: Allow
+                    Action:
+                      - ses:VerifyEmailIdentity
+                      - ses:SendEmail
+                    Resource: "*"
+    
+                  - Effect: Allow
+                    Action:
+                      - logs:CreateLogGroup
+                      - logs:CreateLogStream
+                      - logs:PutLogEvents
+                    Resource: arn:aws:logs:*:*:*
+    
+                  - Effect: Allow
+                    Action: iam:PassRole
+                    Resource: !GetAtt TranscribeServiceRole.Arn
+    
+                  - Effect: Allow
+                    Action:
+                      - secretsmanager:GetSecretValue
+                      - secretsmanager:DescribeSecret
+                      - secretsmanager:ListSecrets
+                    Resource: !Ref SecretsManagerSecret
+    
+                  - Effect: Allow
+                    Action:
+                      - kms:Decrypt
+                      - kms:GenerateDataKey
+                    Resource: !GetAtt KMSCustomerManagedKey.Arn
+    
+                  - Effect: Allow
+                    Action:
+                      - logs:CreateLogStream
+                      - logs:PutLogEvents
+                      - logs:DescribeLogGroups
+                      - logs:DescribeLogStreams
+                      - logs:PutSubscriptionFilter
+                      - logs:DeleteSubscriptionFilter
+                    Resource: "*"
+    
+            - PolicyName: EventBridgeSQSAccess
+              PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - events:PutEvents
+                      - events:PutRule
+                      - events:PutTargets
+                      - events:DescribeRule
+                    Resource: "*"
+    
+            - PolicyName: DirectSQSAccessForLogs
+              PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                  - Effect: Allow
+                    Action:
+                      - sqs:SendMessage
+                    Resource: !GetAtt ReminderProcessingQueue.Arn
+    
+      SQSAccessPolicy:
+        Type: AWS::IAM::Policy
+        Properties:
+          PolicyName: !Sub ${EnvironmentName}-sqs-access-policy
+          Roles:
+            - !Ref AppExecutionRole
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt ReminderProcessingQueue.Arn
+        DependsOn:
+          - AppExecutionRole
+          - ReminderProcessingQueue
+    
+      ReminderDeadLetterQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+          QueueName: !Sub ${EnvironmentName}-reminder-dlq
+          MessageRetentionPeriod: 1209600
+    
+      ReminderProcessingQueue:
+        Type: AWS::SQS::Queue
+        Properties:
+          QueueName: !Sub ${EnvironmentName}-reminder-queue
+          VisibilityTimeout: 300
+          RedrivePolicy:
+            deadLetterTargetArn: !GetAtt ReminderDeadLetterQueue.Arn
+            maxReceiveCount: 3
+    
+      DLQMessageAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-dlq-has-messages
+          AlarmDescription: "Messages in Dead Letter Queue require attention"
+          MetricName: ApproximateNumberOfMessagesVisible
+          Namespace: AWS/SQS
+          Statistic: Average
+          Period: 300
+          EvaluationPeriods: 1
+          Threshold: 1
+          ComparisonOperator: GreaterThanOrEqualToThreshold
+          Dimensions:
+            - Name: QueueName
+              Value: !GetAtt ReminderDeadLetterQueue.QueueName
+          AlarmActions:
+            - !Ref ReminderNotificationTopic
+          OKActions:
+            - !Ref ReminderNotificationTopic
+          InsufficientDataActions:
+            - !Ref ReminderNotificationTopic
+    
+      DLQOldMessageAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-dlq-old-messages
+          AlarmDescription: "Messages have been in DLQ for too long"
+          Metrics:
+            - Id: m1
+              Label: "ApproximateAgeOfOldestMessage"
+              MetricStat:
+                Metric:
+                  Namespace: AWS/SQS
+                  MetricName: ApproximateAgeOfOldestMessage
+                  Dimensions:
+                    - Name: QueueName
+                      Value: !GetAtt ReminderDeadLetterQueue.QueueName
+                Period: 3600
+                Stat: Maximum
+          Threshold: 86400
+          ComparisonOperator: GreaterThanThreshold
+          EvaluationPeriods: 1
+          DatapointsToAlarm: 1
+          TreatMissingData: notBreaching
+          AlarmActions:
+            - !Ref ReminderNotificationTopic
+    
+      LambdaErrorAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-lambda-error-rate-high
+          AlarmDescription: "High error rate in Send Reminder Lambda"
+          MetricName: Errors
+          Namespace: AWS/Lambda
+          Statistic: Sum
+          Period: 300
+          EvaluationPeriods: 1
+          Threshold: 5
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: FunctionName
+              Value: !Ref LambdaFunctionName
+          AlarmActions:
+            - !Ref ReminderNotificationTopic
+    
+      OpenSearchCPUAlarm:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+          AlarmName: !Sub ${EnvironmentName}-opensearch-cpu-high
+          AlarmDescription: "High CPU utilization in OpenSearch"
+          MetricName: CPUUtilization
+          Namespace: AWS/ES
+          Statistic: Average
+          Period: 300
+          EvaluationPeriods: 2
+          Threshold: 80
+          ComparisonOperator: GreaterThanThreshold
+          Dimensions:
+            - Name: DomainName
+              Value: !Ref OpenSearchDomainName
+            - Name: ClientId
+              Value: !Ref AWS::AccountId
+          AlarmActions:
+            - !Ref ReminderNotificationTopic
+    
+      # SESVerifiedEmail:
+      #   Type: AWS::SES::EmailIdentity
+      #   Properties:
+      #     EmailIdentity: !Ref EmailAddress
+    
+      ApiGateway:
+        Type: AWS::ApiGateway::RestApi
+        Properties:
+          Name: !Sub ${EnvironmentName}-voice-reminder-api
+          Description: Voice Reminder API
+          EndpointConfiguration:
+            Types:
+              - REGIONAL
+          FailOnWarnings: true
+    
+      ApiGatewayDeployment:
+        Type: AWS::ApiGateway::Deployment
+        Properties:
+          RestApiId: !Ref ApiGateway
+          StageName: !Ref EnvironmentName
+        DependsOn:
+          - HealthMethod
+    
+      HealthResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !GetAtt ApiGateway.RootResourceId
+          PathPart: health
+    
+      HealthMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ResourceId: !Ref HealthResource
+          HttpMethod: GET
+          AuthorizationType: NONE
+          Integration:
+            Type: HTTP_PROXY
+            IntegrationHttpMethod: GET
+            Uri: http://reminder-app:8090/api/test
+            #        Uri: http://traefik:8081/api/test
+            ConnectionType: INTERNET
+            TimeoutInMillis: 29000
+      #        RequestParameters:
+      #          integration.request.header.Host: "'app.reminder.internal'"
+    
+      ProxyResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !GetAtt ApiGateway.RootResourceId
+          PathPart: "{proxy+}"
+    
+      ProxyMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ResourceId: !Ref ProxyResource
+          HttpMethod: ANY
+          AuthorizationType: NONE
+          Integration:
+            Type: HTTP_PROXY
+            IntegrationHttpMethod: ANY
+            Uri: http://reminder-app:8090/{proxy}
+            #        Uri: http://traefik:8081/{proxy}
+            ConnectionType: INTERNET
+            RequestParameters:
+              integration.request.path.proxy: method.request.path.proxy
+      #        RequestParameters:
+      #          integration.request.path.proxy: method.request.path.proxy
+      #          integration.request.header.Host: "'app.reminder.internal'"
+    
+      MetricsResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !Ref ApiResource
+          PathPart: metrics
+    
+      MetricsMethod:
+        Type: AWS::ApiGateway::Method
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ResourceId: !Ref MetricsResource
+          HttpMethod: GET
+          AuthorizationType: NONE
+          Integration:
+            Type: HTTP_PROXY
+            IntegrationHttpMethod: GET
+            Uri: http://reminder-app:8090/metrics
+            #        Uri: http://traefik:8081/api/metrics
+            ConnectionType: INTERNET
+    
+      ApiGatewayUsagePlan:
+        Type: AWS::ApiGateway::UsagePlan
+        Properties:
+          ApiStages:
+            - ApiId: !Ref ApiGateway
+              Stage: !Ref EnvironmentName
+          UsagePlanName: !Sub ${EnvironmentName}-voice-reminder-usage-plan
+          Throttle:
+            BurstLimit: 100
+            RateLimit: 50
+          Quota:
+            Limit: 10000
+            Period: MONTH
+    
+      ApiGatewayApiKey:
+        Type: AWS::ApiGateway::ApiKey
+        Properties:
+          Name: !Sub ${EnvironmentName}-voice-reminder-api-key
+          Enabled: true
+          StageKeys:
+            - RestApiId: !Ref ApiGateway
+              StageName: !Ref EnvironmentName
+    
+      ApiResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !GetAtt ApiGateway.RootResourceId
+          PathPart: api
+    
+      ApiVersionResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !Ref ApiResource
+          PathPart: v1
+    
+      RemindersResource:
+        Type: AWS::ApiGateway::Resource
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ParentId: !Ref ApiVersionResource
+          PathPart: reminders
+    
+      ApiGatewayCors:
+        Type: AWS::ApiGateway::Method
+        Properties:
+          RestApiId: !Ref ApiGateway
+          ResourceId: !Ref ProxyResource
+          HttpMethod: OPTIONS
+          AuthorizationType: NONE
+          Integration:
+            Type: MOCK
+            RequestTemplates:
+              application/json: '{"statusCode": 200}'
+            IntegrationResponses:
+              - StatusCode: 200
+                ResponseParameters:
+                  method.response.header.Access-Control-Allow-Origin: "'*'"
+                  method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                  method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+          MethodResponses:
+            - StatusCode: 200
+              ResponseParameters:
+                method.response.header.Access-Control-Allow-Origin: true
+                method.response.header.Access-Control-Allow-Headers: true
+                method.response.header.Access-Control-Allow-Methods: true
+    
+      ReminderNotificationTopic:
+        Type: AWS::SNS::Topic
+        Properties:
+          TopicName: !Sub ${EnvironmentName}-reminder-notifications
+          DisplayName: "Voice Reminder Notifications"
+          Subscription:
+            - Protocol: email
+              Endpoint: !Ref EmailAddress
+    
+      LambdaLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+          LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+          RetentionInDays: 30
+    
+      AppLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+          LogGroupName: !Sub /${EnvironmentName}/reminder-app
+          RetentionInDays: 30
+    
+      TranscribeLogGroup:
+        Type: AWS::Logs::LogGroup
+        Properties:
+          LogGroupName: !Sub /aws/transcribe/${EnvironmentName}
+          RetentionInDays: 7
+    
+      SecretsManagerSecret:
+        Type: AWS::SecretsManager::Secret
+        Properties:
+          Name: !Sub ${EnvironmentName}/voice-reminder/secrets
+          Description: Secrets for Voice Reminder application
+          GenerateSecretString:
+            SecretStringTemplate: '{"NLP_GRPC_KEY": "placeholder"}'
+            GenerateStringKey: "SERVICE_TOKEN"
+            PasswordLength: 32
+            ExcludeCharacters: '"@/\'
+    
+      KMSCustomerManagedKey:
+        Type: AWS::KMS::Key
+        Properties:
+          Description: KMS key for Voice Reminder encryption
+          EnableKeyRotation: true
+          KeyPolicy:
+            Version: '2012-10-17'
+            Id: key-default-1
+            Statement:
+              - Sid: Enable IAM User Permissions
+                Effect: Allow
+                Principal:
+                  AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+                Action: kms:*
+                Resource: "*"
+              - Sid: Allow Secrets Manager to use the key
+                Effect: Allow
+                Principal:
+                  Service: secretsmanager.amazonaws.com
+                Action:
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:ReEncrypt*
+                  - kms:GenerateDataKey*
+                  - kms:DescribeKey
+                Resource: "*"
+              - Sid: Allow Lambda to use the key
+                Effect: Allow
+                Principal:
+                  Service: lambda.amazonaws.com
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub lambda.${AWS::Region}.amazonaws.com
+    
+      KMSCustomerManagedKeyAlias:
+        Type: AWS::KMS::Alias
+        Properties:
+          AliasName: !Sub alias/${EnvironmentName}-voice-reminder-key
+          TargetKeyId: !Ref KMSCustomerManagedKey
+    
+      SecretsManagerSecretKMSAssociation:
+        Type: AWS::SecretsManager::ResourcePolicy
+        Properties:
+          SecretId: !Ref SecretsManagerSecret
+          ResourcePolicy:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Principal:
+                  AWS: !GetAtt AppExecutionRole.Arn
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: "*"
+    
+      CertificateManagerCertificate:
+        Type: AWS::CertificateManager::Certificate
+        Properties:
+          DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+          ValidationMethod: DNS
+          DomainValidationOptions:
+            - DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+              HostedZoneId: ZONE_ID_IF_NEEDED
+    
+      TranscribeFailureRule:
+        Type: AWS::Events::Rule
+        Properties:
+          Name: !Sub ${EnvironmentName}-transcribe-failure-rule
+          Description: "Capture Transcribe job failures"
+          EventPattern:
+            source:
+              - "aws.transcribe"
+            detail-type:
+              - "Transcribe Job State Change"
+            detail:
+              TranscriptionJobStatus:
+                - "FAILED"
+          State: "ENABLED"
+          Targets:
+            - Id: "TranscribeFailureToSQS"
+              Arn: !GetAtt ReminderProcessingQueue.Arn
+              SqsParameters:
+                MessageGroupId: "transcribe-failures"
+    
+      LambdaFailureRule:
+        Type: AWS::Events::Rule
+        Properties:
+          EventPattern:
+            source:
+              - "aws.lambda"
+            detail-type:
+              - "Lambda Function Invocation Result - Failure"
+          Targets:
+            - Id: "LambdaFailureToSQS"
+              Arn: !GetAtt ReminderProcessingQueue.Arn
+        DependsOn:
+          - ReminderProcessingQueue
+          - LambdaLogGroup
+    
+      OpenSearchFailureRule:
+        Type: AWS::Events::Rule
+        Properties:
+          Name: !Sub ${EnvironmentName}-opensearch-failure-rule
+          Description: "Capture OpenSearch domain issues"
+          EventPattern:
+            source:
+              - "aws.opensearch"
+            detail-type:
+              - "OpenSearch Service Event"
+            detail:
+              eventType:
+                - "error"
+                - "warning"
+          Targets:
+            - Id: "OpenSearchFailureToSQS"
+              Arn: !GetAtt ReminderProcessingQueue.Arn
+        DependsOn:
+          - ReminderProcessingQueue
+          - OpenSearchDomain
+    
+      ServiceMonitoringDashboard:
+        Type: AWS::CloudWatch::Dashboard
+        Properties:
+          DashboardName: !Sub ${EnvironmentName}-voice-reminder-monitoring
+          DashboardBody:
+            Fn::Sub:
+              - |
+                {
+                  "widgets": [
+                    {
+                      "type": "metric",
+                      "x": 0, "y": 0, "width": 12, "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${ProcessingQueueName}"],
+                          [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", { "label": "Messages In Flight" }],
+                          [".", "ApproximateNumberOfMessagesDelayed", ".", ".", { "label": "Delayed Messages" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "SQS: Reminder Processing Queue",
+                        "period": 300,
+                        "stat": "Sum"
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 0, "y": 6, "width": 12, "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${DLQName}", { "label": "DLQ Messages" }],
+                          [".", "ApproximateAgeOfOldestMessage", ".", ".", { "label": "Oldest Message Age (seconds)" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "SQS: Dead Letter Queue",
+                        "period": 300
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 12, "y": 0, "width": 12, "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/Lambda", "Errors", "FunctionName", "${LambdaFuncName}", { "stat": "Sum", "color": "#FF0000" }],
+                          [".", "Invocations", ".", ".", { "stat": "Sum", "color": "#2E86C1" }],
+                          [".", "Duration", ".", ".", { "stat": "Average", "color": "#28B463", "label": "Avg Duration" }],
+                          [".", "Throttles", ".", ".", { "stat": "Sum", "color": "#F39C12" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "Lambda: Send Reminder Function",
+                        "period": 300
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 12, "y": 6, "width": 12, "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/ES", "CPUUtilization", "DomainName", "${OSDomainName}", "ClientId", "${AWSAccountId}", { "label": "CPU %" }],
+                          [".", "FreeStorageSpace", ".", ".", ".", ".", { "label": "Free Storage (GB)", "yAxis": "right" }],
+                          [".", "JVMMemoryPressure", ".", ".", ".", ".", { "label": "JVM Memory %" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "OpenSearch Domain",
+                        "period": 300,
+                        "yAxis": {
+                          "left": { "min": 0, "max": 100 },
+                          "right": { "min": 0 }
+                        }
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 0, "y": 12, "width": 12, "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["AWS/S3", "NumberOfObjects", "StorageType", "AllStorageTypes", "BucketName", "${S3Bucket}"],
+                          [".", "BucketSizeBytes", ".", "StandardStorage", ".", ".", { "label": "Bucket Size (Bytes)", "yAxis": "right" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "S3: Audio Bucket",
+                        "period": 300
+                      }
+                    },
+                    {
+                      "type": "log",
+                      "x": 12, "y": 12, "width": 12, "height": 6,
+                      "properties": {
+                        "query": "SOURCE '/aws/lambda/${LambdaFuncName}' | fields @timestamp, @message\n| filter @message like /ERROR|Exception/\n| sort @timestamp desc\n| limit 20",
+                        "region": "${AWSRegion}",
+                        "title": "Recent Lambda Errors",
+                        "view": "table"
+                      }
+                    },
+                    {
+                      "type": "metric",
+                      "x": 0,
+                      "y": 18,
+                      "width": 12,
+                      "height": 6,
+                      "properties": {
+                        "metrics": [
+                          ["VoiceReminderApp", "reminders.created", "service", "reminder-app", { "stat": "Sum", "label": "Reminders Created" }],
+                          [".", "emails.sent", "service", "reminder-app", "type", "notification", { "stat": "Sum", "label": "Emails Sent" }],
+                          [".", "audio.uploaded", "bucket", "voice-reminder-audio-bucket", { "stat": "Sum", "label": "Audio Uploads" }]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWSRegion}",
+                        "title": "Voice Reminder - Business Metrics",
+                        "period": 300
+                      }
+                    }
+                  ]
+                }
+              - ProcessingQueueName: !GetAtt ReminderProcessingQueue.QueueName
+                DLQName: !GetAtt ReminderDeadLetterQueue.QueueName
+                LambdaFuncName: !Ref LambdaFunctionName
+                OSDomainName: !Ref OpenSearchDomainName
+                S3Bucket: !Ref S3BucketName
+                AWSRegion: !Ref AWS::Region
+                AWSAccountId: !Ref AWS::AccountId
+    
+    Outputs:
+      AudioBucketName:
+        Description: S3 Bucket for audio files
+        Value: !Ref AudioBucket
+    
+      OpenSearchEndpoint:
+        Description: OpenSearch Domain Endpoint
+        Value: !GetAtt OpenSearchDomain.DomainEndpoint
+    
+      AppExecutionRoleArn:
+        Description: IAM Role for Application
+        Value: !GetAtt AppExecutionRole.Arn
+    
+      TranscribeServiceRoleArn:
+        Description: IAM Role for Amazon Transcribe
+        Value: !GetAtt TranscribeServiceRole.Arn
+    
+      SESVerifiedEmail:
+        Description: Verified SES Email Address
+        Value: !Ref EmailAddress
+    
+      S3BucketUrl:
+        Description: S3 Bucket URL
+        Value: !Sub s3://${S3BucketName}
+    
+      ApiGatewayUrl:
+        Description: API Gateway URL
+        Value: !Sub http://localhost:4566/restapis/${ApiGateway}/${EnvironmentName}/_user_request_
+    
+      ReminderQueueUrl:
+        Description: SQS Queue URL for reminder processing
+        Value: !Ref ReminderProcessingQueue
+    
+      ReminderQueueArn:
+        Description: SQS Queue ARN for reminder processing
+        Value: !GetAtt ReminderProcessingQueue.Arn
+    
+      EventBridgeRuleArns:
+        Description: EventBridge Rule ARNs for service monitoring
+        Value: !Sub |
+          Transcribe: ${TranscribeFailureRule.Arn}
+          Lambda: ${LambdaFailureRule.Arn}
+          OpenSearch: ${OpenSearchFailureRule.Arn}

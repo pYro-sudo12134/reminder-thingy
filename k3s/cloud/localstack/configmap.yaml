@@ -6,10 +6,8 @@ metadata:
 data:
   SERVICES: "lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53"
   DEBUG: "1"
-  AWS_ACCESS_KEY_ID: "test"
-  AWS_SECRET_ACCESS_KEY: "test"
   PERSISTENCE: "0"
-  LAMBDA_EXECUTOR: "docker"
+  LAMBDA_EXECUTOR: "local"
   AWS_DEFAULT_REGION: "us-east-1"
   EDGE_PORT: "4566"
   OPENSEARCH_ENDPOINT_STRATEGY: "port"

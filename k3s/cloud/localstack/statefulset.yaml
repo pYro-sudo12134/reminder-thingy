@@ -1,0 +1,142 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: localstack
+  namespace: cloud
+  labels:
+    app: localstack
+    component: aws-emulation
+spec:
+  serviceName: localstack
+  replicas: 1
+  selector:
+    matchLabels:
+      app: localstack
+  template:
+    metadata:
+      labels:
+        app: localstack
+        component: aws-emulation
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-server
+      containers:
+        - name: localstack
+          image: localstack/localstack:4.12
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4566
+              name: edge
+              protocol: TCP
+            - containerPort: 4510
+              name: opensearch
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: localstack-config
+          env:
+            - name: OPENSEARCH_INITIAL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: localstack-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+            - name: data
+              mountPath: /var/lib/localstack
+            - name: init-scripts
+              mountPath: /etc/localstack/init/ready.d
+            - name: opensearch-certs
+              mountPath: /etc/localstack/opensearch/certs
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "500m"
+            limits:
+              memory: "3Gi"
+              cpu: "1"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - curl -s -k http://localhost:4510/_cluster/health > /dev/null
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 15
+            failureThreshold: 10
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  curl -s http://localhost:4566/_localstack/health | \
+                  grep -q '"opensearch":"available"' && \
+                  curl -s -k http://localhost:4510/_cluster/health | \
+                  grep -q '"status":"green\|yellow"'
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: init-scripts
+          configMap:
+            name: localstack-init-scripts
+            defaultMode: 0755
+        - name: opensearch-certs
+          secret:
+            secretName: opensearch-certs
+        - name: secrets
+          secret:
+            secretName: localstack-secrets-dir
+            defaultMode: 0444
+      initContainers:
+        - name: wait-for-storage
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              until [ -d /var/lib/localstack ]; do
+                echo "Waiting for storage..."
+                sleep 5
+              done
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/localstack
+      terminationGracePeriodSeconds: 60
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        storageClassName: zfs-local
+        resources:
+          requests:
+            storage: 20Gi

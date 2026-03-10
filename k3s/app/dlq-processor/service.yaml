@@ -5,7 +5,6 @@ metadata:
   namespace: app
   labels:
     app: dlq-processor
-    component: processor
 spec:
   selector:
     app: dlq-processor
@@ -13,4 +12,5 @@ spec:
     - port: 8085
       targetPort: 8085
       name: http
+      protocol: TCP
   type: ClusterIP

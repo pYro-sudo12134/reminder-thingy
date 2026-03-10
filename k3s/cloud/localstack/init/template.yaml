@@ -1,0 +1,814 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  EmailAddress:
+    Type: String
+    Default: notifications@example.com
+    Description: Email address for sending reminders
+
+  OpenSearchDomainName:
+    Type: String
+    Default: reminder-domain
+    Description: OpenSearch domain name
+
+  S3BucketName:
+    Type: String
+    Default: voice-reminder-audio-bucket
+    Description: S3 bucket for audio files
+
+  LambdaFunctionName:
+    Type: String
+    Default: send-reminder-lambda
+    Description: Lambda function name
+
+Resources:
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldAudio
+            Status: Enabled
+            ExpirationInDays: 30
+
+  OpenSearchDomain:
+    Type: AWS::OpenSearchService::Domain
+    Properties:
+      DomainName: !Ref OpenSearchDomainName
+      EngineVersion: "OpenSearch_2.5"
+      ClusterConfig:
+        InstanceType: "t3.small.search"
+        InstanceCount: 1
+      EBSOptions:
+        EBSEnabled: true
+        VolumeType: "gp2"
+        VolumeSize: 10
+      SnapshotOptions:
+        AutomatedSnapshotStartHour: 2
+
+  TranscribeServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-transcribe-service-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: transcribe.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: TranscribeS3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub arn:aws:s3:::${S3BucketName}/transcriptions/*
+
+  AppExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-reminder-app-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppReminderPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
+
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:ListTranscriptionJobs
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:ListRules
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPost
+                  - es:ESHttpGet
+                  - es:ESHttpPut
+                  - es:ESHttpDelete
+                Resource: !Sub arn:aws:es:*:*:domain/${OpenSearchDomainName}/*
+
+              - Effect: Allow
+                Action:
+                  - ses:VerifyEmailIdentity
+                  - ses:SendEmail
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt TranscribeServiceRole.Arn
+
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                  - secretsmanager:ListSecrets
+                Resource: !Ref SecretsManagerSecret
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt KMSCustomerManagedKey.Arn
+
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                  - logs:PutSubscriptionFilter
+                  - logs:DeleteSubscriptionFilter
+                Resource: "*"
+
+        - PolicyName: EventBridgeSQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:DescribeRule
+                Resource: "*"
+
+        - PolicyName: DirectSQSAccessForLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt ReminderProcessingQueue.Arn
+
+  SQSAccessPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-sqs-access-policy
+      Roles:
+        - !Ref AppExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:SendMessage
+              - sqs:ReceiveMessage
+              - sqs:DeleteMessage
+              - sqs:GetQueueAttributes
+            Resource: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - AppExecutionRole
+      - ReminderProcessingQueue
+
+  ReminderDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-reminder-dlq
+      MessageRetentionPeriod: 1209600
+
+  ReminderProcessingQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${EnvironmentName}-reminder-queue
+      VisibilityTimeout: 300
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ReminderDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  DLQMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-dlq-has-messages
+      AlarmDescription: "Messages in Dead Letter Queue require attention"
+      MetricName: ApproximateNumberOfMessagesVisible
+      Namespace: AWS/SQS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ReminderDeadLetterQueue.QueueName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+      OKActions:
+        - !Ref ReminderNotificationTopic
+      InsufficientDataActions:
+        - !Ref ReminderNotificationTopic
+
+  DLQOldMessageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-dlq-old-messages
+      AlarmDescription: "Messages have been in DLQ for too long"
+      Metrics:
+        - Id: m1
+          Label: "ApproximateAgeOfOldestMessage"
+          MetricStat:
+            Metric:
+              Namespace: AWS/SQS
+              MetricName: ApproximateAgeOfOldestMessage
+              Dimensions:
+                - Name: QueueName
+                  Value: !GetAtt ReminderDeadLetterQueue.QueueName
+            Period: 3600
+            Stat: Maximum
+      Threshold: 86400
+      ComparisonOperator: GreaterThanThreshold
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-lambda-error-rate-high
+      AlarmDescription: "High error rate in Send Reminder Lambda"
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref LambdaFunctionName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  OpenSearchCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-opensearch-cpu-high
+      AlarmDescription: "High CPU utilization in OpenSearch"
+      MetricName: CPUUtilization
+      Namespace: AWS/ES
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DomainName
+          Value: !Ref OpenSearchDomainName
+        - Name: ClientId
+          Value: !Ref AWS::AccountId
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  # SESVerifiedEmail:
+  #   Type: AWS::SES::EmailIdentity
+  #   Properties:
+  #     EmailIdentity: !Ref EmailAddress
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${EnvironmentName}-voice-reminder-api
+      Description: Voice Reminder API
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      FailOnWarnings: true
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref EnvironmentName
+    DependsOn:
+      - HealthMethod
+
+  HealthResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: health
+
+  HealthMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref HealthResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: http://reminder-app:8090/api/test
+#        Uri: http://traefik:8081/api/test
+        ConnectionType: INTERNET
+        TimeoutInMillis: 29000
+#        RequestParameters:
+#          integration.request.header.Host: "'app.reminder.internal'"
+
+  ProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: "{proxy+}"
+
+  ProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProxyResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: ANY
+        Uri: http://reminder-app:8090/{proxy}
+#        Uri: http://traefik:8081/{proxy}
+        ConnectionType: INTERNET
+        RequestParameters:
+          integration.request.path.proxy: method.request.path.proxy
+#        RequestParameters:
+#          integration.request.path.proxy: method.request.path.proxy
+#          integration.request.header.Host: "'app.reminder.internal'"
+
+  MetricsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: metrics
+
+  MetricsMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref MetricsResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: HTTP_PROXY
+        IntegrationHttpMethod: GET
+        Uri: http://reminder-app:8090/metrics
+#        Uri: http://traefik:8081/api/metrics
+        ConnectionType: INTERNET
+
+  ApiGatewayUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId: !Ref ApiGateway
+          Stage: !Ref EnvironmentName
+      UsagePlanName: !Sub ${EnvironmentName}-voice-reminder-usage-plan
+      Throttle:
+        BurstLimit: 100
+        RateLimit: 50
+      Quota:
+        Limit: 10000
+        Period: MONTH
+
+  ApiGatewayApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: !Sub ${EnvironmentName}-voice-reminder-api-key
+      Enabled: true
+      StageKeys:
+        - RestApiId: !Ref ApiGateway
+          StageName: !Ref EnvironmentName
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: api
+
+  ApiVersionResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiResource
+      PathPart: v1
+
+  RemindersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !Ref ApiVersionResource
+      PathPart: reminders
+
+  ApiGatewayCors:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref ProxyResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        RequestTemplates:
+          application/json: '{"statusCode": 200}'
+        IntegrationResponses:
+          - StatusCode: 200
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'GET,POST,PUT,DELETE,OPTIONS'"
+      MethodResponses:
+        - StatusCode: 200
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Origin: true
+            method.response.header.Access-Control-Allow-Headers: true
+            method.response.header.Access-Control-Allow-Methods: true
+
+  ReminderNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${EnvironmentName}-reminder-notifications
+      DisplayName: "Voice Reminder Notifications"
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref EmailAddress
+
+  LambdaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
+      RetentionInDays: 30
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /${EnvironmentName}/reminder-app
+      RetentionInDays: 30
+
+  TranscribeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/transcribe/${EnvironmentName}
+      RetentionInDays: 7
+
+  SecretsManagerSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub ${EnvironmentName}/voice-reminder/secrets
+      Description: Secrets for Voice Reminder application
+      GenerateSecretString:
+        SecretStringTemplate: '{"NLP_GRPC_KEY": "placeholder"}'
+        GenerateStringKey: "SERVICE_TOKEN"
+        PasswordLength: 32
+        ExcludeCharacters: '"@/\'
+
+  KMSCustomerManagedKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: KMS key for Voice Reminder encryption
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Id: key-default-1
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: kms:*
+            Resource: "*"
+          - Sid: Allow Secrets Manager to use the key
+            Effect: Allow
+            Principal:
+              Service: secretsmanager.amazonaws.com
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:DescribeKey
+            Resource: "*"
+          - Sid: Allow Lambda to use the key
+            Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action:
+              - kms:Decrypt
+            Resource: "*"
+            Condition:
+              StringEquals:
+                kms:ViaService: !Sub lambda.${AWS::Region}.amazonaws.com
+
+  KMSCustomerManagedKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub alias/${EnvironmentName}-voice-reminder-key
+      TargetKeyId: !Ref KMSCustomerManagedKey
+
+  SecretsManagerSecretKMSAssociation:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref SecretsManagerSecret
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !GetAtt AppExecutionRole.Arn
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:DescribeSecret
+            Resource: "*"
+
+  CertificateManagerCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Sub api.${EnvironmentName}.voice-reminder.example.com
+          HostedZoneId: ZONE_ID_IF_NEEDED
+
+  TranscribeFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-transcribe-failure-rule
+      Description: "Capture Transcribe job failures"
+      EventPattern:
+        source:
+          - "aws.transcribe"
+        detail-type:
+          - "Transcribe Job State Change"
+        detail:
+          TranscriptionJobStatus:
+            - "FAILED"
+      State: "ENABLED"
+      Targets:
+        - Id: "TranscribeFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+          SqsParameters:
+            MessageGroupId: "transcribe-failures"
+
+  LambdaFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source:
+          - "aws.lambda"
+        detail-type:
+          - "Lambda Function Invocation Result - Failure"
+      Targets:
+        - Id: "LambdaFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - ReminderProcessingQueue
+      - LambdaLogGroup
+
+  OpenSearchFailureRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-opensearch-failure-rule
+      Description: "Capture OpenSearch domain issues"
+      EventPattern:
+        source:
+          - "aws.opensearch"
+        detail-type:
+          - "OpenSearch Service Event"
+        detail:
+          eventType:
+            - "error"
+            - "warning"
+      Targets:
+        - Id: "OpenSearchFailureToSQS"
+          Arn: !GetAtt ReminderProcessingQueue.Arn
+    DependsOn:
+      - ReminderProcessingQueue
+      - OpenSearchDomain
+
+  ServiceMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-voice-reminder-monitoring
+      DashboardBody:
+        Fn::Sub:
+          - |
+            {
+              "widgets": [
+                {
+                  "type": "metric",
+                  "x": 0, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${ProcessingQueueName}"],
+                      [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", { "label": "Messages In Flight" }],
+                      [".", "ApproximateNumberOfMessagesDelayed", ".", ".", { "label": "Delayed Messages" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "SQS: Reminder Processing Queue",
+                    "period": 300,
+                    "stat": "Sum"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${DLQName}", { "label": "DLQ Messages" }],
+                      [".", "ApproximateAgeOfOldestMessage", ".", ".", { "label": "Oldest Message Age (seconds)" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "SQS: Dead Letter Queue",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 0, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/Lambda", "Errors", "FunctionName", "${LambdaFuncName}", { "stat": "Sum", "color": "#FF0000" }],
+                      [".", "Invocations", ".", ".", { "stat": "Sum", "color": "#2E86C1" }],
+                      [".", "Duration", ".", ".", { "stat": "Average", "color": "#28B463", "label": "Avg Duration" }],
+                      [".", "Throttles", ".", ".", { "stat": "Sum", "color": "#F39C12" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "Lambda: Send Reminder Function",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 12, "y": 6, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/ES", "CPUUtilization", "DomainName", "${OSDomainName}", "ClientId", "${AWSAccountId}", { "label": "CPU %" }],
+                      [".", "FreeStorageSpace", ".", ".", ".", ".", { "label": "Free Storage (GB)", "yAxis": "right" }],
+                      [".", "JVMMemoryPressure", ".", ".", ".", ".", { "label": "JVM Memory %" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "OpenSearch Domain",
+                    "period": 300,
+                    "yAxis": {
+                      "left": { "min": 0, "max": 100 },
+                      "right": { "min": 0 }
+                    }
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["AWS/S3", "NumberOfObjects", "StorageType", "AllStorageTypes", "BucketName", "${S3Bucket}"],
+                      [".", "BucketSizeBytes", ".", "StandardStorage", ".", ".", { "label": "Bucket Size (Bytes)", "yAxis": "right" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "S3: Audio Bucket",
+                    "period": 300
+                  }
+                },
+                {
+                  "type": "log",
+                  "x": 12, "y": 12, "width": 12, "height": 6,
+                  "properties": {
+                    "query": "SOURCE '/aws/lambda/${LambdaFuncName}' | fields @timestamp, @message\n| filter @message like /ERROR|Exception/\n| sort @timestamp desc\n| limit 20",
+                    "region": "${AWSRegion}",
+                    "title": "Recent Lambda Errors",
+                    "view": "table"
+                  }
+                },
+                {
+                  "type": "metric",
+                  "x": 0,
+                  "y": 18,
+                  "width": 12,
+                  "height": 6,
+                  "properties": {
+                    "metrics": [
+                      ["VoiceReminderApp", "reminders.created", "service", "reminder-app", { "stat": "Sum", "label": "Reminders Created" }],
+                      [".", "emails.sent", "service", "reminder-app", "type", "notification", { "stat": "Sum", "label": "Emails Sent" }],
+                      [".", "audio.uploaded", "bucket", "voice-reminder-audio-bucket", { "stat": "Sum", "label": "Audio Uploads" }]
+                    ],
+                    "view": "timeSeries",
+                    "stacked": false,
+                    "region": "${AWSRegion}",
+                    "title": "Voice Reminder - Business Metrics",
+                    "period": 300
+                  }
+                }
+              ]
+            }
+          - ProcessingQueueName: !GetAtt ReminderProcessingQueue.QueueName
+            DLQName: !GetAtt ReminderDeadLetterQueue.QueueName
+            LambdaFuncName: !Ref LambdaFunctionName
+            OSDomainName: !Ref OpenSearchDomainName
+            S3Bucket: !Ref S3BucketName
+            AWSRegion: !Ref AWS::Region
+            AWSAccountId: !Ref AWS::AccountId
+
+Outputs:
+  AudioBucketName:
+    Description: S3 Bucket for audio files
+    Value: !Ref AudioBucket
+
+  OpenSearchEndpoint:
+    Description: OpenSearch Domain Endpoint
+    Value: !GetAtt OpenSearchDomain.DomainEndpoint
+
+  AppExecutionRoleArn:
+    Description: IAM Role for Application
+    Value: !GetAtt AppExecutionRole.Arn
+
+  TranscribeServiceRoleArn:
+    Description: IAM Role for Amazon Transcribe
+    Value: !GetAtt TranscribeServiceRole.Arn
+
+  SESVerifiedEmail:
+    Description: Verified SES Email Address
+    Value: !Ref EmailAddress
+
+  S3BucketUrl:
+    Description: S3 Bucket URL
+    Value: !Sub s3://${S3BucketName}
+
+  ApiGatewayUrl:
+    Description: API Gateway URL
+    Value: !Sub http://localhost:4566/restapis/${ApiGateway}/${EnvironmentName}/_user_request_
+
+  ReminderQueueUrl:
+    Description: SQS Queue URL for reminder processing
+    Value: !Ref ReminderProcessingQueue
+
+  ReminderQueueArn:
+    Description: SQS Queue ARN for reminder processing
+    Value: !GetAtt ReminderProcessingQueue.Arn
+
+  EventBridgeRuleArns:
+    Description: EventBridge Rule ARNs for service monitoring
+    Value: !Sub |
+      Transcribe: ${TranscribeFailureRule.Arn}
+      Lambda: ${LambdaFailureRule.Arn}
+      OpenSearch: ${OpenSearchFailureRule.Arn}

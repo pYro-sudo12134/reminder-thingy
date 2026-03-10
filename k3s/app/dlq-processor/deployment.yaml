@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dlq-processor
+  namespace: app
+  labels:
+    app: dlq-processor
+    component: processor
+    tier: background
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dlq-processor
+  template:
+    metadata:
+      labels:
+        app: dlq-processor
+        component: processor
+        tier: background
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-agent2
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/app
+                    operator: In
+                    values:
+                      - "true"
+      tolerations:
+        - key: "node-role.kubernetes.io/app"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: dlq-processor
+          image: pyrodocker1/reminder-dlq-processor:1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8085
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          envFrom:
+            - configMapRef:
+                name: dlq-processor-config
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: SMTP_USERNAME
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: SMTP_PASSWORD
+            - name: FROM_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: FROM_EMAIL
+            - name: NOTIFICATION_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: dlq-processor-secrets
+                  key: NOTIFICATION_EMAIL
+          volumeMounts:
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 40
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: secrets
+          secret:
+            secretName: dlq-processor-secrets
+            items:
+              - key: AWS_ACCESS_KEY_ID
+                path: aws_access_key
+              - key: AWS_SECRET_ACCESS_KEY
+                path: aws_secret_key
+              - key: SMTP_PASSWORD
+                path: smtp_password

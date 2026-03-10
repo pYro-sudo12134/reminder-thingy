@@ -2,10 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: reminder-app
-  namespace: default
+  namespace: app
   labels:
     app: reminder-app
     component: backend
+    tier: application
 spec:
   replicas: 2
   selector:
@@ -16,90 +17,181 @@ spec:
       labels:
         app: reminder-app
         component: backend
+        tier: application
     spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-agent2
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/app
+                    operator: In
+                    values:
+                      - "true"
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - reminder-app
+                topologyKey: kubernetes.io/hostname
+      tolerations:
+        - key: "node-role.kubernetes.io/app"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
       containers:
-      - name: reminder-app
-        image: pyrodocker1/reminder-backend:1.1-1
-        imagePullPolicy: IfNotPresent
-        ports:
-        - containerPort: 8090
-          name: http
-        envFrom:
-        - configMapRef:
-            name: reminder-app-config
-        - secretRef:
-            name: reminder-app-secrets
-        env:
-        - name: DB_USER
-          valueFrom:
-            secretKeyRef:
-              name: reminder-app-secrets
-              key: POSTGRES_USER
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: reminder-app-secrets
-              key: POSTGRES_PASSWORD
-        volumeMounts:
-        - name: app-static
-          mountPath: /app/web/static
-        - name: app-config
-          mountPath: /app/config/application.properties
-          subPath: application.properties
-        - name: opensearch-certs
-          mountPath: /app/certs
-          readOnly: true
-        - name: db-migration
-          mountPath: /app/db/migration
-          readOnly: true
-        - name: redis-certs
-          mountPath: /app/redis_certs
-          readOnly: true
-        - name: jwt-secret
-          mountPath: /run/secrets/jwt_secret
-          subPath: jwt_secret
-          readOnly: true
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "250m"
-          limits:
-            memory: "768Mi"
-            cpu: "500m"
-        livenessProbe:
-          httpGet:
-            path: /api/test
-            port: 8090
-          initialDelaySeconds: 120
-          periodSeconds: 60
-          timeoutSeconds: 10
-          failureThreshold: 5
-        readinessProbe:
-          httpGet:
-            path: /api/test
-            port: 8090
-          initialDelaySeconds: 60
-          periodSeconds: 30
-          timeoutSeconds: 5
+        - name: reminder-app
+          image: pyrodocker1/reminder-backend:1.1-1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8090
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
+          envFrom:
+            - configMapRef:
+                name: reminder-app-config
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: POSTGRES_PASSWORD
+            - name: OPENSEARCH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+            - name: NLP_GRPC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: NLP_GRPC_API_KEY
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: SECRET_KEY
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: SMTP_PASSWORD
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-secrets
+                  key: REDIS_PASSWORD
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: reminder-app-files
+                  key: jwt_secret
+          volumeMounts:
+            - name: app-static
+              mountPath: /app/web/static
+            - name: app-properties
+              mountPath: /app/config/application.properties
+              subPath: application.properties
+              readOnly: true
+            - name: opensearch-certs
+              mountPath: /app/certs
+              readOnly: true
+            - name: flyway-migrations
+              mountPath: /app/db/migration
+              readOnly: true
+            - name: redis-certs
+              mountPath: /app/redis_certs
+              readOnly: true
+            - name: secrets-directory
+              mountPath: /app/secrets
+              readOnly: true
+            - name: secrets-json
+              mountPath: /app/secrets/secrets.json
+              subPath: secrets.json
+              readOnly: true
+            - name: jwt-secret-file
+              mountPath: /run/secrets/jwt_secret
+              subPath: jwt_secret
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /api/test
+              port: 8090
+            initialDelaySeconds: 120
+            periodSeconds: 60
+            timeoutSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /api/test
+              port: 8090
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
       volumes:
-      - name: app-static
-        persistentVolumeClaim:
-          claimName: nfs-app-static-pvc
-      - name: app-config
-        configMap:
-          name: reminder-app-config-files
-      - name: opensearch-certs
-        configMap:
-          name: opensearch-certs
-      - name: db-migration
-        configMap:
-          name: db-migration-files
-      - name: redis-certs
-        configMap:
-          name: redis-certs
-      - name: jwt-secret
-        secret:
-          secretName: reminder-app-files
-          items:
-          - key: jwt_secret
-            path: jwt_secret
+        - name: app-static
+          persistentVolumeClaim:
+            claimName: app-static-pvc
+        - name: app-properties
+          configMap:
+            name: reminder-app-properties
+            items:
+              - key: application.properties
+                path: application.properties
+        - name: opensearch-certs
+          secret:
+            secretName: opensearch-certs
+        - name: flyway-migrations
+          configMap:
+            name: flyway-migrations
+        - name: redis-certs
+          secret:
+            secretName: redis-certs
+        - name: secrets-directory
+          secret:
+            secretName: reminder-app-secrets-dir
+            items:
+              - key: nlp_grpc_api_key
+                path: nlp_grpc_key.txt
+              - key: postgres_password
+                path: postgres_password.txt
+              - key: redis_password
+                path: redis_password.txt
+              - key: jwt_secret
+                path: jwt_secret.txt
+              - key: aws_access_key
+                path: aws_access_key.txt
+              - key: aws_secret_key
+                path: aws_secret_key.txt
+        - name: secrets-json
+          secret:
+            secretName: reminder-app-secrets-json
+            items:
+              - key: secrets.json
+                path: secrets.json
+        - name: jwt-secret-file
+          secret:
+            secretName: reminder-app-files
+            items:
+              - key: jwt_secret
+                path: jwt_secret

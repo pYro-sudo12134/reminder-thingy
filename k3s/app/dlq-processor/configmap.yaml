@@ -5,13 +5,13 @@ metadata:
   namespace: app
 data:
   AWS_REGION: "us-east-1"
-  AWS_ENDPOINT_URL: "http://localstack.cloud:4566"
+  AWS_ENDPOINT_URL: "http://localstack.cloud.svc.cluster.local:4566"
   AWS_ACCOUNT_ID: "000000000000"
   ENVIRONMENT_NAME: "dev"
   USE_LOCAL_SECRETS: "true"
   SECRETS_PATH: "/run/secrets"
   JAVA_OPTS: "-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m"
-  DLQ_URL: "http://localstack.cloud:4566/000000000000/dev-reminder-dlq"
+  DLQ_URL: "http://localstack.cloud.svc.cluster.local:4566/000000000000/dev-reminder-dlq"
   QUEUE_SUFFIX: "-reminder-dlq"
   VISIBILITY_TIMEOUT: "60"
   MAX_BATCH_SIZE: "10"

@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nlp-service
+  namespace: app
+  labels:
+    app: nlp-service
+    component: nlp
+    tier: ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nlp-service
+  template:
+    metadata:
+      labels:
+        app: nlp-service
+        component: nlp
+        tier: ai
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-agent1
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/ml
+                    operator: In
+                    values:
+                      - "true"
+      tolerations:
+        - key: "node-role.kubernetes.io/ml"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: nlp-service
+          image: pyrodocker1/reminder-nlp-ollama:1.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+              name: grpc
+              protocol: TCP
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          envFrom:
+            - configMapRef:
+                name: nlp-service-config
+          env:
+            - name: OPENSEARCH_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-service-secrets
+                  key: OPENSEARCH_ADMIN_PASSWORD
+            - name: NLP_GRPC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: nlp-service-secrets
+                  key: NLP_GRPC_API_KEY
+          volumeMounts:
+            - name: models
+              mountPath: /app/models
+            - name: data
+              mountPath: /app/data
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import grpc; exit(0)"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import grpc; exit(0)"
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: nlp-models-pvc
+        - name: data
+          persistentVolumeClaim:
+            claimName: nlp-data-pvc
+        - name: secrets
+          secret:
+            secretName: nlp-service-secrets
+            items:
+              - key: NLP_GRPC_API_KEY
+                path: nlp_grpc_key.txt
+              - key: OPENSEARCH_ADMIN_PASSWORD
+                path: opensearch_password.txt
