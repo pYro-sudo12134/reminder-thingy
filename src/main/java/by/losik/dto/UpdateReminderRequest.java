@@ -8,5 +8,6 @@ public record UpdateReminderRequest (
     String extractedAction,
     String scheduledTime,
     String reminderTime,
-    String status
+    String status,
+    String userEmail
 ){}

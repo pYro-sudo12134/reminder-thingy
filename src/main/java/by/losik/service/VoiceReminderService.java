@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -63,6 +64,7 @@ public class VoiceReminderService {
                     ReminderRecord reminder = new ReminderRecord(
                             reminderId,
                             userId,
+                            userEmail,
                             transcribedText,
                             parsed.action(),
                             parsed.scheduledTime(),
@@ -71,32 +73,42 @@ public class VoiceReminderService {
                             ReminderRecord.ReminderStatus.SCHEDULED,
                             false,
                             parsed.intent(),
-                            ""
+                            null
                     );
 
-                    return openSearchService.indexReminder(reminder)
-                            .thenCompose(indexedId -> {
-                                log.info("Reminder saved to OpenSearch: {}", indexedId);
+                    Map<String, Object> inputData = createEventInput(reminder, userEmail, parsed);
 
-                                Map<String, Object> inputData = createEventInput(reminder, userEmail, parsed);
+                    CreateRuleRequest ruleRequest = new CreateRuleRequest(
+                            "reminder-" + reminderId,
+                            parsed.scheduledTime(),
+                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                            inputData,
+                            "Напоминание: " + parsed.action(),
+                            parsed.intent()
+                    );
 
-                                CreateRuleRequest ruleRequest = new CreateRuleRequest(
-                                        "reminder-" + reminderId,
+                    return eventBridgeService.createScheduleRule(ruleRequest)
+                            .thenCompose(rule -> {
+                                ReminderRecord reminderWithRule = new ReminderRecord(
+                                        reminderId,
+                                        userId,
+                                        userEmail,
+                                        transcribedText,
+                                        parsed.action(),
                                         parsed.scheduledTime(),
-                                        "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
-                                        inputData,
-                                        "Напоминание: " + parsed.action(),
-                                        parsed.intent()
+                                        reminderParser.formatForDisplay(parsed.scheduledTime()),
+                                        LocalDateTime.now(),
+                                        ReminderRecord.ReminderStatus.SCHEDULED,
+                                        false,
+                                        parsed.intent(),
+                                        rule.ruleName()
                                 );
 
-                                return eventBridgeService.createScheduleRule(ruleRequest)
-                                        .thenCompose(rule ->
-                                                openSearchService.updateReminderEventBridgeRule(
-                                                        reminderId, rule.ruleName()
-                                                ).thenApply(updated -> {
-                                                    log.info("EventBridge rule updated in OpenSearch: {}", updated);
-                                                    return reminderId;
-                                                }));
+                                return openSearchService.indexReminder(reminderWithRule)
+                                        .thenApply(indexedId -> {
+                                            log.info("Reminder saved to OpenSearch with rule: {}", rule.ruleName());
+                                            return reminderId;
+                                        });
                             });
                 })
                 .exceptionally(ex -> {
@@ -188,7 +200,13 @@ public class VoiceReminderService {
                                                      LocalDateTime scheduledTime,
                                                      String reminderTime,
                                                      ReminderRecord.ReminderStatus status) {
+
         log.info("Updating reminder: {}", reminderId);
+
+        if (scheduledTime == null) {
+            log.error("scheduledTime is null for reminder: {}", reminderId);
+            return CompletableFuture.completedFuture(false);
+        }
 
         return openSearchService.getReminderById(reminderId)
                 .thenCompose(optionalReminder -> {
@@ -196,65 +214,59 @@ public class VoiceReminderService {
                         return CompletableFuture.completedFuture(false);
                     }
 
-                    ReminderRecord existingReminder = optionalReminder.get();
+                    ReminderRecord existing = optionalReminder.get();
 
-                    boolean timeChanged = scheduledTime != null &&
-                            !scheduledTime.equals(existingReminder.scheduledTime());
+                    String oldRuleName = existing.eventBridgeRuleName();
+                    CompletableFuture<Boolean> deleteFuture = oldRuleName != null && !oldRuleName.isEmpty()
+                            ? eventBridgeService.deleteRule(oldRuleName)
+                            .exceptionally(ex -> {
+                                log.warn("Failed to delete old rule: {}", ex.getMessage());
+                                return false;
+                            })
+                            : CompletableFuture.completedFuture(true);
 
-                    ReminderRecord updatedReminder = new ReminderRecord(
-                            existingReminder.reminderId(),
-                            existingReminder.userId(),
-                            existingReminder.originalText(),
-                            extractedAction != null ? extractedAction : existingReminder.extractedAction(),
-                            scheduledTime != null ? scheduledTime : existingReminder.scheduledTime(),
-                            reminderTime != null ? reminderTime :
-                                    (scheduledTime != null ? formatForDisplay(scheduledTime) : existingReminder.reminderTime()),
-                            existingReminder.createdAt(),
-                            status != null ? status : existingReminder.status(),
-                            existingReminder.notificationSent(),
-                            existingReminder.intent(),
-                            existingReminder.eventBridgeRuleName()
-                    );
+                    return deleteFuture.thenCompose(deleted -> {
+                        Map<String, Object> inputData = new HashMap<>();
+                        inputData.put("reminderId", reminderId);
+                        inputData.put("userEmail", existing.userEmail());
+                        inputData.put("action", extractedAction != null ? extractedAction : existing.extractedAction());
+                        inputData.put("scheduledTime", scheduledTime.toString());
+                        inputData.put("intent", existing.intent() != null ? existing.intent() : "reminder");
 
-                    CompletableFuture<Boolean> updateFuture = openSearchService.updateReminder(updatedReminder);
+                        CreateRuleRequest ruleRequest = new CreateRuleRequest(
+                                "reminder-" + reminderId + "-" + System.currentTimeMillis(),
+                                scheduledTime,
+                                "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                                inputData,
+                                "Напоминание: " + (extractedAction != null ? extractedAction : existing.extractedAction()),
+                                existing.intent()
+                        );
 
-                    if (timeChanged && existingReminder.eventBridgeRuleName() != null) {
-                        return eventBridgeService.deleteRule(existingReminder.eventBridgeRuleName())
-                                .thenCompose(deleted -> {
-                                    if (!deleted) {
-                                        log.warn("Failed to delete old EventBridge rule: {}",
-                                                existingReminder.eventBridgeRuleName());
-                                    }
-
-                                    Map<String, Object> inputData = Map.of(
-                                            "reminderId", updatedReminder.reminderId(),
-                                            "userEmail", "",
-                                            "action", updatedReminder.extractedAction(),
-                                            "scheduledTime", updatedReminder.scheduledTime().toString(),
-                                            "intent", updatedReminder.intent()
+                        return eventBridgeService.createScheduleRule(ruleRequest)
+                                .thenCompose(rule -> {
+                                    ReminderRecord updated = new ReminderRecord(
+                                            existing.reminderId(),
+                                            existing.userId(),
+                                            existing.userEmail(),
+                                            existing.originalText(),
+                                            extractedAction != null ? extractedAction : existing.extractedAction(),
+                                            scheduledTime,
+                                            reminderTime != null ? reminderTime : formatForDisplay(scheduledTime),
+                                            existing.createdAt(),
+                                            status != null ? status : existing.status(),
+                                            existing.notificationSent(),
+                                            existing.intent(),
+                                            rule.ruleName()
                                     );
 
-                                    CreateRuleRequest ruleRequest = new CreateRuleRequest(
-                                            "reminder-" + updatedReminder.reminderId(),
-                                            updatedReminder.scheduledTime(),
-                                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
-                                            inputData,
-                                            "Напоминание: " + updatedReminder.extractedAction(),
-                                            updatedReminder.intent()
-                                    );
-
-                                    return eventBridgeService.createScheduleRule(ruleRequest)
-                                            .thenCompose(rule ->
-                                                    openSearchService.updateReminderEventBridgeRule(
-                                                            updatedReminder.reminderId(), rule.ruleName()
-                                                    ).thenApply(updated -> {
-                                                        log.info("EventBridge rule updated for reminder: {}", reminderId);
-                                                        return updated;
-                                                    }));
+                                    return openSearchService.updateReminder(updated)
+                                            .thenApply(success -> {
+                                                log.info("Reminder {} updated with new rule: {}",
+                                                        reminderId, rule.ruleName());
+                                                return success;
+                                            });
                                 });
-                    }
-
-                    return updateFuture;
+                    });
                 });
     }
 

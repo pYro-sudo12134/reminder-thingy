@@ -12,6 +12,8 @@ public record ReminderRecord(
         @JsonProperty("user_id")
         String userId,
 
+        @JsonProperty("user_email")
+        String userEmail,
         @JsonProperty("original_text")
         String originalText,
 

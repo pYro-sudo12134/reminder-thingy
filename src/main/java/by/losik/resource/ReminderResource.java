@@ -454,16 +454,21 @@ public class ReminderResource {
             return;
         }
 
-        LocalDateTime scheduledTime = null;
-        if (updateRequest.scheduledTime() != null && !updateRequest.scheduledTime().isEmpty()) {
-            try {
-                scheduledTime = LocalDateTime.parse(updateRequest.scheduledTime());
-            } catch (Exception e) {
-                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
-                        .entity(Map.of("error", "Invalid scheduled time format. Use ISO format: yyyy-MM-ddTHH:mm:ss"))
-                        .build());
-                return;
-            }
+        if (updateRequest.scheduledTime() == null || updateRequest.scheduledTime().isBlank()) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "scheduledTime is required"))
+                    .build());
+            return;
+        }
+
+        LocalDateTime scheduledTime;
+        try {
+            scheduledTime = LocalDateTime.parse(updateRequest.scheduledTime());
+        } catch (Exception e) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "Invalid scheduled time format. Use ISO format: yyyy-MM-ddTHH:mm:ss"))
+                    .build());
+            return;
         }
 
         ReminderRecord.ReminderStatus status = null;
