@@ -45,6 +45,7 @@ redis
 data
 nlp/data
 gen
+k3s/
 
 hs_err_pid*
 replay_pid*
