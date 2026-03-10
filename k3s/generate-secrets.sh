@@ -1,0 +1,584 @@
+#!/bin/bash
+set -e
+
+mkdir -p secrets
+mkdir -p opensearch_certs
+mkdir -p postgres-init
+mkdir -p src/main/resources/db/migration
+mkdir -p redis/certs
+mkdir -p redis/config
+
+openssl rand -base64 32 > secrets/nlp_grpc_key.txt
+openssl rand -base64 16 > secrets/opensearch_password.txt
+openssl rand -base64 32 > secrets/postgres_password.txt
+openssl rand -base64 16 > secrets/redis_password.txt
+openssl rand -base64 32 > secrets/jwt_secret.txt
+
+echo "test" > secrets/aws_access_key.txt
+echo "test" > secrets/aws_secret_key.txt
+
+echo ""
+echo "=== Ollama Setup ==="
+echo "Для работы с Ollama дополнительные ключи не требуются"
+echo "Убедитесь, что в docker-compose.yml указана правильная модель:"
+echo "  OLLAMA_MODEL=llama3.2:latest  # или mistral, phi, qwen"
+echo ""
+
+echo "Какую модель Ollama вы хотите использовать?"
+echo "  1) llama3.2:latest (рекомендуется, хороший баланс)"
+echo "  2) mistral (быстрая)"
+echo "  3) phi (очень легкая)"
+echo "  4) qwen:7b (хороша для русского)"
+echo "  5) другая (введите название)"
+read -p "Выберите [1]: " MODEL_CHOICE
+
+case $MODEL_CHOICE in
+    2) OLLAMA_MODEL="mistral" ;;
+    3) OLLAMA_MODEL="phi" ;;
+    4) OLLAMA_MODEL="qwen:7b" ;;
+    5) read -p "Введите название модели: " OLLAMA_MODEL ;;
+    *) OLLAMA_MODEL="llama3.2:latest" ;;
+esac
+
+echo "$OLLAMA_MODEL" > secrets/ollama_model.txt
+
+openssl genrsa -out opensearch_certs/root-ca-key.pem 2048
+
+cat > opensearch_certs/root-ca.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = LocalStack Root CA
+
+[v3_req]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, keyCertSign
+subjectKeyIdentifier = hash
+EOF
+
+openssl req -new -x509 -key opensearch_certs/root-ca-key.pem \
+  -out opensearch_certs/root-ca.pem -days 3650 \
+  -config opensearch_certs/root-ca.cnf
+
+openssl genrsa -out opensearch_certs/node-key.pem 2048
+
+cat > opensearch_certs/node.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = opensearch.localhost
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = localhost
+DNS.2 = opensearch.localhost
+DNS.3 = localstack
+IP.1 = 127.0.0.1
+EOF
+
+openssl req -new -key opensearch_certs/node-key.pem \
+  -out opensearch_certs/node.csr -config opensearch_certs/node.cnf
+
+openssl x509 -req -in opensearch_certs/node.csr \
+  -CA opensearch_certs/root-ca.pem -CAkey opensearch_certs/root-ca-key.pem \
+  -CAcreateserial -out opensearch_certs/node.pem -days 3650 \
+  -extensions v3_req -extfile opensearch_certs/node.cnf
+
+openssl genrsa -out opensearch_certs/admin-key.pem 2048
+
+cat > opensearch_certs/admin.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = admin
+EOF
+
+openssl req -new -key opensearch_certs/admin-key.pem \
+  -out opensearch_certs/admin.csr -config opensearch_certs/admin.cnf
+
+openssl x509 -req -in opensearch_certs/admin.csr \
+  -CA opensearch_certs/root-ca.pem -CAkey opensearch_certs/root-ca-key.pem \
+  -CAcreateserial -out opensearch_certs/admin.pem -days 3650
+
+if [ -f "opensearch_certs/truststore.jks" ]; then
+    keytool -delete -alias root-ca \
+      -keystore opensearch_certs/truststore.jks -storepass changeit -noprompt 2>/dev/null || true
+fi
+
+keytool -import -trustcacerts -alias root-ca -file opensearch_certs/root-ca.pem \
+  -keystore opensearch_certs/truststore.jks -storepass changeit -noprompt
+
+keytool -importkeystore -srckeystore opensearch_certs/truststore.jks \
+  -srcstorepass changeit \
+  -destkeystore opensearch_certs/truststore.p12 \
+  -deststoretype PKCS12 \
+  -deststorepass changeit \
+  -noprompt
+
+cat opensearch_certs/root-ca.pem > opensearch_certs/ca-chain.pem
+
+openssl genrsa -out redis/certs/root-ca-key.pem 2048
+
+cat > redis/certs/root-ca.cnf << EOF
+[req]
+distinguished_name = req_distinguished_name
+x509_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = Redis LocalStack Root CA
+
+[v3_req]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, digitalSignature, keyCertSign
+subjectKeyIdentifier = hash
+EOF
+
+openssl req -new -x509 -key redis/certs/root-ca-key.pem \
+  -out redis/certs/root-ca.pem -days 3650 \
+  -config redis/certs/root-ca.cnf
+
+openssl genrsa -out redis/certs/redis-key.pem 2048
+
+cat > redis/certs/redis.cnf << 'EOF'
+[req]
+distinguished_name = req_distinguished_name
+req_extensions = v3_req
+prompt = no
+
+[req_distinguished_name]
+C = US
+ST = New York
+L = New York
+O = LocalStack
+CN = redis
+
+[v3_req]
+basicConstraints = CA:FALSE
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth, clientAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1 = redis
+DNS.2 = redis.localhost
+DNS.3 = localhost
+DNS.4 = 127.0.0.1
+IP.1 = 127.0.0.1
+EOF
+
+openssl req -new -key redis/certs/redis-key.pem \
+  -out redis/certs/redis.csr -config redis/certs/redis.cnf
+
+openssl x509 -req -in redis/certs/redis.csr \
+  -CA redis/certs/root-ca.pem -CAkey redis/certs/root-ca-key.pem \
+  -CAcreateserial -out redis/certs/redis.pem -days 3650 \
+  -extensions v3_req -extfile redis/certs/redis.cnf
+
+if [ -f "redis/certs/redis_truststore.jks" ]; then
+    keytool -delete -alias redis-root-ca \
+      -keystore redis/certs/redis_truststore.jks -storepass changeit -noprompt 2>/dev/null || true
+fi
+
+keytool -import -trustcacerts -alias redis-root-ca -file redis/certs/root-ca.pem \
+  -keystore redis/certs/redis_truststore.jks -storepass changeit -noprompt
+
+openssl pkcs12 -export \
+  -in redis/certs/redis.pem \
+  -inkey redis/certs/redis-key.pem \
+  -out redis/certs/redis_keystore.p12 \
+  -name "redis-client" \
+  -password pass:changeit
+
+keytool -importkeystore \
+  -srckeystore redis/certs/redis_keystore.p12 \
+  -srcstoretype PKCS12 \
+  -srcstorepass changeit \
+  -destkeystore redis/certs/redis_keystore.jks \
+  -deststoretype JKS \
+  -deststorepass changeit \
+  -noprompt
+
+cat > postgres-init/01-create-schema.sql << 'EOF'
+CREATE SCHEMA IF NOT EXISTS voice_schema;
+
+GRANT USAGE ON SCHEMA voice_schema TO postgres;
+GRANT CREATE ON SCHEMA voice_schema TO postgres;
+
+ALTER DATABASE voice_reminder SET search_path TO voice_schema, public;
+
+COMMENT ON SCHEMA voice_schema IS 'Main schema for Voice Reminder Application';
+EOF
+
+cat > postgres-init/02-create-extensions.sql << 'EOF'
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "citext";
+
+COMMENT ON EXTENSION "uuid-ossp" IS 'Generate UUIDs';
+COMMENT ON EXTENSION "pgcrypto" IS 'Cryptographic functions';
+COMMENT ON EXTENSION "citext" IS 'Case-insensitive text type';
+EOF
+
+cat > src/main/resources/db/migration/V1__create_users_table.sql << 'EOF'
+-- Flyway migration: V1__create_users_table.sql
+
+SET search_path TO voice_schema;
+
+CREATE TABLE users (
+    id BIGSERIAL,
+    username VARCHAR(50) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_active BOOLEAN DEFAULT true,
+    last_login TIMESTAMP,
+
+    PRIMARY KEY (id, created_at),
+
+    CONSTRAINT users_username_unique UNIQUE (username, created_at),
+    CONSTRAINT chk_username_length CHECK (LENGTH(username) >= 3)
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE users_2026q1 PARTITION OF users
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+
+CREATE TABLE users_2026q2 PARTITION OF users
+    FOR VALUES FROM ('2026-04-01') TO ('2026-07-01');
+
+CREATE TABLE users_2026q3 PARTITION OF users
+    FOR VALUES FROM ('2026-07-01') TO ('2026-10-01');
+
+CREATE TABLE users_2026q4 PARTITION OF users
+    FOR VALUES FROM ('2026-10-01') TO ('2027-01-01');
+
+CREATE INDEX idx_users_username ON voice_schema.users(username);
+CREATE INDEX idx_users_is_active ON voice_schema.users(is_active);
+CREATE INDEX idx_users_username_part ON voice_schema.users(username);
+CREATE INDEX idx_users_created_at_part ON voice_schema.users(created_at DESC);
+CREATE INDEX idx_users_active_login ON voice_schema.users(is_active, last_login DESC);
+
+COMMENT ON TABLE voice_schema.users IS 'Application users table';
+COMMENT ON COLUMN voice_schema.users.username IS 'Unique username for login';
+COMMENT ON COLUMN voice_schema.users.password_hash IS 'BCrypt hashed password';
+COMMENT ON COLUMN voice_schema.users.is_active IS 'Is user account active';
+
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_users_updated_at BEFORE UPDATE
+    ON voice_schema.users FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+EOF
+
+cat > src/main/resources/db/migration/V2__insert_default_users.sql << 'EOF'
+-- Flyway migration: V2__insert_default_users.sql
+
+SET search_path TO voice_schema;
+
+-- Пароли: admin123 и user123
+INSERT INTO voice_schema.users (username, password_hash, email, created_at)
+VALUES
+    ('admin', '$2a$12$X7h8ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'admin@example.com', NOW()),
+    ('user', '$2a$12$Y8h9ZrFvC8N2bQ1W6p5YCOBcBwY8J8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ8ZJ', 'user@example.com', NOW())
+ON CONFLICT (username, created_at) DO NOTHING;
+EOF
+
+cat > redis/config/redis.conf << 'EOF'
+bind 0.0.0.0
+port 6380
+tls-port 6379
+
+tls-cert-file /usr/local/etc/redis/certs/redis.pem
+tls-key-file /usr/local/etc/redis/certs/redis-key.pem
+tls-ca-cert-file /usr/local/etc/redis/certs/root-ca.pem
+tls-auth-clients optional
+tls-protocols "TLSv1.2 TLSv1.3"
+tls-ciphers "DEFAULT:@SECLEVEL=1"
+tls-session-caching yes
+tls-session-cache-timeout 300
+tls-prefer-server-ciphers yes
+
+save 60 1
+appendonly yes
+appendfsync everysec
+
+maxmemory 256mb
+maxmemory-policy allkeys-lru
+
+loglevel notice
+EOF
+
+cat > .env << EOF
+# AWS/LocalStack
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+AWS_REGION=us-east-1
+AWS_ENDPOINT_URL=http://localstack:4566
+
+# OpenSearch
+OPENSEARCH_HOST=localstack
+OPENSEARCH_PORT=4510
+OPENSEARCH_HTTPS_PORT=9200
+OPENSEARCH_USER=admin
+OPENSEARCH_ADMIN_PASSWORD=$(cat secrets/opensearch_password.txt)
+OPENSEARCH_USE_SSL=true
+OPENSEARCH_DISABLE_SSL_VERIFICATION=true
+OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
+OPENSEARCH_TRUSTSTORE_PASSWORD=changeit
+
+# NLP Service - Ollama
+NLP_SERVICE_HOST=nlp-service
+NLP_SERVICE_PORT=50051
+NLP_GRPC_API_KEY=$(cat secrets/nlp_grpc_key.txt)
+GRPC_USE_TLS=true
+NLP_MODE=ollama-rag  # Изменили с llm-rag на ollama-rag
+
+# Ollama Configuration
+OLLAMA_HOST=ollama
+OLLAMA_PORT=11434
+OLLAMA_MODEL=$(cat secrets/ollama_model.txt)
+OLLAMA_TEMPERATURE=0.1
+OLLAMA_TIMEOUT=30
+
+# Application
+ENVIRONMENT_NAME=dev
+WS_PORT=8090
+USE_LOCAL_SECRETS=true
+LOG_LEVEL=INFO
+HEALTH_CHECK_ENABLED=true
+
+# PostgreSQL Database
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=$(cat secrets/postgres_password.txt)
+DB_ENABLED=true
+DB_HOST=postgres
+DB_PORT=5432
+DB_NAME=voice_reminder
+DB_SCHEMA=voice_schema
+DB_POOL_SIZE=10
+DB_POOL_MIN_IDLE=5
+FLYWAY_ENABLED=true
+FLYWAY_BASELINE_VERSION=1
+JPA_DDL_GENERATION=none
+JPA_SHOW_SQL=false
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+REDIS_NONSSL_PORT=6380
+REDIS_PASSWORD=$(cat secrets/redis_password.txt)
+REDIS_USE_SSL=true
+REDIS_SSL_VERIFY_MODE=full
+REDIS_SSL_PROTOCOL=TLSv1.2
+REDIS_TIMEOUT=5000
+REDIS_MAX_TOTAL=50
+REDIS_MAX_IDLE=10
+REDIS_MIN_IDLE=5
+
+#DLQ Processor
+JAVA_OPTS='-Dfile.encoding=UTF-8 -Dconsole.encoding=UTF-8 -Dsun.jnu.encoding=UTF-8 -Xmx256m -Xms128m'
+DLQ_URL=http://localstack:4566/000000000000/dev-reminder-dlq
+QUEUE_SUFFIX=-reminder-dlq
+VISIBILITY_TIMEOUT=60
+MAX_BATCH_SIZE=10
+NOTIFY_AFTER_ATTEMPTS=3
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USERNAME=losik2006@gmail.com
+SMTP_PASSWORD=changeit
+FROM_EMAIL=losik2006@gmail.com
+NOTIFICATION_EMAIL=losik2006@gmail.com
+SMTP_AUTH=true
+SMTP_STARTTLS=true
+METRICS_ENABLED=true
+CLOUDWATCH_NAMESPACE=Reminder/DLQ
+
+SECRET_KEY=$(cat secrets/jwt_secret.txt)
+TOKEN_EXPIRATION=86400000
+ISSUER=voice-reminder-app
+APP_BASE_URL=http://localhost:8090
+EOF
+
+cat > secrets/secrets.json << EOF
+{
+  "NLP_GRPC_API_KEY": "$(cat secrets/nlp_grpc_key.txt)",
+  "OPENSEARCH_PASSWORD": "$(cat secrets/opensearch_password.txt)",
+  "POSTGRES_PASSWORD": "$(cat secrets/postgres_password.txt)",
+  "REDIS_PASSWORD": "$(cat secrets/redis_password.txt)",
+  "JWT_SECRET": "$(cat secrets/jwt_secret.txt)",
+  "OLLAMA_MODEL": "$(cat secrets/ollama_model.txt)",
+  "OPENSEARCH_USER": "admin",
+  "OPENSEARCH_HOST": "localstack",
+  "OPENSEARCH_HTTPS_PORT": "9200",
+  "OPENSEARCH_USE_SSL": "true",
+  "OPENSEARCH_TRUSTSTORE_PATH": "/app/certs/truststore.jks",
+  "OPENSEARCH_TRUSTSTORE_PASSWORD": "changeit",
+  "NLP_SERVICE_HOST": "nlp-service",
+  "NLP_SERVICE_PORT": "50051",
+  "GRPC_USE_TLS": "false",
+  "WS_PORT": "8090",
+  "AWS_ACCESS_KEY_ID": "test",
+  "AWS_SECRET_ACCESS_KEY": "test"
+}
+EOF
+
+cat > secrets/application.properties << 'EOF'
+# Application
+app.name=VoiceReminder
+app.version=1.0.0
+app.environment=${ENVIRONMENT_NAME:dev}
+
+# NLP Service - Ollama
+nlp.service.host=${NLP_SERVICE_HOST:nlp-service}
+nlp.service.port=${NLP_SERVICE_PORT:50051}
+nlp.grpc.use_tls=${GRPC_USE_TLS:true}
+nlp.mode=${NLP_MODE:ollama-rag}
+
+# Ollama specific
+ollama.host=${OLLAMA_HOST:ollama}
+ollama.port=${OLLAMA_PORT:11434}
+ollama.model=${OLLAMA_MODEL:llama3.2:latest}
+ollama.temperature=${OLLAMA_TEMPERATURE:0.1}
+ollama.timeout=${OLLAMA_TIMEOUT:30}
+
+# OpenSearch
+opensearch.host=${OPENSEARCH_HOST:localstack}
+opensearch.port=${OPENSEARCH_PORT:4510}
+opensearch.https_port=${OPENSEARCH_HTTPS_PORT:9200}
+opensearch.user=${OPENSEARCH_USER:admin}
+opensearch.password=${OPENSEARCH_ADMIN_PASSWORD}
+opensearch.use_ssl=${OPENSEARCH_USE_SSL:true}
+opensearch.disable_ssl_verification=${OPENSEARCH_DISABLE_SSL_VERIFICATION:true}
+opensearch.truststore.path=${OPENSEARCH_TRUSTSTORE_PATH:/app/certs/truststore.jks}
+opensearch.truststore.password=${OPENSEARCH_TRUSTSTORE_PASSWORD:changeit}
+
+# Redis
+redis.host=${REDIS_HOST:redis}
+redis.port=${REDIS_PORT:6379}
+redis.password=${REDIS_PASSWORD}
+redis.use_ssl=${REDIS_USE_SSL:true}
+redis.ssl.truststore.path=/app/certs/redis_truststore.jks
+redis.ssl.truststore.password=changeit
+redis.ssl.keystore.path=/app/certs/redis_keystore.jks
+redis.ssl.keystore.password=changeit
+redis.ssl.verify_mode=${REDIS_SSL_VERIFY_MODE:full}
+redis.ssl.protocol=${REDIS_SSL_PROTOCOL:TLSv1.2}
+redis.timeout=${REDIS_TIMEOUT:2000}
+redis.max.total=${REDIS_MAX_TOTAL:50}
+redis.max.idle=${REDIS_MAX_IDLE:10}
+redis.min.idle=${REDIS_MIN_IDLE:5}
+
+# Server
+server.port=8090
+ws.port=${WS_PORT:8090}
+
+# AWS
+aws.region=${AWS_REGION:us-east-1}
+aws.endpoint=${AWS_ENDPOINT_URL:http://localhost:4566}
+security.grpc.api-key=${NLP_GRPC_API_KEY}
+
+# PostgreSQL Database
+db.enabled=${DB_ENABLED:true}
+db.host=${DB_HOST:postgres}
+db.port=${DB_PORT:5432}
+db.name=${DB_NAME:voice_reminder}
+db.username=${POSTGRES_USER:postgres}
+db.password=${POSTGRES_PASSWORD}
+db.schema=${DB_SCHEMA:voice_schema}
+db.pool.size=${DB_POOL_SIZE:10}
+db.pool.minIdle=${DB_POOL_MIN_IDLE:5}
+db.connection.timeout=30000
+db.pool.maxLifetime=1800000
+
+# JPA
+jpa.show_sql=${JPA_SHOW_SQL:false}
+jpa.format_sql=true
+jpa.ddl.generation=${JPA_DDL_GENERATION:none}
+
+# Flyway
+flyway.enabled=${FLYWAY_ENABLED:true}
+flyway.baseline.version=${FLYWAY_BASELINE_VERSION:1}
+flyway.locations=classpath:db/migration,filesystem:/app/db/migration
+flyway.schemas=${DB_SCHEMA:voice_schema}
+flyway.table=flyway_schema_history
+flyway.validate-on-migrate=true
+flyway.baseline-on-migrate=true
+
+jwt.secret-key=${JWT_SECRET}
+jwt.expiration=${TOKEN_EXPIRATION:-86400000}
+jwt.issuer=${ISSUER:-voice-reminder-app}
+app.base-url=${APP_BASE_URL:-http://localhost:8090}
+EOF
+
+rm -f opensearch_certs/*.csr opensearch_certs/*.srl opensearch_certs/*.cnf
+rm -f redis/certs/*.csr redis/certs/*.srl redis/certs/*.cnf
+
+chmod 600 secrets/*.txt
+chmod 644 secrets/*.json
+chmod 644 secrets/*.properties
+chmod 644 .env
+chmod 600 opensearch_certs/*.pem
+chmod 600 opensearch_certs/*.jks
+chmod 600 opensearch_certs/*.p12
+chmod 600 redis/certs/*.pem
+chmod 600 redis/certs/*.jks
+chmod 600 redis/certs/*.p12
+chmod 644 postgres-init/*.sql
+chmod 644 src/main/resources/db/migration/*.sql
+chmod 644 redis/config/*.conf
+
+echo ""
+echo "=========================================="
+echo "Все секреты успешно сгенерированы!"
+echo "=========================================="
+echo ""
+echo "Сгенерированные файлы:"
+ls -la secrets/
+echo ""
+echo "Выбрана модель Ollama: $(cat secrets/ollama_model.txt)"
+echo ""
+echo "Для запуска выполните:"
+echo "   docker-compose up -d"
+echo ""
+echo "При первом запуске Ollama скачает модель (может занять несколько минут)"
+echo "   Проверить статус: docker-compose logs -f ollama"
+echo ""
+echo "Протестировать сервис:"
+echo "   python nlp/llm_agent/test_ollama_client.py"
+echo ""
+echo "=========================================="

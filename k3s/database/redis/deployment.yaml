@@ -1,0 +1,113 @@
+# database/redis/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: database
+  labels:
+    app: redis
+    component: cache
+    tier: caching
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+        component: cache
+        tier: caching
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-server
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/cache
+                    operator: In
+                    values:
+                      - "true"
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379
+              name: redis-tls
+            - containerPort: 6380
+              name: redis-plain
+          command:
+            - redis-server
+            - /usr/local/etc/redis/redis.conf
+            - --requirepass
+            - "$(REDIS_PASSWORD)"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-secrets
+                  key: REDIS_PASSWORD
+          volumeMounts:
+            - name: redis-config
+              mountPath: /usr/local/etc/redis/redis.conf
+              subPath: redis.conf
+              readOnly: true
+            - name: redis-certs
+              mountPath: /usr/local/etc/redis/certs
+              readOnly: true
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  redis-cli --tls \
+                    --cacert /usr/local/etc/redis/certs/root-ca.pem \
+                    --pass "$REDIS_PASSWORD" \
+                    ping | grep PONG
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  redis-cli --tls \
+                    --cacert /usr/local/etc/redis/certs/root-ca.pem \
+                    --pass "$REDIS_PASSWORD" \
+                    ping | grep PONG
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+      volumes:
+        - name: redis-config
+          configMap:
+            name: redis-config
+            items:
+              - key: redis.conf
+                path: redis.conf
+        - name: redis-certs
+          secret:
+            secretName: redis-certs
+            defaultMode: 0444
+      terminationGracePeriodSeconds: 30

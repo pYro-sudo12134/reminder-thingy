@@ -26,4 +26,4 @@ data:
     maxmemory 256mb
     maxmemory-policy allkeys-lru
 
-    loglevel notice;
+    loglevel notice

@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: database
+  labels:
+    app: postgres
+    component: database
+    tier: storage
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        component: database
+        tier: storage
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k3s-server
+            - weight: 80
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/database
+                    operator: In
+                    values:
+                      - "true"
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: node-role.kubernetes.io/storage
+                    operator: Exists
+      tolerations:
+        - key: "node-role.kubernetes.io/storage"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+              protocol: TCP
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secrets
+                  key: POSTGRES_DB
+                  optional: true
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_INITDB_ARGS
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: POSTGRES_INITDB_ARGS
+                  optional: true
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: postgres-config
+                  key: TZ
+                  optional: true
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-backup
+              mountPath: /backup
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: postgres-config
+              mountPath: /etc/postgresql/postgresql.conf
+              subPath: postgres.conf
+              readOnly: true
+            - name: secrets
+              mountPath: /run/secrets
+              readOnly: true
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1"
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  pg_isready -U $POSTGRES_USER -d ${POSTGRES_DB:-postgres}
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - |
+                  pg_isready -U $POSTGRES_USER -d ${POSTGRES_DB:-postgres}
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - |
+                    pg_ctl -D /var/lib/postgresql/data/pgdata stop -m fast
+      initContainers:
+        - name: init-data-dir
+          image: busybox:latest
+          command:
+            - sh
+            - -c
+            - |
+              chown -R 999:999 /var/lib/postgresql/data
+              chmod 700 /var/lib/postgresql/data
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-data-pvc
+        - name: postgres-backup
+          persistentVolumeClaim:
+            claimName: postgres-backup-pvc
+        - name: postgres-init
+          configMap:
+            name: postgres-init
+            defaultMode: 0755
+        - name: postgres-config
+          configMap:
+            name: postgres-config
+            items:
+              - key: postgres.conf
+                path: postgres.conf
+        - name: secrets
+          secret:
+            secretName: postgres-secrets-dir
+            defaultMode: 0444
+            optional: true
+      terminationGracePeriodSeconds: 60
