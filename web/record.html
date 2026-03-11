@@ -523,8 +523,19 @@
 
         if (result.scheduledTime) {
             const scheduledTime = new Date(result.scheduledTime);
-            document.getElementById('reminderStatus').textContent =
-                `запланировано на ${scheduledTime.toLocaleString('ru-RU')}`;
+            document.getElementById('reminderStatus').innerHTML =
+                `запланировано на ${scheduledTime.toLocaleString('ru-RU', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                })}`;
+        }
+
+        if (result.extractedAction) {
+            const statusElement = document.getElementById('reminderStatus');
+            statusElement.innerHTML += `<br><small>Действие: "${result.extractedAction}"</small>`;
         }
 
         const link = document.getElementById('viewRemindersLink');
@@ -532,13 +543,6 @@
 
         resultElement.classList.remove('hidden');
         resultElement.scrollIntoView({ behavior: 'smooth' });
-    }
-
-    // Заполняем тестовые данные для удобства
-    const urlParams = new URLSearchParams(window.location.search);
-    const userIdFromUrl = urlParams.get('userId');
-    if (userIdFromUrl) {
-        document.getElementById('userId').value = userIdFromUrl;
     }
 </script>
 </body>

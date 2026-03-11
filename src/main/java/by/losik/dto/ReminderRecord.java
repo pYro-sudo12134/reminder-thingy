@@ -24,10 +24,6 @@ public record ReminderRecord(
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
         LocalDateTime scheduledTime,
 
-        @JsonProperty("reminder_time")
-        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "HH:mm")
-        String reminderTime,
-
         @JsonProperty("created_at")
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
         LocalDateTime createdAt,

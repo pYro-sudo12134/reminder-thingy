@@ -11,9 +11,6 @@ public record UpdateReminderRequest (
         @JsonProperty("scheduledTime")
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
         String scheduledTime,
-        @JsonProperty("reminderTime")
-        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "HH:mm")
-        String reminderTime,
         @JsonProperty("status")
         String status,
         @JsonProperty("userEmail")

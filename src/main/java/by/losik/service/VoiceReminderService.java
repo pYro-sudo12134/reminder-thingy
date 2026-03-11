@@ -68,7 +68,6 @@ public class VoiceReminderService {
                             transcribedText,
                             parsed.action(),
                             parsed.scheduledTime(),
-                            reminderParser.formatForDisplay(parsed.scheduledTime()),
                             LocalDateTime.now(),
                             ReminderRecord.ReminderStatus.SCHEDULED,
                             false,
@@ -96,7 +95,6 @@ public class VoiceReminderService {
                                         transcribedText,
                                         parsed.action(),
                                         parsed.scheduledTime(),
-                                        reminderParser.formatForDisplay(parsed.scheduledTime()),
                                         LocalDateTime.now(),
                                         ReminderRecord.ReminderStatus.SCHEDULED,
                                         false,
@@ -199,7 +197,6 @@ public class VoiceReminderService {
     public CompletableFuture<Boolean> updateReminder(String reminderId,
                                                      String extractedAction,
                                                      LocalDateTime scheduledTime,
-                                                     String reminderTime,
                                                      ReminderRecord.ReminderStatus status,
                                                      String userEmail) {
 
@@ -248,9 +245,6 @@ public class VoiceReminderService {
 
                         return eventBridgeService.createScheduleRule(ruleRequest)
                                 .thenCompose(rule -> {
-                                    String finalReminderTime = reminderTime != null ?
-                                            reminderTime : formatForDisplay(scheduledTime);
-
                                     ReminderRecord updated = new ReminderRecord(
                                             existing.reminderId(),
                                             existing.userId(),
@@ -258,7 +252,6 @@ public class VoiceReminderService {
                                             existing.originalText(),
                                             extractedAction != null ? extractedAction : existing.extractedAction(),
                                             scheduledTime,
-                                            finalReminderTime,
                                             existing.createdAt(),
                                             status != null ? status : existing.status(),
                                             existing.notificationSent(),
@@ -305,11 +298,6 @@ public class VoiceReminderService {
 
                     return updateFuture;
                 });
-    }
-
-    private String formatForDisplay(LocalDateTime dateTime) {
-        if (dateTime == null) return "";
-        return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
     }
 
     public OpenSearchService getOpenSearchService() {

@@ -832,9 +832,6 @@ paths:
                         scheduledTime:
                           type: string
                           format: date-time
-                        reminderTime:
-                          type: string
-                          example: "09:00"
                         status:
                           type: string
                           enum: [PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED]
@@ -1054,15 +1051,6 @@ components:
             **Validation:** Must be in the future
             **Format:** yyyy-MM-ddTHH:mm:ss
           example: "2026-02-20T16:00:00"
-        reminderTime:
-          type: string
-          pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-          description: |
-            Display time in HH:mm format (24-hour)
-            
-            **Note:** This field is optional. If provided, it must match the time portion of scheduledTime.
-            If not provided, it will be derived from scheduledTime.
-          example: "16:00"
         status:
           type: string
           enum: [SCHEDULED, COMPLETED, CANCELLED]
@@ -1087,7 +1075,6 @@ components:
         reminderId: "123e4567-e89b-12d3-a456-426614174000"
         extractedAction: "купить молоко и хлеб"
         scheduledTime: "2026-02-20T16:00:00"
-        reminderTime: "16:00"
         status: "SCHEDULED"
         userEmail: "user@example.com"
 
@@ -1120,11 +1107,6 @@ components:
           format: date-time
           description: Parsed date and time for reminder
           example: "2026-02-20T09:00:00Z"
-        reminderTime:
-          type: string
-          pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-          description: Time portion of scheduledTime in HH:mm format
-          example: "09:00"
         createdAt:
           type: string
           format: date-time

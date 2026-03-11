@@ -94,6 +94,20 @@
             color: #555;
             margin: 10px 0;
             font-size: 14px;
+            line-height: 1.6;
+            background: #f8f9fa;
+            padding: 8px;
+            border-radius: 4px;
+            border-left: 3px solid #007bff;
+        }
+        .reminder-time strong {
+            color: #333;
+            font-weight: 600;
+        }
+
+        .reminder-time small {
+            color: #666;
+            font-style: italic;
         }
         .actions {
             display: flex;
@@ -410,13 +424,17 @@
         showLoading(true);
         hideError();
 
+        const statusFilter = new URLSearchParams(window.location.search).get('status') || '';
+
         Promise.all([
             fetch(`/api/stats/${userId}`).then(r => r.ok ? r.json() : null),
-            fetch(`/api/user/${userId}/reminders?limit=20`).then(r => r.json())
+            fetch(`/api/user/${userId}/reminders?limit=20${statusFilter ? `&status=${statusFilter}` : ''}`).then(r => r.json())
         ]).then(([stats, reminders]) => {
             displayStats(stats);
             displayReminders(reminders);
             showLoading(false);
+
+            setupAutocomplete('reminderText', userId);
         }).catch(error => {
             showError(`Ошибка загрузки: ${error.message}`);
             showLoading(false);
@@ -484,28 +502,37 @@
 
                 const canEdit = reminder.status !== 'COMPLETED' && reminder.status !== 'CANCELLED';
 
+                const scheduledDate = new Date(reminder.scheduledTime);
+                const formattedDate = scheduledDate.toLocaleString('ru-RU', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
                 return `
-                    <div class="reminder" data-id="${reminder.reminderId}">
-                        <div class="reminder-header">
-                            <span class="reminder-id">ID: ${reminder.reminderId.substring(0, 8)}...</span>
-                            <span class="status-badge" style="background: ${statusColor}">${reminder.status}</span>
-                        </div>
-                        <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
-                        <div class="reminder-time">
-                            <strong>Когда:</strong> ${new Date(reminder.scheduledTime).toLocaleString('ru-RU')}<br>
-                            <strong>Создано:</strong> ${new Date(reminder.createdAt).toLocaleString('ru-RU')}
-                            ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
-                        </div>
-                        <div class="actions">
-                            ${canEdit ? `
-                                <button class="edit-btn" onclick="editReminder('${reminder.reminderId}')" title="Редактировать">✎</button>
-                                <button class="cancel-btn" onclick="cancelReminder('${reminder.reminderId}')" title="Отменить">✕</button>
-                            ` : ''}
-                            <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')" title="Удалить">🗑</button>
-                            <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')" title="Подробности">ℹ</button>
-                        </div>
+                <div class="reminder" data-id="${reminder.reminderId}">
+                    <div class="reminder-header">
+                        <span class="reminder-id">ID: ${reminder.reminderId.substring(0, 8)}...</span>
+                        <span class="status-badge" style="background: ${statusColor}">${reminder.status}</span>
                     </div>
-                `;
+                    <div class="reminder-action">${reminder.extractedAction || 'Без описания'}</div>
+                    <div class="reminder-time">
+                        <strong>Когда:</strong> ${formattedDate}<br>
+                        <strong>Создано:</strong> ${new Date(reminder.createdAt).toLocaleString('ru-RU')}
+                        ${reminder.notificationSent ? '<br><strong>✓ Уведомление отправлено</strong>' : ''}
+                    </div>
+                    <div class="actions">
+                        ${canEdit ? `
+                            <button class="edit-btn" onclick="editReminder('${reminder.reminderId}')" title="Редактировать">✎</button>
+                            <button class="cancel-btn" onclick="cancelReminder('${reminder.reminderId}')" title="Отменить">✕</button>
+                        ` : ''}
+                        <button class="delete-btn" onclick="deleteReminder('${reminder.reminderId}')" title="Удалить">🗑</button>
+                        <button class="details-btn" onclick="viewDetails('${reminder.reminderId}')" title="Подробности">ℹ</button>
+                    </div>
+                </div>
+            `;
             }).join('');
     }
 
@@ -567,7 +594,7 @@
                 document.getElementById('editAction').value = reminder.extractedAction || '';
 
                 if (reminder.scheduledTime) {
-                    const date = new Date(reminder.scheduledTime + 'Z');
+                    const date = new Date(reminder.scheduledTime);
                     const year = date.getFullYear();
                     const month = String(date.getMonth() + 1).padStart(2, '0');
                     const day = String(date.getDate()).padStart(2, '0');
@@ -663,16 +690,21 @@
                 console.log('Details data:', data);
                 if (data.error) return alert(data.error);
 
+                const scheduledDate = new Date(data.scheduledTime);
+                const createdDate = new Date(data.createdAt);
+
                 const details = [
                     `ID: ${data.reminderId}`,
                     `Пользователь: ${data.userId}`,
+                    `Email: ${data.userEmail || '—'}`,
                     `Действие: ${data.extractedAction || '—'}`,
                     `Оригинальный текст: ${data.originalText || '—'}`,
-                    `Запланировано: ${new Date(data.scheduledTime).toLocaleString('ru-RU')}`,
+                    `Запланировано: ${scheduledDate.toLocaleString('ru-RU')}`,
                     `Статус: ${data.status}`,
-                    `Создано: ${new Date(data.createdAt).toLocaleString('ru-RU')}`,
+                    `Создано: ${createdDate.toLocaleString('ru-RU')}`,
                     `Уведомление: ${data.notificationSent ? 'Отправлено' : 'Не отправлено'}`,
-                    data.intent ? `🎯 Намерение: ${data.intent}` : null
+                    data.intent ? `🎯 Намерение: ${data.intent}` : null,
+                    data.eventBridgeRuleName ? `📅 Правило: ${data.eventBridgeRuleName.substring(0, 20)}...` : null
                 ].filter(Boolean).join('\n');
 
                 alert(details);

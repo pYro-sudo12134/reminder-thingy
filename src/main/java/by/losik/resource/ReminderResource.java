@@ -162,7 +162,6 @@ public class ReminderResource {
                     response.put("originalText", reminder.originalText());
                     response.put("extractedAction", reminder.extractedAction());
                     response.put("scheduledTime", reminder.scheduledTime().toString());
-                    response.put("reminderTime", reminder.reminderTime());
                     response.put("status", reminder.status().toString());
                     response.put("createdAt", reminder.createdAt().toString());
                     response.put("notificationSent", reminder.notificationSent());
@@ -217,7 +216,6 @@ public class ReminderResource {
                                 map.put("originalText", reminder.originalText());
                                 map.put("extractedAction", reminder.extractedAction());
                                 map.put("scheduledTime", reminder.scheduledTime().toString());
-                                map.put("reminderTime", reminder.reminderTime());
                                 map.put("status", reminder.status().toString());
                                 map.put("createdAt", reminder.createdAt().toString());
                                 map.put("notificationSent", reminder.notificationSent());
@@ -484,31 +482,10 @@ public class ReminderResource {
             return;
         }
 
-        if (updateRequest.reminderTime() != null && !updateRequest.reminderTime().isBlank()) {
-            if (!updateRequest.reminderTime().matches("^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")) {
-                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
-                        .entity(Map.of("error", "Invalid reminderTime format. Use HH:mm (e.g., 14:30)"))
-                        .build());
-                return;
-            }
-
-            String expectedTime = String.format("%02d:%02d",
-                    scheduledTime.getHour(), scheduledTime.getMinute());
-            if (!expectedTime.equals(updateRequest.reminderTime())) {
-                log.warn("reminderTime {} does not match scheduledTime {}",
-                        updateRequest.reminderTime(), expectedTime);
-            }
-        }
-
         ReminderRecord.ReminderStatus status = null;
         if (updateRequest.status() != null && !updateRequest.status().isEmpty()) {
             try {
                 status = ReminderRecord.ReminderStatus.valueOf(updateRequest.status().toUpperCase());
-
-                if (status == ReminderRecord.ReminderStatus.COMPLETED ||
-                        status == ReminderRecord.ReminderStatus.CANCELLED) {
-                    log.info("Already completed");
-                }
             } catch (IllegalArgumentException e) {
                 asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("error", "Invalid status. Allowed values: SCHEDULED, COMPLETED, CANCELLED"))
@@ -521,7 +498,6 @@ public class ReminderResource {
                 reminderId,
                 updateRequest.extractedAction(),
                 scheduledTime,
-                updateRequest.reminderTime(),
                 status,
                 updateRequest.userEmail()
         ).thenApply(success -> {

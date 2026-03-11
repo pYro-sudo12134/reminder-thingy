@@ -137,9 +137,6 @@ public class OpenSearchService {
                     .field("type", "date")
                     .field("format", "strict_date_optional_time||epoch_millis")
                     .endObject()
-                    .startObject("reminder_time")
-                    .field("type", "keyword")
-                    .endObject()
                     .startObject("status")
                     .field("type", "keyword")
                     .endObject()
@@ -260,7 +257,6 @@ public class OpenSearchService {
                 source.put("original_text", reminder.originalText());
                 source.put("extracted_action", reminder.extractedAction());
                 source.put("scheduled_time", reminder.scheduledTime());
-                source.put("reminder_time", reminder.reminderTime());
                 source.put("status", reminder.status().toString());
                 source.put("notification_sent", reminder.notificationSent());
                 source.put("created_at", reminder.createdAt());
@@ -496,7 +492,6 @@ public class OpenSearchService {
                     (String) source.get("original_text"),
                     (String) source.get("extracted_action"),
                     parseDateTime((String) source.get("scheduled_time")),
-                    (String) source.get("reminder_time"),
                     parseDateTime((String) source.get("created_at")),
                     ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
                     (Boolean) source.get("notification_sent"),
@@ -666,7 +661,6 @@ public class OpenSearchService {
                 source.put("original_text", reminder.originalText());
                 source.put("extracted_action", reminder.extractedAction());
                 source.put("scheduled_time", reminder.scheduledTime());
-                source.put("reminder_time", reminder.reminderTime());
                 source.put("status", reminder.status().toString());
                 source.put("notification_sent", reminder.notificationSent());
                 source.put("created_at", reminder.createdAt());
