@@ -26,7 +26,7 @@ spec:
     - type: External
       external:
         metric:
-          name: sqs_approximate_number_of_messages_visible
+          name: aws_sqs_approximate_number_of_messages_visible
           selector:
             matchLabels:
               queue_name: dev-reminder-dlq
