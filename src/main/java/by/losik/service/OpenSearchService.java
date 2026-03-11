@@ -492,8 +492,8 @@ public class OpenSearchService {
             return new ReminderRecord(
                     id,
                     (String) source.get("user_id"),
-                    (String) source.get("original_text"),
                     (String) source.get("user_email"),
+                    (String) source.get("original_text"),
                     (String) source.get("extracted_action"),
                     parseDateTime((String) source.get("scheduled_time")),
                     (String) source.get("reminder_time"),
@@ -662,6 +662,7 @@ public class OpenSearchService {
             try {
                 Map<String, Object> source = new HashMap<>();
                 source.put("user_id", reminder.userId());
+                source.put("user_email", reminder.userEmail());
                 source.put("original_text", reminder.originalText());
                 source.put("extracted_action", reminder.extractedAction());
                 source.put("scheduled_time", reminder.scheduledTime());
@@ -687,6 +688,7 @@ public class OpenSearchService {
         });
     }
 
+    @Deprecated
     public CompletableFuture<Boolean> updateReminderFields(String reminderId, Map<String, Object> fields) {
         return CompletableFuture.supplyAsync(() -> {
             try {

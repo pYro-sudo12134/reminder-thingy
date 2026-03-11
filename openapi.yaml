@@ -1052,11 +1052,16 @@ components:
             New scheduled time in ISO format (UTC)
             
             **Validation:** Must be in the future
-          example: "2026-02-20T16:00:00Z"
+            **Format:** yyyy-MM-ddTHH:mm:ss
+          example: "2026-02-20T16:00:00"
         reminderTime:
           type: string
           pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-          description: Display time in HH:mm format (24-hour)
+          description: |
+            Display time in HH:mm format (24-hour)
+            
+            **Note:** This field is optional. If provided, it must match the time portion of scheduledTime.
+            If not provided, it will be derived from scheduledTime.
           example: "16:00"
         status:
           type: string
@@ -1066,14 +1071,25 @@ components:
             
             **Note:** Cannot change from COMPLETED or CANCELLED
           example: "SCHEDULED"
+        userEmail:
+          type: string
+          format: email
+          description: |
+            Email address for notification delivery
+            
+            **Note:** If not provided, existing email will be kept.
+            Use this to change the recipient of the reminder notification.
+          example: "user@example.com"
       required:
         - reminderId
+        - scheduledTime
       example:
         reminderId: "123e4567-e89b-12d3-a456-426614174000"
         extractedAction: "купить молоко и хлеб"
-        scheduledTime: "2026-02-20T16:00:00Z"
+        scheduledTime: "2026-02-20T16:00:00"
         reminderTime: "16:00"
         status: "SCHEDULED"
+        userEmail: "user@example.com"
 
     ReminderRecord:
       type: object
@@ -1086,6 +1102,11 @@ components:
         userId:
           type: string
           example: "user123"
+        userEmail:
+          type: string
+          format: email
+          description: Email address where notification will be sent
+          example: "user@example.com"
         originalText:
           type: string
           description: Raw transcribed text from audio
@@ -1102,7 +1123,7 @@ components:
         reminderTime:
           type: string
           pattern: "^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
-          description: Extracted time in HH:mm format
+          description: Time portion of scheduledTime in HH:mm format
           example: "09:00"
         createdAt:
           type: string
@@ -1111,7 +1132,7 @@ components:
           example: "2026-02-19T22:35:00Z"
         status:
           type: string
-          enum: [PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED]
+          enum: [ PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED ]
           description: |
             - PENDING: Audio uploaded, processing not started
             - SCHEDULED: Fully processed, waiting for trigger time
@@ -1126,7 +1147,7 @@ components:
           example: false
         intent:
           type: string
-          enum: [create_reminder, cancel_reminder, check_reminders, unknown]
+          enum: [ create_reminder, cancel_reminder, check_reminders, unknown ]
           description: NLP-detected user intent
           example: "create_reminder"
         eventBridgeRuleName:
@@ -1143,6 +1164,7 @@ components:
       required:
         - reminderId
         - userId
+        - userEmail
         - status
         - createdAt
 

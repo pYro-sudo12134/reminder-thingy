@@ -151,6 +151,7 @@ public class VoiceReminderService {
                 });
     }
 
+    @Deprecated
     public CompletableFuture<java.util.List<ReminderRecord>> getUserReminders(
             String userId, int limit) {
         return openSearchService.findRemindersByUser(userId, limit);
@@ -199,7 +200,8 @@ public class VoiceReminderService {
                                                      String extractedAction,
                                                      LocalDateTime scheduledTime,
                                                      String reminderTime,
-                                                     ReminderRecord.ReminderStatus status) {
+                                                     ReminderRecord.ReminderStatus status,
+                                                     String userEmail) {  // Добавить параметр
 
         log.info("Updating reminder: {}", reminderId);
 
@@ -216,6 +218,8 @@ public class VoiceReminderService {
 
                     ReminderRecord existing = optionalReminder.get();
 
+                    String finalUserEmail = userEmail != null ? userEmail : existing.userEmail();
+
                     String oldRuleName = existing.eventBridgeRuleName();
                     CompletableFuture<Boolean> deleteFuture = oldRuleName != null && !oldRuleName.isEmpty()
                             ? eventBridgeService.deleteRule(oldRuleName)
@@ -228,7 +232,7 @@ public class VoiceReminderService {
                     return deleteFuture.thenCompose(deleted -> {
                         Map<String, Object> inputData = new HashMap<>();
                         inputData.put("reminderId", reminderId);
-                        inputData.put("userEmail", existing.userEmail());
+                        inputData.put("userEmail", finalUserEmail);
                         inputData.put("action", extractedAction != null ? extractedAction : existing.extractedAction());
                         inputData.put("scheduledTime", scheduledTime.toString());
                         inputData.put("intent", existing.intent() != null ? existing.intent() : "reminder");
@@ -244,14 +248,17 @@ public class VoiceReminderService {
 
                         return eventBridgeService.createScheduleRule(ruleRequest)
                                 .thenCompose(rule -> {
+                                    String finalReminderTime = reminderTime != null ?
+                                            reminderTime : formatForDisplay(scheduledTime);
+
                                     ReminderRecord updated = new ReminderRecord(
                                             existing.reminderId(),
                                             existing.userId(),
-                                            existing.userEmail(),
+                                            finalUserEmail,
                                             existing.originalText(),
                                             extractedAction != null ? extractedAction : existing.extractedAction(),
                                             scheduledTime,
-                                            reminderTime != null ? reminderTime : formatForDisplay(scheduledTime),
+                                            finalReminderTime,
                                             existing.createdAt(),
                                             status != null ? status : existing.status(),
                                             existing.notificationSent(),
@@ -302,7 +309,7 @@ public class VoiceReminderService {
 
     private String formatForDisplay(LocalDateTime dateTime) {
         if (dateTime == null) return "";
-        return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"));
+        return dateTime.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
     }
 
     public OpenSearchService getOpenSearchService() {
