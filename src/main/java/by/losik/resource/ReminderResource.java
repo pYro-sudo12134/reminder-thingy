@@ -158,6 +158,7 @@ public class ReminderResource {
                     Map<String, Object> response = new HashMap<>();
                     response.put("reminderId", reminder.reminderId());
                     response.put("userId", reminder.userId());
+                    response.put("userEmail", reminder.userEmail());
                     response.put("originalText", reminder.originalText());
                     response.put("extractedAction", reminder.extractedAction());
                     response.put("scheduledTime", reminder.scheduledTime().toString());
@@ -211,12 +212,17 @@ public class ReminderResource {
                             .map(reminder -> {
                                 Map<String, Object> map = new HashMap<>();
                                 map.put("reminderId", reminder.reminderId());
+                                map.put("userId", reminder.userId());
+                                map.put("userEmail", reminder.userEmail());
+                                map.put("originalText", reminder.originalText());
                                 map.put("extractedAction", reminder.extractedAction());
                                 map.put("scheduledTime", reminder.scheduledTime().toString());
                                 map.put("reminderTime", reminder.reminderTime());
                                 map.put("status", reminder.status().toString());
                                 map.put("createdAt", reminder.createdAt().toString());
                                 map.put("notificationSent", reminder.notificationSent());
+                                map.put("intent", reminder.intent());
+                                map.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
                                 return map;
                             })
                             .collect(Collectors.toList());
