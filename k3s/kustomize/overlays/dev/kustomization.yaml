@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: app
+
+resources:
+  - ../../base
+
+components:
+  - ../../components/secrets-from-env
+
+patches:
+  - path: secrets-patch.yaml
+    target:
+      kind: Secret
+
+configMapGenerator:
+  - name: app-env
+    literals:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+
+secretGenerator:
+  - name: tls-certs
+    files:
+      - ../../../opensearch_certs/root-ca.pem
+      - ../../../opensearch_certs/node.pem
+      - ../../../opensearch_certs/node-key.pem
+      - ../../../redis/certs/root-ca.pem
+      - ../../../redis/certs/redis.pem
+      - ../../../redis/certs/redis-key.pem
+  - name: postgres-init-scripts
+    files:
+      - ../../../postgres-init/01-create-schema.sql
+      - ../../../postgres-init/02-create-extensions.sql
+  - name: flyway-migrations
+    files:
+      - ../../../src/main/resources/db/migration/V1__create_users_table.sql
+      - ../../../src/main/resources/db/migration/V2__insert_default_users.sql
+  - name: redis-config
+    files:
+      - ../../../redis/config/redis.conf
+
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    type: generated
+  annotations:
+    note: generated-by-kustomize

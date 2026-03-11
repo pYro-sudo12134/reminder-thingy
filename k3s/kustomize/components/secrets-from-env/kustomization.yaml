@@ -1,0 +1,416 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+secretGenerator:
+  - name: env-secrets
+    namespace: app
+    literals:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - FROM_EMAIL=${FROM_EMAIL}
+      - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY}
+      - GRAFANA_USER=${GRAFANA_USER}
+      - GRAFANA_PASSWORD=${GRAFANA_PASSWORD}
+      - REDIS_KEY_PEM=${REDIS_KEY_PEM}
+      - REDIS_CERT_PEM=${REDIS_CERT_PEM}
+      - REDIS_CA_PEM=${REDIS_CA_PEM}
+      - POSTGRES_PASSWORD_URLENCODED=${POSTGRES_PASSWORD_URLENCODED}
+
+configMapGenerator:
+  - name: env-config
+    namespace: app
+    literals:
+      - AWS_REGION=${AWS_REGION}
+      - AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL}
+      - POSTGRES_DB=${POSTGRES_DB}
+
+replacements:
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.AWS_ACCESS_KEY_ID
+    targets:
+      - select:
+          kind: Secret
+          name: .*
+        fieldPaths:
+          - stringData.AWS_ACCESS_KEY_ID
+          - stringData.aws_access_key
+          - stringData.aws_access_key.txt
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.AWS_SECRET_ACCESS_KEY
+    targets:
+      - select:
+          kind: Secret
+          name: .*
+        fieldPaths:
+          - stringData.AWS_SECRET_ACCESS_KEY
+          - stringData.aws_secret_key
+          - stringData.aws_secret_key.txt
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.POSTGRES_USER
+    targets:
+      - select:
+          kind: Secret
+          name: .*postgres.*
+        fieldPaths:
+          - stringData.POSTGRES_USER
+          - stringData.postgres_user.txt
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.POSTGRES_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: .*postgres.*
+        fieldPaths:
+          - stringData.POSTGRES_PASSWORD
+          - stringData.postgres_password.txt
+          - stringData.postgres_password
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.POSTGRES_PASSWORD
+          - stringData.DB_PASSWORD
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*postgres-exporter.*
+        fieldPaths:
+          - stringData.DATA_SOURCE_NAME
+        options:
+          create: true
+          fieldPath: data.DATA_SOURCE_NAME
+
+  - source:
+      kind: ConfigMap
+      name: env-config
+      fieldPath: data.POSTGRES_DB
+    targets:
+      - select:
+          kind: Secret
+          name: .*postgres.*
+        fieldPaths:
+          - stringData.POSTGRES_DB
+          - stringData.postgres_db.txt
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.OPENSEARCH_ADMIN_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: .*opensearch.*
+        fieldPaths:
+          - stringData.OPENSEARCH_ADMIN_PASSWORD
+          - stringData.opensearch_password.txt
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*nlp-service.*
+        fieldPaths:
+          - stringData.OPENSEARCH_ADMIN_PASSWORD
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.OPENSEARCH_ADMIN_PASSWORD
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*localstack.*
+        fieldPaths:
+          - stringData.OPENSEARCH_ADMIN_PASSWORD
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.NLP_GRPC_API_KEY
+    targets:
+      - select:
+          kind: Secret
+          name: .*nlp-service.*
+        fieldPaths:
+          - stringData.NLP_GRPC_API_KEY
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.NLP_GRPC_API_KEY
+          - stringData.nlp_grpc_api_key
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*secrets-json.*
+        fieldPaths:
+          - stringData.secrets.json
+        options:
+          create: true
+          fieldPath: data.NLP_GRPC_API_KEY_JSON
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.JWT_SECRET
+    targets:
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.SECRET_KEY
+          - stringData.JWT_SECRET
+          - stringData.jwt_secret
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*secrets-json.*
+        fieldPaths:
+          - stringData.secrets.json
+        options:
+          create: true
+          fieldPath: data.JWT_SECRET_JSON
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.SMTP_USERNAME
+    targets:
+      - select:
+          kind: Secret
+          name: .*dlq-processor.*
+        fieldPaths:
+          - stringData.SMTP_USERNAME
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.SMTP_USERNAME
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.SMTP_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: .*dlq-processor.*
+        fieldPaths:
+          - stringData.SMTP_PASSWORD
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.SMTP_PASSWORD
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.FROM_EMAIL
+    targets:
+      - select:
+          kind: Secret
+          name: .*dlq-processor.*
+        fieldPaths:
+          - stringData.FROM_EMAIL
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.FROM_EMAIL
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.NOTIFICATION_EMAIL
+    targets:
+      - select:
+          kind: Secret
+          name: .*dlq-processor.*
+        fieldPaths:
+          - stringData.NOTIFICATION_EMAIL
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.REDIS_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: .*redis.*
+        fieldPaths:
+          - stringData.REDIS_PASSWORD
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*reminder-app.*
+        fieldPaths:
+          - stringData.REDIS_PASSWORD
+          - stringData.redis_password
+        options:
+          create: true
+      - select:
+          kind: Secret
+          name: .*redis-exporter.*
+        fieldPaths:
+          - stringData.REDIS_PASSWORD
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.LOCALSTACK_API_KEY
+    targets:
+      - select:
+          kind: Secret
+          name: .*localstack.*
+        fieldPaths:
+          - stringData.LOCALSTACK_API_KEY
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.GRAFANA_USER
+    targets:
+      - select:
+          kind: Secret
+          name: .*grafana.*
+        fieldPaths:
+          - stringData.GF_SECURITY_ADMIN_USER
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.GRAFANA_PASSWORD
+    targets:
+      - select:
+          kind: Secret
+          name: .*grafana.*
+        fieldPaths:
+          - stringData.GF_SECURITY_ADMIN_PASSWORD
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.REDIS_KEY_PEM
+    targets:
+      - select:
+          kind: Secret
+          name: .*redis-certs.*
+        fieldPaths:
+          - stringData.redis-key.pem
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.REDIS_CERT_PEM
+    targets:
+      - select:
+          kind: Secret
+          name: .*redis-certs.*
+        fieldPaths:
+          - stringData.redis.pem
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.REDIS_CA_PEM
+    targets:
+      - select:
+          kind: Secret
+          name: .*redis-certs.*
+        fieldPaths:
+          - stringData.root-ca.pem
+        options:
+          create: true
+
+  - source:
+      kind: ConfigMap
+      name: env-config
+      fieldPath: data.AWS_REGION
+    targets:
+      - select:
+          kind: Secret
+          name: .*cloudwatch-exporter.*
+        fieldPaths:
+          - stringData.AWS_REGION
+        options:
+          create: true
+
+  - source:
+      kind: ConfigMap
+      name: env-config
+      fieldPath: data.AWS_ENDPOINT_URL
+    targets:
+      - select:
+          kind: Secret
+          name: .*cloudwatch-exporter.*
+        fieldPaths:
+          - stringData.AWS_ENDPOINT_URL
+        options:
+          create: true

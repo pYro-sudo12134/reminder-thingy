@@ -1,0 +1,8 @@
+apiVersion: builtin
+kind: ConfigMapGenerator
+metadata:
+  name: env-vars-transformers
+literals:
+  - NLP_GRPC_API_KEY_JSON='"'${NLP_GRPC_API_KEY}'"'
+  - JWT_SECRET_JSON='"'${JWT_SECRET}'"'
+  - DATA_SOURCE_NAME="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD_URLENCODED}@postgres.database:5432/${POSTGRES_DB}?sslmode=disable"
