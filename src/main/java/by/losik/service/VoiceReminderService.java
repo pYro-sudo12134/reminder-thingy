@@ -201,7 +201,7 @@ public class VoiceReminderService {
                                                      LocalDateTime scheduledTime,
                                                      String reminderTime,
                                                      ReminderRecord.ReminderStatus status,
-                                                     String userEmail) {  // Добавить параметр
+                                                     String userEmail) {
 
         log.info("Updating reminder: {}", reminderId);
 
