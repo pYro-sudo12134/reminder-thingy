@@ -10,11 +10,11 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}Генерация секретов для Kubernetes${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-mkdir -p k3s/kustomize/overlays/dev
-mkdir -p k3s/kustomize/overlays/prod
-mkdir -p k3s/kustomize/overlays/staging
-mkdir -p k3s/kustomize/components/secrets-from-env
-mkdir -p k3s/kustomize/base/secrets
+mkdir -p overlays/dev
+mkdir -p overlays/prod
+mkdir -p overlays/staging
+mkdir -p components/secrets-from-env
+mkdir -p base/secrets
 
 generate_secret() {
     openssl rand -base64 32 | tr -d '\n' | tr -d '=' | tr '/+' '_-'
@@ -22,7 +22,7 @@ generate_secret() {
 
 create_env_file() {
     local env=$1
-    local file="k3s/kustomize/overlays/${env}/.env.${env}"
+    local file="overlays/${env}/.env.${env}"
 
     cat > "$file" << EOF
 # AWS/LocalStack
@@ -53,7 +53,7 @@ REDIS_USE_SSL=true
 # JWT
 JWT_SECRET=${JWT_SECRET:-$(generate_secret)}
 
-# SMTP (для dev используем тестовые значения)
+# SMTP
 if [ "$env" = "prod" ]; then
     SMTP_USERNAME=${SMTP_USERNAME:-}
     SMTP_PASSWORD=${SMTP_PASSWORD:-}
@@ -84,28 +84,28 @@ create_env_file "prod"
 echo -e "${YELLOW}Копирование сертификатов...${NC}"
 
 for env in dev staging prod; do
-    mkdir -p k3s/kustomize/overlays/${env}/opensearch_certs
-    mkdir -p k3s/kustomize/overlays/${env}/redis/certs
-    mkdir -p k3s/kustomize/overlays/${env}/postgres-init
-    mkdir -p k3s/kustomize/overlays/${env}/src/main/resources/db/migration
-    mkdir -p k3s/kustomize/overlays/${env}/redis/config
+    mkdir -p overlays/${env}/opensearch_certs
+    mkdir -p overlays/${env}/redis/certs
+    mkdir -p overlays/${env}/postgres-init
+    mkdir -p overlays/${env}/src/main/resources/db/migration
+    mkdir -p overlays/${env}/redis/config
 
-    [ -d "k3s/opensearch_certs" ] && cp -r k3s/opensearch_certs/* k3s/kustomize/overlays/${env}/opensearch_certs/ 2>/dev/null || true
-    [ -d "k3s/redis/certs" ] && cp -r k3s/redis/certs/* k3s/kustomize/overlays/${env}/redis/certs/ 2>/dev/null || true
-
-    [ -d "k3s/postgres-init" ] && cp -r k3s/postgres-init/* k3s/kustomize/overlays/${env}/postgres-init/ 2>/dev/null || true
-    [ -d "k3s/src/main/resources/db/migration" ] && cp -r k3s/src/main/resources/db/migration/* k3s/kustomize/overlays/${env}/src/main/resources/db/migration/ 2>/dev/null || true
-
-    [ -d "k3s/redis/config" ] && cp -r k3s/redis/config/* k3s/kustomize/overlays/${env}/redis/config/ 2>/dev/null || true
+    [ -d "../opensearch_certs" ] && cp -r ../opensearch_certs/* overlays/${env}/opensearch_certs/ 2>/dev/null || true
+    [ -d "../redis/certs" ] && cp -r ../redis/certs/* overlays/${env}/redis/certs/ 2>/dev/null || true
+    [ -d "../postgres-init" ] && cp -r ../postgres-init/* overlays/${env}/postgres-init/ 2>/dev/null || true
+    [ -d "../src/main/resources/db/migration" ] && cp -r ../src/main/resources/db/migration/* overlays/${env}/src/main/resources/db/migration/ 2>/dev/null || true
+    [ -d "../redis/config" ] && cp -r ../redis/config/* overlays/${env}/redis/config/ 2>/dev/null || true
 done
 
 echo -e "${YELLOW}Создание kustomization файлов с подстановкой переменных...${NC}"
 
 for env in dev staging prod; do
     (
-        export $(grep -v '^#' k3s/kustomize/overlays/${env}/.env.${env} | xargs)
+        set -a
+        source overlays/${env}/.env.${env}
+        set +a
 
-        cat > k3s/kustomize/overlays/${env}/kustomization.yaml << EOF
+        cat > overlays/${env}/kustomization.yaml << EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -171,10 +171,10 @@ generatorOptions:
 EOF
     )
 
-    echo -e "${GREEN}Created k3s/kustomize/overlays/${env}/kustomization.yaml${NC}"
+    echo -e "${GREEN}Created overlays/${env}/kustomization.yaml${NC}"
 done
 
-cat > k3s/kustomize/apply.sh << 'EOF'
+cat > apply.sh << 'EOF'
 #!/bin/bash
 
 ENV=${1:-dev}
@@ -183,26 +183,28 @@ NAMESPACE=${2:-app}
 echo "Applying configuration for environment: $ENV"
 
 if [ -f "overlays/$ENV/.env.$ENV" ]; then
-    export $(grep -v '^#' overlays/$ENV/.env.$ENV | xargs)
+    set -a
+    source "overlays/$ENV/.env.$ENV"
+    set +a
 fi
 
-kubectl apply -k overlays/$ENV
+kubectl apply -k "overlays/$ENV"
 
 if [ $? -eq 0 ]; then
     echo "Successfully applied $ENV configuration"
 
     echo ""
     echo "Created secrets:"
-    kubectl get secrets -n $NAMESPACE | grep -E 'secrets|tls|certs'
+    kubectl get secrets -n "$NAMESPACE" | grep -E 'secrets|tls|certs' || true
 else
     echo "Failed to apply configuration"
     exit 1
 fi
 EOF
 
-chmod +x k3s/kustomize/apply.sh
+chmod +x apply.sh
 
-cat > k3s/kustomize/README.md << 'EOF'
+cat > README.md << 'EOF'
 # Kustomize Configuration for Voice Reminder
 
 ## Structure
@@ -215,10 +217,9 @@ cat > k3s/kustomize/README.md << 'EOF'
 
 ### Подготовка секретов
 ```bash
-cd k3s
-./generate-secrets.sh  # генерирует сертификаты и пароли
-cd kustomize
-./scripts/generate-secrets-k8s.sh  # создает kustomize файлы
+cd /vagrant/kustomize
+./scripts/generate-secrets-k3s.sh  # создает kustomize файлы
+kubectl apply -k overlays/dev
 EOF
 
 urlencode() {
@@ -237,7 +238,3 @@ urlencode() {
     done
     echo "${encoded}"
 }
-
-POSTGRES_PASSWORD=$(cat secrets/postgres_password.txt)
-POSTGRES_PASSWORD_URLENCODED=$(urlencode "$POSTGRES_PASSWORD")
-echo "POSTGRES_PASSWORD_URLENCODED=$POSTGRES_PASSWORD_URLENCODED" >> .env

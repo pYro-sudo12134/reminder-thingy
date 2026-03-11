@@ -12,7 +12,7 @@ components:
 configMapGenerator:
   - name: app-env
     literals:
-      - ENVIRONMENT=dev
+      - ENVIRONMENT=staging
       - LOG_LEVEL=INFO
       - AWS_REGION=us-east-1
       - AWS_ENDPOINT_URL=http://localstack.cloud.svc.cluster.local:4566
@@ -32,16 +32,14 @@ configMapGenerator:
       - NOTIFICATION_EMAIL=losik2006@gmail.com
 
 secretGenerator:
-  - name: opensearch-tls-certs
+  - name: tls-certs
     files:
-      - root-ca.pem=opensearch_certs/root-ca.pem
-      - node.pem=opensearch_certs/node.pem
-      - node-key.pem=opensearch_certs/node-key.pem
-  - name: redis-tls-certs
-    files:
-      - root-ca.pem=redis/certs/root-ca.pem
-      - redis.pem=redis/certs/redis.pem
-      - redis-key.pem=redis/certs/redis-key.pem
+      - opensearch_certs/root-ca.pem
+      - opensearch_certs/node.pem
+      - opensearch_certs/node-key.pem
+      - redis/certs/root-ca.pem
+      - redis/certs/redis.pem
+      - redis/certs/redis-key.pem
   - name: postgres-init-scripts
     files:
       - postgres-init/01-create-schema.sql
@@ -58,7 +56,7 @@ generatorOptions:
   disableNameSuffixHash: true
   labels:
     type: generated
-    environment: dev
+    environment: staging
   annotations:
     note: generated-by-kustomize
-    generated-at: 2026-03-11T21:22:19+00:00
+    generated-at: 2026-03-11T21:14:17+00:00

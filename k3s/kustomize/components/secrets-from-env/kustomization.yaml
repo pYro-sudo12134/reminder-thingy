@@ -107,7 +107,6 @@ replacements:
           - stringData.DATA_SOURCE_NAME
         options:
           create: true
-          fieldPath: data.DATA_SOURCE_NAME
 
   - source:
       kind: ConfigMap
@@ -185,7 +184,6 @@ replacements:
           - stringData.secrets.json
         options:
           create: true
-          fieldPath: data.NLP_GRPC_API_KEY_JSON
 
   - source:
       kind: Secret
@@ -208,7 +206,6 @@ replacements:
           - stringData.secrets.json
         options:
           create: true
-          fieldPath: data.JWT_SECRET_JSON
 
   - source:
       kind: Secret

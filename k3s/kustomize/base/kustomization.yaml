@@ -3,16 +3,6 @@ kind: Kustomization
 
 resources:
   - secrets/
-  - ../../app/dlq-processor/
-  - ../../app/nlp-service/
-  - ../../app/ollama/
-  - ../../app/reminder-app/
-  - ../../cloud/localstack/
-  - ../../database/postgres/
-  - ../../database/redis/
-  - ../../monitoring/
-  - ../../rbac/
-  - ../../storage/
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize
