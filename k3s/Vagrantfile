@@ -79,24 +79,20 @@ Vagrant.configure("2") do |config|
     end
 
     agent.vm.provision "shell", inline: <<-SHELL
-      # 1. ОТКЛЮЧАЕМ FIREWALL
       systemctl stop firewalld 2>/dev/null || true
       systemctl disable firewalld 2>/dev/null || true
       systemctl stop iptables 2>/dev/null || true
       systemctl disable iptables 2>/dev/null || true
 
-      # 2. БАЗОВЫЕ ПАКЕТЫ
       yum update -y
       yum install -y curl wget
 
-      # 3. ЖДЕМ ТОКЕН
       while [ ! -f /vagrant/tokens/node-token ]; do
         echo "Waiting for node-token..."
         sleep 5
       done
 
       TOKEN=$(cat /vagrant/tokens/node-token)
-
       curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.10:6443 K3S_TOKEN=$TOKEN sh -
 
       echo "Agent1 setup complete!"
@@ -135,17 +131,42 @@ Vagrant.configure("2") do |config|
   end
 
   config.vm.provision "shell", after: :all, inline: <<-SHELL
-    # Ждем пока все ноды поднимутся
-    sleep 60
+    echo "Waiting for all nodes to be ready..."
+    sleep 90
+
+    echo "Installing Traefik CRDs..."
+    kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+
+    echo "Installing OpenEBS ZFS CSI..."
+    helm repo add openebs https://openebs.github.io/charts
+    helm repo update
+    helm install openebs openebs/openebs \
+      --namespace openebs --create-namespace \
+      --set zfs-localpv.enabled=true \
+      --set localpv.enabled=false \
+      --set jiva.enabled=false \
+      --set cstor.enabled=false \
+      --set mayastor.enabled=false
+
+    echo "Waiting for OpenEBS to be ready..."
+    kubectl wait --for=condition=ready pod -l role=openebs-zfs -n openebs --timeout=300s 2>/dev/null || true
 
     kubectl label node k3s-server node-role.kubernetes.io/storage=true --overwrite
     kubectl label node k3s-agent1 node-role.kubernetes.io/gpu=true node-role.kubernetes.io/ml=true --overwrite
     kubectl label node k3s-agent2 node-role.kubernetes.io/app=true --overwrite
 
-    # Проверяем ноды
-    kubectl get nodes --show-labels
+    echo "Теперь можно применять манифесты:"
+    echo "  cd /vagrant/k3s"
+    echo "  kubectl apply -f namespaces.yaml"
+    echo "  kubectl apply -f storage/"
+    echo "  kubectl apply -f database/"
+    echo "  kubectl apply -f cloud/"
+    echo "  kubectl apply -f app/"
+    echo "  kubectl apply -f monitoring/"
+    echo "  kubectl apply -f rbac/"
+    echo ""
 
-    echo "All nodes labeled successfully!"
+    kubectl get nodes --show-labels
   SHELL
 
   config.vm.synced_folder ".", "/vagrant", type: "rsync"
