@@ -366,7 +366,7 @@ NLP_SERVICE_HOST=nlp-service
 NLP_SERVICE_PORT=50051
 NLP_GRPC_API_KEY=$(cat secrets/nlp_grpc_key.txt)
 GRPC_USE_TLS=true
-NLP_MODE=ollama-rag  # Изменили с llm-rag на ollama-rag
+NLP_MODE=ollama-rag  # llm-rag или ollama-rag
 
 # Ollama Configuration
 OLLAMA_HOST=ollama

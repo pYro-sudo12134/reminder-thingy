@@ -26,14 +26,17 @@ k3s/.vagrant
 **/*.p12
 **/*.key
 **/*.crt
+**/*.conf
+**/*.sql
+k3s/tokens
 
 .env
 *.env
 .env.*
 !.env.example
 
-/vagrant/
-/tokens/
+**/vagrant/
+**/tokens/
 *.box
 
 k3s.yaml

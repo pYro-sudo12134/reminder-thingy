@@ -1,5 +1,6 @@
 Vagrant.configure("2") do |config|
-  config.vm.box = "amazonlinux2"
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.boot_timeout = 600
   config.vm.provider "virtualbox" do |vb|
     vb.cpus = 2
   end
@@ -7,13 +8,13 @@ Vagrant.configure("2") do |config|
   config.vm.define "k3s-server" do |server|
     server.vm.hostname = "k3s-server"
     server.vm.network "private_network", ip: "192.168.56.10"
-    
+
     server.vm.network "forwarded_port", guest: 6443, host: 6443
     server.vm.network "forwarded_port", guest: 80, host: 8081
     server.vm.network "forwarded_port", guest: 443, host: 8443
     server.vm.network "forwarded_port", guest: 9090, host: 9091
     server.vm.network "forwarded_port", guest: 3000, host: 3001
-	  server.vm.network "forwarded_port", guest: 8090, host: 8091
+    server.vm.network "forwarded_port", guest: 8090, host: 8091
 
     server.vm.provider "virtualbox" do |vb|
       vb.memory = "2048"
@@ -23,48 +24,57 @@ Vagrant.configure("2") do |config|
     server.vm.disk :disk, size: "50GB", name: "zfs_pool"
 
     server.vm.provision "shell", inline: <<-SHELL
-      systemctl stop firewalld 2>/dev/null || true
-      systemctl disable firewalld 2>/dev/null || true
-      systemctl stop iptables 2>/dev/null || true
-      systemctl disable iptables 2>/dev/null || true
+        ufw disable 2>/dev/null || true
 
-      amazon-linux-extras install -y epel
-      yum install -y zfs
-      modprobe zfs
+        apt-get update
+        apt-get install -y curl wget git
 
-      zpool create -f \
-          -o ashift=12 \
-          -O atime=off \
-          -O compression=lz4 \
-          -O xattr=sa \
-          data-pool /dev/sdb
+        apt-get install -y zfsutils-linux
+        modprobe zfs || true
 
-      zfs create -o mountpoint=/exports/nlp_models data-pool/nlp-models
-      zfs create -o mountpoint=/exports/nlp_data data-pool/nlp-data
-      zfs create -o mountpoint=/exports/localstack_data data-pool/localstack
-      zfs create -o mountpoint=/exports/postgres_backup data-pool/postgres-backup
-      zfs create -o mountpoint=/exports/app_static data-pool/app-static
+        zpool create -f \
+            -o ashift=12 \
+            -O atime=off \
+            -O compression=lz4 \
+            -O xattr=sa \
+            data-pool /dev/sdb || true
 
-      chmod 777 /exports
-      curl -sfL https://get.k3s.io | sh -
+        mkdir -p /exports/{nlp_models,nlp_data,localstack_data,postgres_backup,app_static}
 
-      mkdir -p /vagrant/tokens
-      cp /var/lib/rancher/k3s/server/node-token /vagrant/tokens/node-token
-      chmod 644 /vagrant/tokens/node-token
+        zfs create -o mountpoint=/exports/nlp_models data-pool/nlp-models 2>/dev/null || true
+        zfs create -o mountpoint=/exports/nlp_data data-pool/nlp-data 2>/dev/null || true
+        zfs create -o mountpoint=/exports/localstack_data data-pool/localstack 2>/dev/null || true
+        zfs create -o mountpoint=/exports/postgres_backup data-pool/postgres-backup 2>/dev/null || true
+        zfs create -o mountpoint=/exports/app_static data-pool/app-static 2>/dev/null || true
 
-      mkdir -p /home/ec2-user/.kube
-      cp /etc/rancher/k3s/k3s.yaml /home/ec2-user/.kube/config
-      chown -R ec2-user:ec2-user /home/ec2-user/.kube
-      echo "export KUBECONFIG=/home/ec2-user/.kube/config" >> /home/ec2-user/.bashrc
-      echo "alias k='kubectl'" >> /home/ec2-user/.bashrc
+        chmod 777 /exports
+        chmod 777 /exports/*
 
-      curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
-      chmod 700 get_helm.sh
-      ./get_helm.sh
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--disable=traefik" sh -
 
-      kubectl label node k3s-server node-role.kubernetes.io/storage=true --overwrite
+        echo "Waiting for k3s to be ready..."
+        sleep 30
 
-      echo "Server setup complete!"
+        mkdir -p /vagrant/tokens
+        while [ ! -f /var/lib/rancher/k3s/server/node-token ]; do
+        echo "Waiting for node-token..."
+        sleep 5
+        done
+        cp /var/lib/rancher/k3s/server/node-token /vagrant/tokens/node-token
+        chmod 644 /vagrant/tokens/node-token
+
+        mkdir -p /home/vagrant/.kube
+        cp /etc/rancher/k3s/k3s.yaml /home/vagrant/.kube/config
+        chown -R vagrant:vagrant /home/vagrant/.kube
+        echo "export KUBECONFIG=/home/vagrant/.kube/config" >> /home/vagrant/.bashrc
+        echo "export PATH=\$PATH:/usr/local/bin" >> /home/vagrant/.bashrc
+        echo "alias k='kubectl'" >> /home/vagrant/.bashrc
+
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+
+        echo "Server setup complete!"
     SHELL
   end
 
@@ -73,29 +83,29 @@ Vagrant.configure("2") do |config|
     agent.vm.network "private_network", ip: "192.168.56.11"
 
     agent.vm.provider "virtualbox" do |vb|
-		  vb.memory = "4096"
-		  vb.cpus = 2
-		  vb.name = "k3s-agent1"
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "k3s-agent1"
     end
 
     agent.vm.provision "shell", inline: <<-SHELL
-      systemctl stop firewalld 2>/dev/null || true
-      systemctl disable firewalld 2>/dev/null || true
-      systemctl stop iptables 2>/dev/null || true
-      systemctl disable iptables 2>/dev/null || true
+        # Отключаем firewall
+        ufw disable 2>/dev/null || true
 
-      yum update -y
-      yum install -y curl wget
+        apt-get update
+        apt-get install -y curl wget
 
-      while [ ! -f /vagrant/tokens/node-token ]; do
+        while [ ! -f /vagrant/tokens/node-token ]; do
         echo "Waiting for node-token..."
         sleep 5
-      done
+        done
 
-      TOKEN=$(cat /vagrant/tokens/node-token)
-      curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.10:6443 K3S_TOKEN=$TOKEN sh -
+        TOKEN=$(cat /vagrant/tokens/node-token)
+        curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.10:6443 K3S_TOKEN=$TOKEN sh -
 
-      echo "Agent1 setup complete!"
+        sleep 10
+
+        echo "Agent1 setup complete!"
     SHELL
   end
 
@@ -104,72 +114,95 @@ Vagrant.configure("2") do |config|
     agent.vm.network "private_network", ip: "192.168.56.12"
 
     agent.vm.provider "virtualbox" do |vb|
-		  vb.memory = "2048"
-		  vb.cpus = 1
-		  vb.name = "k3s-agent2"
+      vb.memory = "2048"
+      vb.cpus = 1
+      vb.name = "k3s-agent2"
     end
 
     agent.vm.provision "shell", inline: <<-SHELL
-      systemctl stop firewalld 2>/dev/null || true
-      systemctl disable firewalld 2>/dev/null || true
-      systemctl stop iptables 2>/dev/null || true
-      systemctl disable iptables 2>/dev/null || true
+        # Отключаем firewall
+        ufw disable 2>/dev/null || true
 
-      yum update -y
-      yum install -y curl wget
+        apt-get update
+        apt-get install -y curl wget
 
-      while [ ! -f /vagrant/tokens/node-token ]; do
+        while [ ! -f /vagrant/tokens/node-token ]; do
         echo "Waiting for node-token..."
         sleep 5
-      done
+        done
 
-      TOKEN=$(cat /vagrant/tokens/node-token)
-      curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.10:6443 K3S_TOKEN=$TOKEN sh -
+        TOKEN=$(cat /vagrant/tokens/node-token)
+        curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.10:6443 K3S_TOKEN=$TOKEN sh -
 
-      echo "Agent2 setup complete!"
+        # Добавляем небольшую задержку для уверенности
+        sleep 10
+
+        echo "Agent2 setup complete!"
     SHELL
   end
 
-  config.vm.provision "shell", after: :all, inline: <<-SHELL
-    echo "Waiting for all nodes to be ready..."
-    sleep 90
+    config.vm.provision "shell", after: :all, inline: <<-SHELL
+      if [ "$(hostname)" = "k3s-server" ]; then
+        echo "Waiting for all nodes to be ready..."
+        sleep 90
 
-    echo "Installing Traefik CRDs..."
-    kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+        export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+        export PATH=$PATH:/usr/local/bin
 
-    echo "Installing OpenEBS ZFS CSI..."
-    helm repo add openebs https://openebs.github.io/charts
-    helm repo update
-    helm install openebs openebs/openebs \
-      --namespace openebs --create-namespace \
-      --set zfs-localpv.enabled=true \
-      --set localpv.enabled=false \
-      --set jiva.enabled=false \
-      --set cstor.enabled=false \
-      --set mayastor.enabled=false
+        while ! kubectl get nodes &>/dev/null; do
+          echo "Waiting for kubectl to be ready..."
+          sleep 5
+        done
 
-    echo "Waiting for OpenEBS to be ready..."
-    kubectl wait --for=condition=ready pod -l role=openebs-zfs -n openebs --timeout=300s 2>/dev/null || true
+        kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml || true
 
-    kubectl label node k3s-server node-role.kubernetes.io/storage=true --overwrite
-    kubectl label node k3s-agent1 node-role.kubernetes.io/gpu=true node-role.kubernetes.io/ml=true --overwrite
-    kubectl label node k3s-agent2 node-role.kubernetes.io/app=true --overwrite
+        helm repo add openebs https://openebs.github.io/charts || true
+        helm repo update || true
+        helm install openebs openebs/openebs \
+          --namespace openebs --create-namespace \
+          --set zfs-localpv.enabled=true \
+          --set zfs-localpv.nodeSelector."kubernetes\.io/hostname"=k3s-server \
+          --set localpv.enabled=false \
+          --set jiva.enabled=false \
+          --set cstor.enabled=false \
+          --set mayastor.enabled=false \
+          --set ndm.enabled=false || true
 
-    echo "Теперь можно применять манифесты:"
-    echo "  cd /vagrant/k3s"
-    echo "  kubectl apply -f network-policies.yaml"
-    echo "  kubectl apply -f namespaces.yaml"
-    echo "  kubectl apply -f storage/"
-    echo "  kubectl apply -f database/"
-    echo "  kubectl apply -f cloud/"
-    echo "  kubectl apply -f app/"
-    echo "  kubectl apply -f monitoring/"
-    echo "  kubectl apply -f rbac/"
-    echo ""
+        sleep 30
 
-    kubectl get nodes --show-labels
-  SHELL
+        kubectl patch statefulset -n openebs openebs-zfs-localpv-controller --type=json \
+          -p='[{"op": "add", "path": "/spec/template/spec/nodeSelector", "value": {"kubernetes.io/hostname": "k3s-server"}}]' 2>/dev/null || true
 
-  config.vm.synced_folder ".", "/vagrant", type: "rsync"
+        kubectl delete pod -n openebs -l app=openebs-zfs-controller 2>/dev/null || true
+
+        kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+        kubectl apply -f https://raw.githubusercontent.com/traefik/traefik/v3.0/docs/content/reference/dynamic-configuration/kubernetes-crd-rbac.yml
+
+        helm repo add traefik https://traefik.github.io/charts
+        helm install traefik traefik/traefik \
+          --namespace kube-system \
+          --set ports.web.port=80 \
+          --set ports.websecure.port=443
+
+        sleep 60
+
+        kubectl label node k3s-server node-role.kubernetes.io/storage=true --overwrite 2>/dev/null || true
+        kubectl label node k3s-agent1 node-role.kubernetes.io/gpu=true node-role.kubernetes.io/ml=true --overwrite 2>/dev/null || true
+        kubectl label node k3s-agent2 node-role.kubernetes.io/app=true --overwrite 2>/dev/null || true
+
+        echo ""
+        echo "Ноды:"
+        kubectl get nodes --show-labels
+
+        echo ""
+        echo "OpenEBS поды:"
+        kubectl get pods -n openebs
+      else
+        echo "Skipping cluster setup on agent node"
+      fi
+    SHELL
+
+  # Используем обычную shared folder вместо rsync
+  config.vm.synced_folder ".", "/vagrant"
   config.ssh.insert_key = false
 end
