@@ -47,6 +47,7 @@ spec:
           operator: "Equal"
           value: "true"
           effect: "NoSchedule"
+      serviceAccountName: postgres-sa
       containers:
         - name: postgres
           image: postgres:15-alpine

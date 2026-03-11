@@ -27,6 +27,7 @@ spec:
                     operator: In
                     values:
                       - k3s-server
+      serviceAccountName: grafana-sa
       containers:
         - name: grafana
           image: grafana/grafana:latest

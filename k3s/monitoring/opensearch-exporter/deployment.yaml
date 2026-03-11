@@ -17,6 +17,7 @@ spec:
         app: opensearch-exporter
         component: monitoring
     spec:
+      serviceAccountName: opensearch-exporter-sa
       containers:
         - name: opensearch-exporter
           image: quay.io/prometheuscommunity/elasticsearch-exporter:latest

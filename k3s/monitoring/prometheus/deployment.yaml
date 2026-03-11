@@ -27,7 +27,7 @@ spec:
                     operator: In
                     values:
                       - k3s-server
-
+      serviceAccountName: prometheus-sa
       containers:
         - name: prometheus
           image: prom/prometheus:latest

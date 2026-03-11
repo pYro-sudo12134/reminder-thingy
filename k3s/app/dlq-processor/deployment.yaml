@@ -41,6 +41,7 @@ spec:
           operator: "Equal"
           value: "true"
           effect: "NoSchedule"
+      serviceAccountName: dlq-processor-sa
       containers:
         - name: dlq-processor
           image: pyrodocker1/reminder-dlq-processor:1.0

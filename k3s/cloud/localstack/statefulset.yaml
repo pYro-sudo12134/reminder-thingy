@@ -27,6 +27,7 @@ spec:
                     operator: In
                     values:
                       - k3s-server
+      serviceAccountName: localstack-sa
       containers:
         - name: localstack
           image: localstack/localstack:4.12

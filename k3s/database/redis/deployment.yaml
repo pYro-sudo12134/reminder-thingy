@@ -37,6 +37,7 @@ spec:
                     operator: In
                     values:
                       - "true"
+      serviceAccountName: redis-sa
       containers:
         - name: redis
           image: redis:7-alpine

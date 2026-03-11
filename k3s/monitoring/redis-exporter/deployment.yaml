@@ -17,6 +17,7 @@ spec:
         app: redis-exporter
         component: monitoring
     spec:
+      serviceAccountName: redis-exporter-sa
       containers:
         - name: redis-exporter
           image: oliver006/redis_exporter:latest

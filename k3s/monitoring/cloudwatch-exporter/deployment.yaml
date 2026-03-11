@@ -17,6 +17,7 @@ spec:
         app: cloudwatch-exporter
         component: monitoring
     spec:
+      serviceAccountName: cloudwatch-exporter-sa
       containers:
         - name: cloudwatch-exporter
           image: pyrodocker1/reminder-cloudwatch-exporter:1.0

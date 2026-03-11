@@ -16,6 +16,7 @@ spec:
         app: node-exporter
         component: monitoring
     spec:
+      serviceAccountName: node-exporter-sa
       hostPID: true
       hostNetwork: true
       containers:
