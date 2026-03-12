@@ -26,10 +26,22 @@ spec:
                     operator: In
                     values:
                       - k3s-agent1
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: ollama-sa
       containers:
         - name: ollama
           image: ollama/ollama:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ "ALL" ]
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 11434
@@ -45,11 +57,11 @@ spec:
               mountPath: /root/.ollama
           resources:
             requests:
-              memory: "4Gi"
+              memory: "512Mi"
               cpu: "1"
             limits:
-              memory: "8Gi"
-              cpu: "2"
+              memory: "1Gi"
+              cpu: "1"
           livenessProbe:
             exec:
               command:

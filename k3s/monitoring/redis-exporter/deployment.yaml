@@ -30,7 +30,7 @@ spec:
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: redis-secrets
+                  name: redis-exporter-secrets
                   key: REDIS_PASSWORD
           ports:
             - containerPort: 9121

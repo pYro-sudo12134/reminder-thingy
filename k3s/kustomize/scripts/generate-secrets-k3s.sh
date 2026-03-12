@@ -35,6 +35,12 @@ AWS_ENDPOINT_URL=http://localstack.cloud.svc.cluster.local:4566
 OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD:-$(generate_secret)}
 OPENSEARCH_USER=admin
 
+OPENSEARCH_ROOT_CA=$(cat ../opensearch_certs/root-ca.pem | base64 -w 0)
+OPENSEARCH_NODE_CERT=$(cat ../opensearch_certs/node.pem | base64 -w 0)
+OPENSEARCH_NODE_KEY=$(cat ../opensearch_certs/node-key.pem | base64 -w 0)
+OPENSEARCH_ADMIN_CERT=$(cat ../opensearch_certs/admin.pem | base64 -w 0)
+OPENSEARCH_ADMIN_KEY=$(cat ../opensearch_certs/admin-key.pem | base64 -w 0)
+
 # NLP Service
 NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY:-$(generate_secret)}
 NLP_MODE=ollama-rag
@@ -52,19 +58,31 @@ REDIS_USE_SSL=true
 
 # JWT
 JWT_SECRET=${JWT_SECRET:-$(generate_secret)}
+EOF
 
-# SMTP
-if [ "$env" = "prod" ]; then
-    SMTP_USERNAME=${SMTP_USERNAME:-}
-    SMTP_PASSWORD=${SMTP_PASSWORD:-}
-    FROM_EMAIL=${FROM_EMAIL:-}
-    NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-}
-else
-    SMTP_USERNAME=losik2006@gmail.com
-    SMTP_PASSWORD=test
-    FROM_EMAIL=losik2006@gmail.com
-    NOTIFICATION_EMAIL=losik2006@gmail.com
-fi
+    if [ "$env" = "prod" ]; then
+        cat >> "$file" << EOF
+# SMTP Production
+SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+SMTP_PORT=${SMTP_PORT:-587}
+SMTP_USERNAME=${SMTP_USERNAME:-}
+SMTP_PASSWORD=${SMTP_PASSWORD:-}
+FROM_EMAIL=${FROM_EMAIL:-}
+NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-}
+EOF
+    else
+        cat >> "$file" << EOF
+# SMTP Development/Staging
+SMTP_HOST=${SMTP_HOST:-mailhog}
+SMTP_PORT=${SMTP_PORT:-1025}
+SMTP_USERNAME=${SMTP_USERNAME:-test}
+SMTP_PASSWORD=${SMTP_PASSWORD:-test}
+FROM_EMAIL=${FROM_EMAIL:-noreply@example.com}
+NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL:-admin@example.com}
+EOF
+    fi
+
+    cat >> "$file" << EOF
 
 # Grafana
 GRAFANA_USER=admin
@@ -117,6 +135,8 @@ resources:
 components:
   - ../../components/secrets-from-env
   - ../../components/secrets-from-env/database-secrets-component.yaml
+  - ../../components/secrets-from-env/cloud-secrets-component.yaml
+  - ../../components/secrets-from-env/monitoring-secrets-component.yaml
 
 configMapGenerator:
   - name: app-env
@@ -136,6 +156,8 @@ configMapGenerator:
       - REDIS_HOST=${REDIS_HOST:-redis}
       - REDIS_USE_SSL=${REDIS_USE_SSL}
       - GRAFANA_USER=${GRAFANA_USER}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
       - SMTP_USERNAME=${SMTP_USERNAME}
       - FROM_EMAIL=${FROM_EMAIL}
       - NOTIFICATION_EMAIL=${NOTIFICATION_EMAIL}

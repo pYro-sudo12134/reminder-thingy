@@ -39,6 +39,9 @@ k3s/tokens
 **/tokens/
 *.box
 
+k3s/kustomize/overlays/*prod*
+k3s/kustomize/overlays/*staging*
+
 k3s.yaml
 *kubeconfig*
 *.kubeconfig

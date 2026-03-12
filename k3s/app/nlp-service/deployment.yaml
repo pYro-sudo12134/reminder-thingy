@@ -41,10 +41,23 @@ spec:
           operator: "Equal"
           value: "true"
           effect: "NoSchedule"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: nlp-service-sa
+      automountServiceAccountToken: false
       containers:
         - name: nlp-service
           image: pyrodocker1/reminder-nlp-ollama:1.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop: [ "ALL" ]
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 50051

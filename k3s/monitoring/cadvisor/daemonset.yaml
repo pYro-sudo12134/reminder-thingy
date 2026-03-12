@@ -17,16 +17,31 @@ spec:
         component: monitoring
     spec:
       serviceAccountName: cadvisor-sa
+      automountServiceAccountToken: false
       hostPID: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        fsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: cadvisor
           image: gcr.io/cadvisor/cadvisor:latest
           args:
             - '--housekeeping_interval=30s'
-            - '--docker_only=true'
+            - '--docker_only=false'
+            - '--containerd=/run/k3s/containerd/containerd.sock'
           ports:
             - containerPort: 8080
               name: http
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              add: ["SYS_ADMIN"]
           volumeMounts:
             - name: rootfs
               mountPath: /rootfs
@@ -37,12 +52,14 @@ spec:
             - name: sys
               mountPath: /sys
               readOnly: true
-            - name: docker
-              mountPath: /var/lib/docker
+            - name: containerd
+              mountPath: /run/k3s/containerd
               readOnly: true
             - name: disk
               mountPath: /dev/disk
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           resources:
             requests:
               memory: "128Mi"
@@ -60,9 +77,11 @@ spec:
         - name: sys
           hostPath:
             path: /sys
-        - name: docker
+        - name: containerd
           hostPath:
-            path: /var/lib/docker
+            path: /run/k3s/containerd
         - name: disk
           hostPath:
             path: /dev/disk
+        - name: tmp
+          emptyDir: {}

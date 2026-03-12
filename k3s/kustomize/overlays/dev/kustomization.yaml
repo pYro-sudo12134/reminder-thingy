@@ -9,6 +9,8 @@ resources:
 components:
   - ../../components/secrets-from-env
   - ../../components/secrets-from-env/database-secrets-component.yaml
+  - ../../components/secrets-from-env/cloud-secrets-component.yaml
+  - ../../components/secrets-from-env/monitoring-secrets-component.yaml
 
 configMapGenerator:
   - name: app-env

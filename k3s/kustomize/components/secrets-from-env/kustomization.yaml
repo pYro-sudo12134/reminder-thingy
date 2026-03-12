@@ -411,3 +411,31 @@ replacements:
           - stringData.AWS_ENDPOINT_URL
         options:
           create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.OPENSEARCH_ROOT_CA
+    targets:
+      - select:
+          kind: Secret
+          name: .*opensearch-certs.*
+          namespace: app
+        fieldPaths:
+          - stringData.root-ca.pem
+        options:
+          create: true
+
+  - source:
+      kind: Secret
+      name: env-secrets
+      fieldPath: data.REDIS_CA_PEM
+    targets:
+      - select:
+          kind: Secret
+          name: .*redis-certs.*
+          namespace: app
+        fieldPaths:
+          - stringData.root-ca.pem
+        options:
+          create: true

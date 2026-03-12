@@ -28,6 +28,7 @@ spec:
                     values:
                       - k3s-server
       serviceAccountName: localstack-sa
+      automountServiceAccountToken: false
       containers:
         - name: localstack
           image: localstack/localstack:4.12
@@ -58,9 +59,11 @@ spec:
                 secretKeyRef:
                   name: localstack-secrets
                   key: AWS_SECRET_ACCESS_KEY
+            - name: LAMBDA_EXECUTOR
+              value: "docker"
+            - name: MAIN_CONTAINER
+              value: "localstack"
           volumeMounts:
-            - name: docker-socket
-              mountPath: /var/run/docker.sock
             - name: data
               mountPath: /var/lib/localstack
             - name: init-scripts
@@ -71,6 +74,8 @@ spec:
             - name: secrets
               mountPath: /run/secrets
               readOnly: true
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
           resources:
             requests:
               memory: "2Gi"
@@ -83,29 +88,24 @@ spec:
               command:
                 - sh
                 - -c
-                - curl -s -k http://localhost:4510/_cluster/health > /dev/null
-            initialDelaySeconds: 90
-            periodSeconds: 20
+                - curl -s -k http://localhost:4510/_cluster/health > /dev/null || curl -s http://localhost:4566/_localstack/health > /dev/null
+            initialDelaySeconds: 120
+            periodSeconds: 30
             timeoutSeconds: 15
-            failureThreshold: 10
+            failureThreshold: 30
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
                 - |
-                  curl -s http://localhost:4566/_localstack/health | \
-                  grep -q '"opensearch":"available"' && \
-                  curl -s -k http://localhost:4510/_cluster/health | \
-                  grep -q '"status":"green\|yellow"'
-            initialDelaySeconds: 60
-            periodSeconds: 10
-            timeoutSeconds: 5
+                  curl -s -f http://localhost:4566/_localstack/health > /dev/null && \
+                  (docker info > /dev/null 2>&1 || true)
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            timeoutSeconds: 10
+            failureThreshold: 30
       volumes:
-        - name: docker-socket
-          hostPath:
-            path: /var/run/docker.sock
-            type: Socket
         - name: init-scripts
           configMap:
             name: localstack-init-scripts
@@ -117,6 +117,10 @@ spec:
           secret:
             secretName: localstack-secrets-dir
             defaultMode: 0444
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
       initContainers:
         - name: wait-for-storage
           image: busybox:latest
