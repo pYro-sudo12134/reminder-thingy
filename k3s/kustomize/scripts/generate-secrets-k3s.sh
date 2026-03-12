@@ -116,6 +116,7 @@ resources:
 
 components:
   - ../../components/secrets-from-env
+  - ../../components/secrets-from-env/database-secrets-component.yaml
 
 configMapGenerator:
   - name: app-env
@@ -183,19 +184,25 @@ NAMESPACE=${2:-app}
 echo "Applying configuration for environment: $ENV"
 
 if [ -f "overlays/$ENV/.env.$ENV" ]; then
+    echo "Loading environment variables from overlays/$ENV/.env.$ENV"
     set -a
     source "overlays/$ENV/.env.$ENV"
     set +a
+else
+    echo "ERROR: Environment file overlays/$ENV/.env.$ENV not found!"
+    exit 1
 fi
 
-kubectl apply -k "overlays/$ENV"
+echo "Generating and applying kustomize configuration..."
+kubectl kustomize "overlays/$ENV" | envsubst | kubectl apply -f -
 
 if [ $? -eq 0 ]; then
     echo "Successfully applied $ENV configuration"
 
     echo ""
-    echo "Created secrets:"
-    kubectl get secrets -n "$NAMESPACE" | grep -E 'secrets|tls|certs' || true
+    echo "Created secrets in all namespaces:"
+    echo "----------------------------------------"
+    kubectl get secrets -A | grep -E 'postgres|redis|secrets' | head -20
 else
     echo "Failed to apply configuration"
     exit 1

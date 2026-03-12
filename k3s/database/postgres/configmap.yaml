@@ -2,7 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: postgres-config
-  namespace: default
+  namespace: database
 data:
   POSTGRES_DB: voice_reminder
   POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --encoding=UTF8"

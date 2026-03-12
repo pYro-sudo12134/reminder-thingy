@@ -20,6 +20,13 @@ spec:
         component: database
         tier: storage
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         nodeAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -48,10 +55,19 @@ spec:
           value: "true"
           effect: "NoSchedule"
       serviceAccountName: postgres-sa
+      automountServiceAccountToken: false
       containers:
         - name: postgres
           image: postgres:15-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
           ports:
             - containerPort: 5432
               name: postgres
@@ -70,7 +86,7 @@ spec:
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secrets
+                  name: postgres-secrets-dir
                   key: POSTGRES_DB
                   optional: true
             - name: PGDATA
@@ -102,6 +118,8 @@ spec:
             - name: secrets
               mountPath: /run/secrets
               readOnly: true
+            - name: run
+              mountPath: /run/postgresql
           resources:
             requests:
               memory: "512Mi"
@@ -130,6 +148,7 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 5
             timeoutSeconds: 3
+            failureThreshold: 3
           lifecycle:
             preStop:
               exec:
@@ -138,18 +157,6 @@ spec:
                   - -c
                   - |
                     pg_ctl -D /var/lib/postgresql/data/pgdata stop -m fast
-      initContainers:
-        - name: init-data-dir
-          image: busybox:latest
-          command:
-            - sh
-            - -c
-            - |
-              chown -R 999:999 /var/lib/postgresql/data
-              chmod 700 /var/lib/postgresql/data
-          volumeMounts:
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
       volumes:
         - name: postgres-data
           persistentVolumeClaim:
@@ -172,4 +179,6 @@ spec:
             secretName: postgres-secrets-dir
             defaultMode: 0444
             optional: true
+        - name: run
+          emptyDir: {}
       terminationGracePeriodSeconds: 60

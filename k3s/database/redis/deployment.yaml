@@ -37,10 +37,25 @@ spec:
                     values:
                       - "true"
       serviceAccountName: redis-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: redis
           image: redis:7-alpine
           imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: false
           ports:
             - containerPort: 6379
               name: redis-tls
@@ -65,6 +80,8 @@ spec:
             - name: redis-certs
               mountPath: /usr/local/etc/redis/certs
               readOnly: true
+            - name: redis-data
+              mountPath: /data
           resources:
             requests:
               memory: "128Mi"
@@ -110,4 +127,6 @@ spec:
           secret:
             secretName: redis-certs
             defaultMode: 0444
+        - name: redis-data
+          emptyDir: {}
       terminationGracePeriodSeconds: 30
