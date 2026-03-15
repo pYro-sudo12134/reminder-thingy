@@ -78,7 +78,6 @@ public class EmailPasswordResetService extends EmailService {
                     </div>
                     <div class="footer">
                         <p>Это письмо отправлено автоматически, пожалуйста, не отвечайте на него.</p>
-                        <p>&copy; 2024 Voice Reminder. Все права защищены.</p>
                     </div>
                 </div>
             </body>

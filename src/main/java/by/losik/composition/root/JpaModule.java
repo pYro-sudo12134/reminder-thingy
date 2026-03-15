@@ -62,7 +62,7 @@ public class JpaModule extends AbstractModule {
         log.info("Flyway baseline version: {}", config.getFlywayBaselineVersion());
 
         if (!config.isFlywayEnabled()) {
-            log.warn("Flyway migrations are DISABLED in configuration!");
+            log.warn("Flyway migrations are disabled in configuration!");
             return null;
         }
 

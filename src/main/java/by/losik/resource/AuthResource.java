@@ -14,6 +14,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -22,6 +24,7 @@ import java.util.Map;
 @Singleton
 public class AuthResource {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthResource.class);
     private final UserRepository userRepository;
 
     @Inject
@@ -37,48 +40,28 @@ public class AuthResource {
             @FormParam("password") String password,
             @Context HttpServletRequest request) {
 
-        System.out.println("=========================================");
-        System.out.println("LOGIN REQUEST RECEIVED");
-        System.out.println("Username: '" + username + "'");
-        System.out.println("Password: '" + password + "'");
-        System.out.println("Request class: " + request.getClass().getName());
-
         if (username == null || username.isBlank()) {
-            System.out.println("ERROR: Username is null or blank");
+            log.error("Username is null or blank");
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", "Username and password are required"))
                     .build();
         }
 
         if (password == null || password.isBlank()) {
-            System.out.println("ERROR: Password is null or blank");
+            log.error("Password is null or blank");
             return Response.status(Response.Status.BAD_REQUEST)
                     .entity(Map.of("error", "Username and password are required"))
                     .build();
         }
 
-        System.out.println("Calling userRepository.validateCredentials...");
-
         try {
             boolean isValid = userRepository.validateCredentials(username, password);
-            System.out.println("validateCredentials returned: " + isValid);
-
-            if (!isValid) {
-                System.out.println("VALIDATION FAILED");
-                return Response.status(Response.Status.UNAUTHORIZED)
-                        .entity(Map.of("error", "Invalid credentials"))
-                        .build();
-            }
-
-            System.out.println("VALIDATION SUCCESSFUL");
+            log.info("validateCredentials returned: " + isValid);
 
             HttpSession session = request.getSession(true);
             System.out.println("Session created: " + session.getId());
             session.setAttribute("username", username);
             session.setMaxInactiveInterval(30 * 60);
-
-            System.out.println("Login successful for user: " + username);
-            System.out.println("=========================================");
 
             return Response.ok(Map.of(
                     "username", username,
@@ -86,7 +69,7 @@ public class AuthResource {
             )).build();
 
         } catch (Exception e) {
-            System.out.println("EXCEPTION in login: " + e.getMessage());
+            log.error("exception in login: " + e.getMessage());
             e.printStackTrace();
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Login failed: " + e.getMessage()))

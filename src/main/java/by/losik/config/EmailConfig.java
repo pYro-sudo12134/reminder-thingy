@@ -1,8 +1,5 @@
 package by.losik.config;
 
-import com.google.inject.Singleton;
-
-@Singleton
 public class EmailConfig {
     private final String smtpHost;
     private final int smtpPort;
@@ -12,27 +9,16 @@ public class EmailConfig {
     private final boolean useSsl;
     private final boolean useTls;
 
-    public EmailConfig() {
-        this.smtpHost = System.getenv("SMTP_HOST") != null ?
-                System.getenv("SMTP_HOST") : "smtp.gmail.com";
-
-        this.smtpPort = System.getenv("SMTP_PORT") != null ?
-                Integer.parseInt(System.getenv("SMTP_PORT")) : 587;
-
-        this.smtpUsername = System.getenv("SMTP_USERNAME") != null ?
-                System.getenv("SMTP_USERNAME") : "losik2006@gmail.com";
-
-        this.smtpPassword = System.getenv("SMTP_PASSWORD") != null ?
-                System.getenv("SMTP_PASSWORD") : "your-app-password";
-
-        this.fromEmail = System.getenv("FROM_EMAIL") != null ?
-                System.getenv("FROM_EMAIL") : this.smtpUsername;
-
-        this.useSsl = System.getenv("SMTP_SSL") != null && Boolean.parseBoolean(System.getenv("SMTP_SSL"));
-
-        this.useTls = System.getenv("SMTP_TLS") == null || Boolean.parseBoolean(System.getenv("SMTP_TLS"));
+    public EmailConfig(String smtpHost, int smtpPort, String smtpUsername,
+                       String smtpPassword, String fromEmail, boolean useSsl, boolean useTls) {
+        this.smtpHost = smtpHost;
+        this.smtpPort = smtpPort;
+        this.smtpUsername = smtpUsername;
+        this.smtpPassword = smtpPassword;
+        this.fromEmail = fromEmail;
+        this.useSsl = useSsl;
+        this.useTls = useTls;
     }
-
     public String getSmtpHost() { return smtpHost; }
     public int getSmtpPort() { return smtpPort; }
     public String getSmtpUsername() { return smtpUsername; }
