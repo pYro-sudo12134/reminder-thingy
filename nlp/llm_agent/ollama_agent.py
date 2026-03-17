@@ -3,32 +3,14 @@ import json
 import requests
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import re
 import hashlib
 
 logger = logging.getLogger(__name__)
 
-@dataclass
-class ReminderParseResult:
-    """Структура результата парсинга напоминания"""
-    action: str
-    time_type: str  # "absolute", "relative", "recurring", "unspecified"
-    datetime: Optional[str] = None
-    relative_seconds: Optional[int] = None
-    cron_expression: Optional[str] = None
-    natural_language_time: str = ""
-    confidence: float = 0.0
-    intent: str = "reminder"
-    language: str = "ru"
-    entities: List[Dict] = None
-    normalized_text: str = ""
-
-class OllamaAgent:
-    """Агент на базе локальной Ollama с RAG поддержкой"""
-
-    SYSTEM_PROMPT = """Ты помощник для парсинга напоминаний из текста на русском языке.
+SYSTEM_PROMPT_TEMPLATE = """Ты помощник для парсинга напоминаний из текста на русском языке.
 
 Из текста нужно извлечь структурированные данные и вернуть их в JSON формате.
 
@@ -63,9 +45,9 @@ class OllamaAgent:
 
 Вход: "двадцать два сорок пять я хочу сходить погулять"
 {
-  "action": "сходить погулять",
+    "action": "сходить погулять",
   "time_type": "absolute",
-  "datetime": "2026-03-09T22:45:00",
+  "datetime": "{today}T22:45:00",
   "relative_seconds": null,
   "cron_expression": null,
   "natural_language_time": "двадцать два сорок пять",
@@ -76,9 +58,9 @@ class OllamaAgent:
 
 Вход: "сегодня в двадцать два сорок четыре я хочу сходить погулять"
 {
-  "action": "сходить погулять",
+    "action": "сходить погулять",
   "time_type": "absolute",
-  "datetime": "2026-03-09T22:44:00",
+  "datetime": "{today}T22:44:00",
   "relative_seconds": null,
   "cron_expression": null,
   "natural_language_time": "сегодня в двадцать два сорок четыре",
@@ -89,9 +71,9 @@ class OllamaAgent:
 
 Вход: "завтра в 9 утра купить молоко"
 {
-  "action": "купить молоко",
+    "action": "купить молоко",
   "time_type": "absolute",
-  "datetime": "2026-03-10T09:00:00",
+  "datetime": "{tomorrow}T09:00:00",
   "relative_seconds": null,
   "cron_expression": null,
   "natural_language_time": "завтра в 9 утра",
@@ -102,7 +84,7 @@ class OllamaAgent:
 
 Вход: "через 2 часа позвонить маме"
 {
-  "action": "позвонить маме",
+    "action": "позвонить маме",
   "time_type": "relative",
   "datetime": null,
   "relative_seconds": 7200,
@@ -113,8 +95,36 @@ class OllamaAgent:
   "language": "ru"
 }
 
+Даты в примерах не образец для примера, в том числе и confidence.
+
 Верни ТОЛЬКО JSON, никаких пояснений.
 """
+
+
+def build_system_prompt():
+    today = datetime.now().strftime('%Y-%m-%d')
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+    return SYSTEM_PROMPT_TEMPLATE.format(today=today, tomorrow=tomorrow)
+
+
+@dataclass
+class ReminderParseResult:
+    """Структура результата парсинга напоминания"""
+    action: str
+    time_type: str  # "absolute", "relative", "recurring", "unspecified"
+    datetime: Optional[str] = None
+    relative_seconds: Optional[int] = None
+    cron_expression: Optional[str] = None
+    natural_language_time: str = ""
+    confidence: float = 0.0
+    intent: str = "reminder"
+    language: str = "ru"
+    entities: List[Dict] = None
+    normalized_text: str = ""
+
+
+class OllamaAgent:
+    """Агент на базе локальной Ollama с RAG поддержкой"""
 
     def __init__(self, rag_client=None):
         self.ollama_host = os.getenv('OLLAMA_HOST', 'localhost')
@@ -202,7 +212,7 @@ class OllamaAgent:
             ex_type = ex.get('format_type', 'unknown')
             ex_time = ex.get('time_expression', '')
 
-            prompt_parts.append(f"\nПример {i+1}:")
+            prompt_parts.append(f"\nПример {i + 1}:")
             prompt_parts.append(f'  Текст: "{ex_text}"')
             prompt_parts.append(f'  Тип: {ex_type}')
             if ex_time:
@@ -251,7 +261,7 @@ class OllamaAgent:
         request_data = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "system", "content": build_system_prompt()},
                 {"role": "user", "content": prompt}
             ],
             "stream": False,
@@ -321,7 +331,8 @@ class OllamaAgent:
                 normalized_text=text
             )
 
-            logger.info(f" Final result: action='{result.action}', time_type={result.time_type}, conf={result.confidence}")
+            logger.info(
+                f" Final result: action='{result.action}', time_type={result.time_type}, conf={result.confidence}")
 
             if result.confidence >= self.rag_save_confidence:
                 self._save_to_rag(text, result)
