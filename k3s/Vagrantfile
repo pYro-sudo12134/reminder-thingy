@@ -105,9 +105,8 @@ EOF
         apt-get install -y zfsutils-linux
         modprobe zfs || true
 
-        if [ -b /dev/sdb ]; then
-            zpool create -f \
-                data-pool /dev/sdb || true
+        if [ -b /dev/sdc ]; then
+            zpool create -f data-pool /dev/sdc || true
         fi
 
         sudo mkdir -p /etc/rancher/k3s
@@ -150,9 +149,8 @@ EOF
         apt-get install -y zfsutils-linux
         modprobe zfs || true
 
-        if [ -b /dev/sdb ]; then
-            zpool create -f \
-                data-pool /dev/sdb || true
+        if [ -b /dev/sdc ]; then
+            zpool create -f data-pool /dev/sdc || true
         fi
 
         sudo mkdir -p /etc/rancher/k3s
@@ -189,7 +187,6 @@ EOF
         helm install openebs openebs/openebs \
           --namespace openebs --create-namespace \
           --set zfs-localpv.enabled=true \
-          --set zfs-localpv.nodeSelector."kubernetes\.io/hostname"=k3s-server \
           --set localpv.enabled=false \
           --set jiva.enabled=false \
           --set cstor.enabled=false \
@@ -198,6 +195,14 @@ EOF
 
         kubectl patch statefulset -n openebs openebs-zfs-localpv-controller --type=json \
           -p='[{"op": "add", "path": "/spec/template/spec/nodeSelector", "value": {"kubernetes.io/hostname": "k3s-server"}}]' 2>/dev/null || true
+
+        kubectl annotate node k3s-agent1 openebs.io/nodeid=k3s-agent1 --overwrite
+        kubectl annotate node k3s-agent1 openebs.io/nodename=k3s-agent1 --overwrite
+        kubectl annotate node k3s-agent1 csi.volume.kubernetes.io/nodeid='{"zfs.csi.openebs.io":"k3s-agent1"}' --overwrite
+
+        kubectl annotate node k3s-agent2 openebs.io/nodeid=k3s-agent2 --overwrite
+        kubectl annotate node k3s-agent2 openebs.io/nodename=k3s-agent2 --overwrite
+        kubectl annotate node k3s-agent2 csi.volume.kubernetes.io/nodeid='{"zfs.csi.openebs.io":"k3s-agent2"}' --overwrite
 
         kubectl delete pod -n openebs -l app=openebs-zfs-controller 2>/dev/null || true
 
