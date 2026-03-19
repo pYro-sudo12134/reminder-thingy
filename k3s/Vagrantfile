@@ -39,9 +39,6 @@ Vagrant.configure("2") do |config|
             -o xattr=sa \
             data-pool /dev/sdb || true
 
-        chmod 777 /exports
-        chmod 777 /exports/*
-
         curl -fsSL https://get.docker.com -o get-docker.sh
         sudo sh get-docker.sh
 
@@ -186,8 +183,6 @@ Vagrant.configure("2") do |config|
           --set mayastor.enabled=false \
           --set ndm.enabled=false || true
 
-        sleep 30
-
         kubectl patch statefulset -n openebs openebs-zfs-localpv-controller --type=json \
           -p='[{"op": "add", "path": "/spec/template/spec/nodeSelector", "value": {"kubernetes.io/hostname": "k3s-server"}}]' 2>/dev/null || true
 
@@ -201,8 +196,6 @@ Vagrant.configure("2") do |config|
           --namespace kube-system \
           --set ports.web.port=80 \
           --set ports.websecure.port=443
-
-        sleep 60
 
         kubectl label node k3s-server node-role.kubernetes.io/storage=true --overwrite 2>/dev/null || true
         kubectl label node k3s-agent1 node-role.kubernetes.io/gpu=true node-role.kubernetes.io/ml=true --overwrite 2>/dev/null || true
