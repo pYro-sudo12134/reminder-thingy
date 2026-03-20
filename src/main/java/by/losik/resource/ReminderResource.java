@@ -207,7 +207,7 @@ public class ReminderResource {
                         }
                     }
 
-                    List<Map<String, Object>> reminderList = filteredReminders.stream()
+                    List<Map<String, Object>> reminderList = filteredReminders.parallelStream()
                             .map(reminder -> {
                                 Map<String, Object> map = new HashMap<>();
                                 map.put("reminderId", reminder.reminderId());
@@ -560,6 +560,98 @@ public class ReminderResource {
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                             .entity(Map.of(
                                     "error", "Failed to cancel reminder",
+                                    "message", ex.getMessage()
+                            ))
+                            .build();
+                })
+                .thenAccept(asyncResponse::resume);
+    }
+
+    @GET
+    @Path("/reminders/time-range")
+    public void getRemindersByTimeRange(
+            @Suspended AsyncResponse asyncResponse,
+            @QueryParam("userId") String userId,
+            @QueryParam("startTime") String startTime,
+            @QueryParam("endTime") String endTime,
+            @QueryParam("limit") @DefaultValue("100") int limit) {
+
+        log.info("Getting reminders by time range for user: {} from {} to {}",
+                userId, startTime, endTime);
+
+        if (userId == null || userId.isBlank()) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "userId is required"))
+                    .build());
+            return;
+        }
+
+        if (startTime == null || startTime.isBlank() || endTime == null || endTime.isBlank()) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "startTime and endTime are required"))
+                    .build());
+            return;
+        }
+
+        LocalDateTime startDateTime;
+        LocalDateTime endDateTime;
+
+        try {
+            startDateTime = LocalDateTime.parse(startTime);
+            endDateTime = LocalDateTime.parse(endTime);
+
+            if (startDateTime.isAfter(endDateTime)) {
+                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", "startTime must be before endTime"))
+                        .build());
+                return;
+            }
+        } catch (Exception e) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of(
+                            "error", "Invalid date format. Use ISO format: yyyy-MM-ddTHH:mm:ss",
+                            "message", e.getMessage()
+                    ))
+                    .build());
+            return;
+        }
+
+        openSearchService.findRemindersByTimeRange(userId, startDateTime, endDateTime, limit)
+                .thenApply(reminders -> {
+                    List<Map<String, Object>> reminderList = reminders.parallelStream()
+                            .map(reminder -> {
+                                Map<String, Object> map = new HashMap<>();
+                                map.put("reminderId", reminder.reminderId());
+                                map.put("userId", reminder.userId());
+                                map.put("userEmail", reminder.userEmail());
+                                map.put("originalText", reminder.originalText());
+                                map.put("extractedAction", reminder.extractedAction());
+                                map.put("scheduledTime", reminder.scheduledTime().toString());
+                                map.put("status", reminder.status().toString());
+                                map.put("createdAt", reminder.createdAt().toString());
+                                map.put("notificationSent", reminder.notificationSent());
+                                map.put("intent", reminder.intent());
+                                map.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                                return map;
+                            })
+                            .collect(Collectors.toList());
+
+                    Map<String, Object> response = Map.of(
+                            "userId", userId,
+                            "startTime", startTime,
+                            "endTime", endTime,
+                            "total", reminderList.size(),
+                            "reminders", reminderList,
+                            "timestamp", LocalDateTime.now().toString()
+                    );
+
+                    return Response.ok(response).build();
+                })
+                .exceptionally(ex -> {
+                    log.error("Error getting reminders by time range", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of(
+                                    "error", "Failed to get reminders",
                                     "message", ex.getMessage()
                             ))
                             .build();

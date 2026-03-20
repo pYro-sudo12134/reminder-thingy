@@ -44,56 +44,56 @@ SYSTEM_PROMPT_TEMPLATE = """Ты помощник для парсинга нап
 ПРИМЕРЫ ПРАВИЛЬНЫХ ОТВЕТОВ:
 
 Вход: "двадцать два сорок пять я хочу сходить погулять"
-{
+{{
     "action": "сходить погулять",
-  "time_type": "absolute",
-  "datetime": "{today}T22:45:00",
-  "relative_seconds": null,
-  "cron_expression": null,
-  "natural_language_time": "двадцать два сорок пять",
-  "confidence": 0.95,
-  "intent": "reminder",
-  "language": "ru"
-}
+    "time_type": "absolute",
+    "datetime": "{{today}}T22:45:00",
+    "relative_seconds": null,
+    "cron_expression": null,
+    "natural_language_time": "двадцать два сорок пять",
+    "confidence": 0.95,
+    "intent": "reminder",
+    "language": "ru"
+}}
 
 Вход: "сегодня в двадцать два сорок четыре я хочу сходить погулять"
-{
+{{
     "action": "сходить погулять",
-  "time_type": "absolute",
-  "datetime": "{today}T22:44:00",
-  "relative_seconds": null,
-  "cron_expression": null,
-  "natural_language_time": "сегодня в двадцать два сорок четыре",
-  "confidence": 0.95,
-  "intent": "reminder",
-  "language": "ru"
-}
+    "time_type": "absolute",
+    "datetime": "{{today}}T22:44:00",
+    "relative_seconds": null,
+    "cron_expression": null,
+    "natural_language_time": "сегодня в двадцать два сорок четыре",
+    "confidence": 0.95,
+    "intent": "reminder",
+    "language": "ru"
+}}
 
 Вход: "завтра в 9 утра купить молоко"
-{
+{{
     "action": "купить молоко",
-  "time_type": "absolute",
-  "datetime": "{tomorrow}T09:00:00",
-  "relative_seconds": null,
-  "cron_expression": null,
-  "natural_language_time": "завтра в 9 утра",
-  "confidence": 0.95,
-  "intent": "reminder",
-  "language": "ru"
-}
+    "time_type": "absolute",
+    "datetime": "{{tomorrow}}T09:00:00",
+    "relative_seconds": null,
+    "cron_expression": null,
+    "natural_language_time": "завтра в 9 утра",
+    "confidence": 0.95,
+    "intent": "reminder",
+    "language": "ru"
+}}
 
 Вход: "через 2 часа позвонить маме"
-{
+{{
     "action": "позвонить маме",
-  "time_type": "relative",
-  "datetime": null,
-  "relative_seconds": 7200,
-  "cron_expression": null,
-  "natural_language_time": "через 2 часа",
-  "confidence": 0.95,
-  "intent": "reminder",
-  "language": "ru"
-}
+    "time_type": "relative",
+    "datetime": null,
+    "relative_seconds": 7200,
+    "cron_expression": null,
+    "natural_language_time": "через 2 часа",
+    "confidence": 0.95,
+    "intent": "reminder",
+    "language": "ru"
+}}
 
 Даты в примерах не образец для примера, в том числе и confidence.
 

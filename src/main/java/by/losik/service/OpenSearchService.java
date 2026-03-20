@@ -702,4 +702,45 @@ public class OpenSearchService {
             }
         });
     }
+
+    public CompletableFuture<List<ReminderRecord>> findRemindersByTimeRange(
+            String userId,
+            LocalDateTime startTime,
+            LocalDateTime endTime,
+            int limit) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+                BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+
+                if (userId != null && !userId.isBlank()) {
+                    boolQuery.must(QueryBuilders.termQuery("user_id", userId));
+                }
+
+                RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("scheduled_time")
+                        .gte(startTime.format(DateTimeFormatter.ISO_DATE_TIME))
+                        .lte(endTime.format(DateTimeFormatter.ISO_DATE_TIME));
+
+                boolQuery.must(rangeQuery);
+                sourceBuilder.query(boolQuery);
+                sourceBuilder.size(limit);
+                sourceBuilder.sort("scheduled_time", SortOrder.ASC);
+
+                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                        .source(sourceBuilder);
+
+                SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
+
+                return Arrays.stream(response.getHits().getHits())
+                        .map(this::mapToReminderRecord)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+            } catch (IOException e) {
+                log.error("Failed to search reminders by time range", e);
+                throw new RuntimeException("Failed to search reminders by time range", e);
+            }
+        });
+    }
 }
