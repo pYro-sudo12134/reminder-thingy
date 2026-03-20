@@ -392,6 +392,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /auth/is-auth:
+    get:
+      tags:
+        - Auth
+      summary: Check authentication status
+      description: Returns whether user has an active session
+      operationId: checkAuthStatus
+      responses:
+        '200':
+          description: Authentication status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  active:
+                    type: boolean
+                    example: true
+
   /reminder/record:
     post:
       tags:
