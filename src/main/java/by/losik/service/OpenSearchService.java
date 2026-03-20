@@ -603,8 +603,10 @@ public class OpenSearchService {
                 sourceBuilder.sort("created_at", SortOrder.DESC);
 
                 HighlightBuilder highlightBuilder = new HighlightBuilder();
+                highlightBuilder.preTags("");
                 highlightBuilder.field("extracted_action");
                 highlightBuilder.field("original_text");
+                highlightBuilder.postTags("");
                 highlightBuilder.fragmentSize(50);
                 highlightBuilder.numOfFragments(1);
                 sourceBuilder.highlighter(highlightBuilder);

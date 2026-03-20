@@ -133,6 +133,12 @@ public class AuthResource {
         return Response.ok(Map.of("username", username)).build();
     }
 
+    @GET
+    @Path("/is-auth")
+    public Response getStatus(@Context HttpServletRequest request) {
+        return Response.ok(Map.of("active", request.getSession(false) != null)).build();
+    }
+
     @POST
     @Path("/logout")
     public Response logout(@Context HttpServletRequest request) {
