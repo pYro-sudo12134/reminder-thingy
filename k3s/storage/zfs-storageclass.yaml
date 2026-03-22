@@ -10,7 +10,11 @@ parameters:
   dedup: "off"
   fstype: "zfs"
   poolname: "data-pool"
+  compression: "lz4"
+  copies: "2"
+  logbias: "throughput"
   recordsize: "128k"
   thinprovision: "yes"
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
