@@ -1,4 +1,4 @@
-package by.losik.composition.root;
+﻿package by.losik.composition.root;
 
 import by.losik.config.GRPCConfig;
 import by.losik.config.LocalStackConfig;
@@ -116,5 +116,14 @@ public class AWSModule extends AbstractModule {
     public MonitoringConfig createCloudWatchConfigForLocalstack(LocalStackConfig localStackConfig,
                                                                  SecretsManagerConfig secretsManagerConfig) {
         return new MonitoringConfig(localStackConfig, secretsManagerConfig);
+    }
+    @Provides
+    @Singleton
+    public LambdaAsyncClient createLambdaAsyncClient(LocalStackConfig localStackConfig) {
+        return LambdaAsyncClient.builder()
+                .endpointOverride(java.net.URI.create(localStackConfig.getLocalstackEndpoint()))
+                .region(software.amazon.awssdk.regions.Region.of(localStackConfig.getRegion()))
+                .credentialsProvider(localStackConfig.createCredentialsProvider())
+                .build();
     }
 }

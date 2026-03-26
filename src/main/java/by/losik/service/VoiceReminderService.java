@@ -80,7 +80,7 @@ public class VoiceReminderService {
                     CreateRuleRequest ruleRequest = new CreateRuleRequest(
                             "reminder-" + reminderId,
                             parsed.scheduledTime(),
-                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email",
                             inputData,
                             "Напоминание: " + parsed.action(),
                             parsed.intent()
@@ -237,7 +237,7 @@ public class VoiceReminderService {
                         CreateRuleRequest ruleRequest = new CreateRuleRequest(
                                 "reminder-" + reminderId + "-" + System.currentTimeMillis(),
                                 scheduledTime,
-                                "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                                "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email",
                                 inputData,
                                 "Напоминание: " + (extractedAction != null ? extractedAction : existing.extractedAction()),
                                 existing.intent()

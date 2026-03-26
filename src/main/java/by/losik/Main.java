@@ -10,6 +10,8 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import by.losik.service.LambdaHandler;
+
 
 public class Main {
     private static final Logger log = LoggerFactory.getLogger(Main.class);
@@ -21,6 +23,13 @@ public class Main {
             OpenSearchService openSearchService = injector.getInstance(OpenSearchService.class);
             openSearchService.initializeIndices().join();
             log.info("OpenSearch indices initialized");
+            
+            LambdaHandler lambdaHandler = injector.getInstance(LambdaHandler.class);
+            lambdaHandler.deployLambdaFunction().join();
+            log.info("Lambda function deployed: send-reminder-email");
+            
+            
+
             WebServer webServer = injector.getInstance(WebServer.class);
             webServer.start();
             log.info("Web application started!");

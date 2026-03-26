@@ -25,13 +25,13 @@ public class LambdaHandler {
 
     public CompletableFuture<String> deployLambdaFunction() {
         try {
-            byte[] lambdaCode = Files.readAllBytes(Paths.get("build/libs/send-reminder-lambda.jar"));
+            byte[] lambdaCode = Files.readAllBytes(Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"));
 
             CreateFunctionRequest request = CreateFunctionRequest.builder()
-                    .functionName("send-reminder")
-                    .runtime(Runtime.JAVA17)
+                    .functionName("send-reminder-email")
+                    .runtime(Runtime.PYTHON_3_11)
                     .role("arn:aws:iam::000000000000:role/lambda-role")
-                    .handler("by.losik.lambda.SendReminderLambda::handleRequest")
+                    .handler("SendReminderLambda.lambda_handler")
                     .code(FunctionCode.builder()
                             .zipFile(SdkBytes.fromByteArray(lambdaCode))
                             .build())

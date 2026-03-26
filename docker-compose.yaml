@@ -122,6 +122,7 @@ services:
       - "./route53.yaml:/etc/localstack/init/ready.d/route53.yaml"
       - "./opensearch_certs:/etc/localstack/opensearch/certs:ro"
       - "./secrets:/run/secrets:ro"
+      - ".:/project"
     mem_reservation: 2g
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -s -k http://localhost:4510/ > /dev/null"]

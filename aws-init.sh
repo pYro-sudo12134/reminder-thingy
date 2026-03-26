@@ -267,11 +267,89 @@ aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
     ParameterKey=EmailAddress,ParameterValue=notifications@example.com \
     ParameterKey=OpenSearchDomainName,ParameterValue=reminder-domain \
     ParameterKey=S3BucketName,ParameterValue=voice-reminder-audio-bucket \
-    ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-lambda \
+    ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-email \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --region us-east-1 || true
 
 wait_for_stack "voice-reminder-stack"
+
+deploy_lambda_code() {
+    echo "=== Deploying Lambda SendReminderEmail from host folder ==="
+
+    PROJECT_PATH="/project"
+    LAMBDA_SOURCE_DIR="${PROJECT_PATH}/src/main/python/lambda/SendReminderEmail"
+    ZIP_FILE="/tmp/send-reminder-email.zip"
+    BUCKET_NAME="voice-reminder-audio-bucket"
+    S3_KEY="lambda/send-reminder-email.zip"
+    LAMBDA_FUNCTION_NAME="send-reminder-email"
+
+    if [ ! -d "$LAMBDA_SOURCE_DIR" ]; then
+        echo "WARNING: Lambda source directory not found at $LAMBDA_SOURCE_DIR"
+        echo "         Убедись, что ты добавил volume при запуске контейнера:"
+        echo "         -v \"C:\\5kurs\\KURSWORK\\reminder-thingy:/project\""
+        echo "         Продолжаем без обновления кода..."
+        return 0
+    fi
+
+    # Устанавливаем zip
+    if ! command -v zip >/dev/null 2>&1; then
+        echo "Installing zip utility..."
+        apt-get update -qq && apt-get install -y zip
+    fi
+
+    echo "Creating ZIP archive from $LAMBDA_SOURCE_DIR"
+    rm -f "$ZIP_FILE"
+    cd "$LAMBDA_SOURCE_DIR" || { echo "Cannot cd into $LAMBDA_SOURCE_DIR"; return 1; }
+    zip -r "$ZIP_FILE" ./*
+    cd - >/dev/null
+
+    if [ ! -f "$ZIP_FILE" ]; then
+        echo "ERROR: Failed to create ZIP file"
+        return 1
+    fi
+
+    echo "Uploading ZIP to S3: s3://$BUCKET_NAME/$S3_KEY"
+    aws --endpoint-url=http://localhost:4566 s3 cp "$ZIP_FILE" "s3://$BUCKET_NAME/$S3_KEY" \
+        --region us-east-1 || { echo "S3 upload failed"; return 1; }
+
+    # Проверяем, существует ли функция
+    if aws --endpoint-url=http://localhost:4566 lambda get-function \
+        --function-name "$LAMBDA_FUNCTION_NAME" \
+        --region us-east-1 >/dev/null 2>&1; then
+        
+        echo "Updating Lambda function code from S3..."
+        aws --endpoint-url=http://localhost:4566 lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --s3-bucket "$BUCKET_NAME" \
+            --s3-key "$S3_KEY" \
+            --region us-east-1
+        
+        echo "Lambda function code successfully updated!"
+    else
+        echo "Creating Lambda function $LAMBDA_FUNCTION_NAME..."
+        # Роль создаётся CloudFormation стеком
+        LAMBDA_ROLE_ARN="arn:aws:iam::000000000000:role/lambda-role"
+        
+        aws --endpoint-url=http://localhost:4566 lambda create-function \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --runtime python3.11 \
+            --role "$LAMBDA_ROLE_ARN" \
+            --handler SendReminderLambda.lambda_handler \
+            --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
+            --timeout 30 \
+            --memory-size 512 \
+            --environment Variables="{ENVIRONMENT_NAME=dev,S3_BUCKET=$BUCKET_NAME}" \
+            --region us-east-1
+        
+        echo "Lambda function created successfully!"
+    fi
+
+    rm -f "$ZIP_FILE"
+}
+
+
+# Вызов функции сразу после создания основного стека
+deploy_lambda_code
 
 if [ -f "/etc/localstack/init/ready.d/metrics-config.yaml" ]; then
     echo "Deploying metrics CloudFormation stack"
@@ -282,7 +360,7 @@ if [ -f "/etc/localstack/init/ready.d/metrics-config.yaml" ]; then
         ParameterKey=EnvironmentName,ParameterValue=dev \
         ParameterKey=ProcessingQueueName,ParameterValue=dev-reminder-queue \
         ParameterKey=DLQName,ParameterValue=dev-reminder-dlq \
-        ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-lambda \
+        ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-email \
         ParameterKey=OpenSearchDomainName,ParameterValue=reminder-domain \
         ParameterKey=S3BucketName,ParameterValue=voice-reminder-audio-bucket \
       --capabilities CAPABILITY_IAM \

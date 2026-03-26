@@ -11,6 +11,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.eventbridge.model.*;
+import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
+import software.amazon.awssdk.services.lambda.model.AddPermissionRequest;
+import software.amazon.awssdk.services.lambda.model.AddPermissionResponse;
+import software.amazon.awssdk.services.lambda.model.ResourceConflictException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -22,14 +26,16 @@ public class EventBridgeService {
     private static final Logger log = LoggerFactory.getLogger(EventBridgeService.class);
 
     private final EventBridgeAsyncClient eventBridgeAsyncClient;
+    private final LambdaAsyncClient lambdaAsyncClient;
     private final String defaultEventBusName = "default";
 
     @Inject
-    public EventBridgeService(LocalStackConfig config) {
+    public EventBridgeService(LocalStackConfig config, LambdaAsyncClient lambdaAsyncClient) {
         this.eventBridgeAsyncClient = config.getEventBridgeAsyncClient();
+        this.lambdaAsyncClient = lambdaAsyncClient;
     }
 
-    public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(CreateRuleRequest request) {
+    public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(CreateRuleRequest request) {       
         String scheduleExpression = createCronExpression(request.scheduleTime());
         String ruleName = request.ruleName() != null ?
                 request.ruleName() :
@@ -70,18 +76,23 @@ public class EventBridgeService {
 
                     String finalInputJson = inputJson;
                     return eventBridgeAsyncClient.putTargets(targetsRequest)
-                            .thenApply(targetsResponse -> {
+                            .thenCompose(targetsResponse -> {
                                 log.info("Created EventBridge rule: {} with target: {}",
                                         ruleName, request.targetArn());
 
-                                return new EventBridgeRuleRecord(
-                                        ruleName,
-                                        scheduleExpression,
-                                        request.targetArn(),
-                                        true,
-                                        request.description(),
-                                        finalInputJson
-                                );
+                                return addPermissionForEventBridge(ruleName, request.targetArn())
+                                        .thenApply(permissionResponse -> {
+                                            log.info("Added permission for EventBridge to invoke Lambda");
+
+                                            return new EventBridgeRuleRecord(
+                                                    ruleName,
+                                                    scheduleExpression,
+                                                    request.targetArn(),
+                                                    true,
+                                                    request.description(),
+                                                    finalInputJson
+                                            );
+                                        });
                             });
                 })
                 .exceptionally(ex -> {
@@ -185,7 +196,7 @@ public class EventBridgeService {
                         throw new RuntimeException("Failed to send event");
                     }
 
-                    log.info("Event sent successfully: {} - {}", request.source(), request.detailType());
+                    log.info("Event sent successfully: {} - {}", request.source(), request.detailType()); 
                     return eventId;
                 })
                 .exceptionally(ex -> {
@@ -286,5 +297,51 @@ public class EventBridgeService {
                 dateTime.getMonthValue(),
                 dateTime.getYear()
         );
+    }
+
+    private CompletableFuture<AddPermissionResponse> addPermissionForEventBridge(
+            String ruleName, 
+            String targetArn) {
+        
+        String functionName = extractFunctionNameFromArn(targetArn);
+        String statementId = "eventbridge-" + ruleName;
+        
+        return eventBridgeAsyncClient.describeRule(
+                    DescribeRuleRequest.builder()
+                            .name(ruleName)
+                            .eventBusName(defaultEventBusName)
+                            .build())
+                .thenCompose(ruleResponse -> {
+                    String ruleArn = ruleResponse.arn();
+                    
+                    AddPermissionRequest permissionRequest = AddPermissionRequest.builder()
+                            .functionName(functionName)
+                            .action("lambda:InvokeFunction")
+                            .principal("events.amazonaws.com")
+                            .sourceArn(ruleArn)
+                            .statementId(statementId)
+                            .build();
+                    
+                    log.info("Adding permission for EventBridge rule '{}' to invoke Lambda '{}'", 
+                            ruleName, functionName);
+                    
+                    return lambdaAsyncClient.addPermission(permissionRequest);
+                })
+                .exceptionally(ex -> {
+                    if (ex.getCause() instanceof ResourceConflictException) {
+                        log.warn("Permission already exists for statementId: {}", statementId);
+                        return null;
+                    }
+                    log.error("Failed to add permission for EventBridge: {}", ex.getMessage());
+                    throw new RuntimeException("Failed to add permission", ex);
+                });
+    }
+
+    private String extractFunctionNameFromArn(String arn) {
+        String[] parts = arn.split(":");
+        if (parts.length >= 7 && parts[5].startsWith("function")) {
+            return parts[parts.length - 1];
+        }
+        return arn;
     }
 }

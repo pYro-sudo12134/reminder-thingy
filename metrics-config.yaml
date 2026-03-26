@@ -13,7 +13,7 @@ Parameters:
     Default: dev-reminder-dlq
   LambdaFunctionName:
     Type: String
-    Default: send-reminder-lambda
+    Default: send-reminder-email
   OpenSearchDomainName:
     Type: String
     Default: reminder-domain

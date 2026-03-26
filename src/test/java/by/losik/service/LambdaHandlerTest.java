@@ -52,7 +52,7 @@ class LambdaHandlerTest {
     void deployLambdaFunction_ShouldCreateFunctionWithCorrectParameters() {
         byte[] mockCode = "mock lambda code".getBytes();
         CreateFunctionResponse response = CreateFunctionResponse.builder()
-                .functionArn("arn:aws:lambda:us-east-1:123456789012:function:send-reminder")
+                .functionArn("arn:aws:lambda:us-east-1:123456789012:function:send-reminder-email")
                 .build();
 
         Mockito.when(lambdaAsyncClient.createFunction(any(CreateFunctionRequest.class)))
@@ -61,7 +61,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("mock-path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenReturn(mockCode);
@@ -69,17 +69,17 @@ class LambdaHandlerTest {
             CompletableFuture<String> resultFuture = lambdaHandler.deployLambdaFunction();
             String functionArn = resultFuture.join();
 
-            Assertions.assertEquals("arn:aws:lambda:us-east-1:123456789012:function:send-reminder", functionArn);
+            Assertions.assertEquals("arn:aws:lambda:us-east-1:123456789012:function:send-reminder-email", functionArn);
 
             ArgumentCaptor<CreateFunctionRequest> requestCaptor =
                     ArgumentCaptor.forClass(CreateFunctionRequest.class);
             Mockito.verify(lambdaAsyncClient).createFunction(requestCaptor.capture());
 
             CreateFunctionRequest capturedRequest = requestCaptor.getValue();
-            Assertions.assertEquals("send-reminder", capturedRequest.functionName());
-            Assertions.assertEquals(Runtime.JAVA17, capturedRequest.runtime());
+            Assertions.assertEquals("send-reminder-email", capturedRequest.functionName());
+            Assertions.assertEquals(Runtime.PYTHON_3_11, capturedRequest.runtime());
             Assertions.assertEquals("arn:aws:iam::000000000000:role/lambda-role", capturedRequest.role());
-            Assertions.assertEquals("by.losik.lambda.SendReminderLambda::handleRequest", capturedRequest.handler());
+            Assertions.assertEquals("SendReminderLambda.lambda_handler", capturedRequest.handler());
             Assertions.assertEquals(30, capturedRequest.timeout());
             Assertions.assertEquals(512, capturedRequest.memorySize());
 
@@ -94,7 +94,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("mock-path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenThrow(new RuntimeException("File not found"));
@@ -123,7 +123,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("mock-path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenReturn(mockCode);
@@ -149,7 +149,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("different-path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenReturn(mockCode);
@@ -165,7 +165,7 @@ class LambdaHandlerTest {
 
             CreateFunctionRequest capturedRequest = requestCaptor.getValue();
             Assertions.assertNotNull(capturedRequest);
-            Assertions.assertEquals("send-reminder", capturedRequest.functionName()); // Имя фиксировано в коде
+            Assertions.assertEquals("send-reminder-email", capturedRequest.functionName()); // Имя фиксировано в коде
         }
     }
 
@@ -179,7 +179,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenReturn(mockCode);
@@ -202,7 +202,7 @@ class LambdaHandlerTest {
         try (var filesMock = Mockito.mockStatic(Files.class);
              var pathsMock = Mockito.mockStatic(Paths.class)) {
 
-            pathsMock.when(() -> Paths.get("build/libs/send-reminder-lambda.jar"))
+            pathsMock.when(() -> Paths.get("src/main/python/lambda/SendReminderEmail/SendReminderLambda.py"))
                     .thenReturn(java.nio.file.Path.of("path"));
             filesMock.when(() -> Files.readAllBytes(any(java.nio.file.Path.class)))
                     .thenReturn(mockCode);

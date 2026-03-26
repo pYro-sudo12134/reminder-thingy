@@ -8,7 +8,7 @@ aws --endpoint-url=http://localhost:4566 sqs send-message \
     "source": "aws.lambda",
     "detail-type": "Lambda Function Invocation Result - Failure",
     "detail": {
-      "functionName": "send-reminder-lambda",
+      "functionName": "send-reminder-email",
       "errorMessage": "Connection timeout to OpenSearch",
       "requestId": "test-123"
     },

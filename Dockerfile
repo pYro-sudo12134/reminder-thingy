@@ -15,6 +15,7 @@ COPY db/migration db/migration
 COPY src/main/resources src/main/resources
 
 COPY src src
+COPY src/main/python src/main/python
 COPY web web
 
 RUN chmod +x gradlew
