@@ -54,9 +54,6 @@ public class UserRepository {
     public boolean validateCredentials(String username, String password) {
         EntityManager em = getEntityManager();
         try {
-            log.info("=== VALIDATE CREDENTIALS START ===");
-            log.info("Username: '{}'", username);
-            log.info("Password: '{}'", password);
 
             em.getTransaction().begin();
 
@@ -65,7 +62,6 @@ public class UserRepository {
             if (userOpt.isEmpty()) {
                 log.error("USER NOT FOUND: {}", username);
                 em.getTransaction().rollback();
-                log.info("=== VALIDATE CREDENTIALS END (user not found) ===");
                 return false;
             }
 
@@ -84,7 +80,6 @@ public class UserRepository {
             }
 
             em.getTransaction().commit();
-            log.info("=== VALIDATE CREDENTIALS END (result={}) ===", isValid);
             return isValid;
 
         } catch (Exception e) {
