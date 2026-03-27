@@ -1,5 +1,6 @@
 package by.losik.service;
 
+import by.losik.config.EventBridgeConfig;
 import by.losik.dto.CreateRuleRequest;
 import by.losik.dto.ParsedResult;
 import by.losik.dto.ReminderRecord;
@@ -14,6 +15,32 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Сервис для обработки голосовых напоминаний.
+ * <p>
+ * Оркестрирует полный цикл обработки голосового напоминания:
+ * <ol>
+ *     <li>Загрузка аудио в S3</li>
+ *     <li>Транскрибация через AWS Transcribe</li>
+ *     <li>Семантический анализ через NLP сервис (gRPC)</li>
+ *     <li>Создание правила в EventBridge для планирования</li>
+ *     <li>Сохранение напоминания в OpenSearch</li>
+ * </ol>
+ * <p>
+ * Также предоставляет методы для:
+ * <ul>
+ *     <li>Отправки напоминаний (email уведомление)</li>
+ *     <li>Обновления напоминаний</li>
+ *     <li>Удаления напоминаний</li>
+ *     <li>Отмены напоминаний</li>
+ * </ul>
+ *
+ * @see S3Service
+ * @see TranscribeService
+ * @see GRPCService
+ * @see EventBridgeService
+ * @see OpenSearchService
+ */
 @Singleton
 public class VoiceReminderService {
     private static final Logger log = LoggerFactory.getLogger(VoiceReminderService.class);
@@ -23,7 +50,19 @@ public class VoiceReminderService {
     private final EventBridgeService eventBridgeService;
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
+    private final EventBridgeConfig eventBridgeConfig;
 
+    /**
+     * Создаёт сервис голосовых напоминаний с внедрёнными зависимостями.
+     *
+     * @param s3Service сервис для работы с S3
+     * @param transcribeService сервис для транскрибации аудио
+     * @param reminderParser сервис для парсинга текста (NLP)
+     * @param eventBridgeService сервис для работы с EventBridge
+     * @param openSearchService сервис для работы с OpenSearch
+     * @param emailService сервис для отправки email
+     * @param eventBridgeConfig конфигурация EventBridge (включая ARN Lambda)
+     */
     @Inject
     public VoiceReminderService(
             S3Service s3Service,
@@ -31,15 +70,34 @@ public class VoiceReminderService {
             GRPCService reminderParser,
             EventBridgeService eventBridgeService,
             OpenSearchService openSearchService,
-            EmailService emailService) {
+            EmailService emailService,
+            EventBridgeConfig eventBridgeConfig) {
         this.s3Service = s3Service;
         this.transcribeService = transcribeService;
         this.reminderParser = reminderParser;
         this.eventBridgeService = eventBridgeService;
         this.openSearchService = openSearchService;
         this.emailService = emailService;
+        this.eventBridgeConfig = eventBridgeConfig;
     }
 
+    /**
+     * Обрабатывает голосовое напоминание.
+     * <p>
+     * Этапы обработки:
+     * <ol>
+     *     <li>Загрузка аудио в S3</li>
+     *     <li>Транскрибация аудио в текст</li>
+     *     <li>Семантический анализ текста (извлечение действия и времени)</li>
+     *     <li>Создание правила EventBridge</li>
+     *     <li>Сохранение напоминания в OpenSearch</li>
+     * </ol>
+     *
+     * @param userId ID пользователя
+     * @param audioFile аудиофайл с напоминанием
+     * @param userEmail email пользователя для уведомлений
+     * @return ID созданного напоминания
+     */
     public CompletableFuture<String> processVoiceReminder(
             String userId,
             java.io.File audioFile,
@@ -80,7 +138,7 @@ public class VoiceReminderService {
                     CreateRuleRequest ruleRequest = new CreateRuleRequest(
                             "reminder-" + reminderId,
                             parsed.scheduledTime(),
-                            "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                            eventBridgeConfig.getDefaultLambdaArn(),
                             inputData,
                             "Напоминание: " + parsed.action(),
                             parsed.intent()
@@ -115,6 +173,20 @@ public class VoiceReminderService {
                 });
     }
 
+    /**
+     * Отправляет напоминание пользователю.
+     * <p>
+     * Этапы отправки:
+     * <ol>
+     *     <li>Получение напоминания из OpenSearch</li>
+     *     <li>Отправка email уведомления</li>
+     *     <li>Обновление статуса на COMPLETED</li>
+     * </ol>
+     *
+     * @param reminderId ID напоминания
+     * @param userEmail email пользователя
+     * @return CompletableFuture для асинхронного ожидания
+     */
     public CompletableFuture<Void> sendReminder(String reminderId, String userEmail) {
         log.info("Sending reminder: {} to {}", reminderId, userEmail);
 
@@ -149,12 +221,19 @@ public class VoiceReminderService {
                 });
     }
 
-    @Deprecated
-    public CompletableFuture<java.util.List<ReminderRecord>> getUserReminders(
-            String userId, int limit) {
-        return openSearchService.findRemindersByUser(userId, limit);
-    }
-
+    /**
+     * Удаляет напоминание.
+     * <p>
+     * Этапы удаления:
+     * <ol>
+     *     <li>Получение напоминания из OpenSearch</li>
+     *     <li>Удаление правила EventBridge (если есть)</li>
+     *     <li>Удаление напоминания из OpenSearch</li>
+     * </ol>
+     *
+     * @param reminderId ID напоминания
+     * @return true если удалено успешно
+     */
     public CompletableFuture<Boolean> deleteReminder(String reminderId) {
         return openSearchService.getReminderById(reminderId)
                 .thenCompose(optionalReminder -> {
@@ -194,6 +273,24 @@ public class VoiceReminderService {
         );
     }
 
+    /**
+     * Обновляет напоминание.
+     * <p>
+     * Этапы обновления:
+     * <ol>
+     *     <li>Получение текущего напоминания из OpenSearch</li>
+     *     <li>Удаление старого правила EventBridge</li>
+     *     <li>Создание нового правила EventBridge</li>
+     *     <li>Обновление напоминания в OpenSearch</li>
+     * </ol>
+     *
+     * @param reminderId ID напоминания
+     * @param extractedAction новое действие
+     * @param scheduledTime новое время выполнения
+     * @param status новый статус
+     * @param userEmail новый email пользователя
+     * @return true если обновлено успешно
+     */
     public CompletableFuture<Boolean> updateReminder(String reminderId,
                                                      String extractedAction,
                                                      LocalDateTime scheduledTime,
@@ -237,7 +334,7 @@ public class VoiceReminderService {
                         CreateRuleRequest ruleRequest = new CreateRuleRequest(
                                 "reminder-" + reminderId + "-" + System.currentTimeMillis(),
                                 scheduledTime,
-                                "arn:aws:lambda:us-east-1:000000000000:function:send-reminder",
+                                eventBridgeConfig.getDefaultLambdaArn(),
                                 inputData,
                                 "Напоминание: " + (extractedAction != null ? extractedAction : existing.extractedAction()),
                                 existing.intent()
@@ -270,6 +367,19 @@ public class VoiceReminderService {
                 });
     }
 
+    /**
+     * Отменяет напоминание.
+     * <p>
+     * Этапы отмены:
+     * <ol>
+     *     <li>Получение напоминания из OpenSearch</li>
+     *     <li>Обновление статуса на CANCELLED</li>
+     *     <li>Удаление правила EventBridge (если есть)</li>
+     * </ol>
+     *
+     * @param reminderId ID напоминания
+     * @return true если отменено успешно
+     */
     public CompletableFuture<Boolean> cancelReminder(String reminderId) {
         log.info("Cancelling reminder: {}", reminderId);
 
@@ -298,9 +408,5 @@ public class VoiceReminderService {
 
                     return updateFuture;
                 });
-    }
-
-    public OpenSearchService getOpenSearchService() {
-        return openSearchService;
     }
 }

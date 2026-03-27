@@ -25,6 +25,16 @@ import org.slf4j.LoggerFactory;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * REST ресурс для сброса пароля.
+ * <p>
+ * Предоставляет endpoints для:
+ * <ul>
+ *     <li>Запроса сброса пароля (forgot password)</li>
+ *     <li>Проверки токена сброса (validate token)</li>
+ *     <li>Сброса пароля (reset password)</li>
+ * </ul>
+ */
 @Path("/auth/password")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -35,6 +45,12 @@ public class PasswordResetResource {
     private final EmailPasswordResetService emailService;
     private final UserRepository userRepository;
 
+    /**
+     * Создаёт ресурс сброса пароля с внедрёнными сервисами.
+     *
+     * @param emailService сервис для отправки email
+     * @param userRepository репозиторий пользователей
+     */
     @Inject
     public PasswordResetResource(EmailPasswordResetService emailService,
                                  UserRepository userRepository) {
@@ -42,6 +58,14 @@ public class PasswordResetResource {
         this.userRepository = userRepository;
     }
 
+    /**
+     * Запрашивает сброс пароля.
+     * <p>
+     * Отправляет email с токеном сброса если пользователь существует.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param request запрос с email
+     */
     @POST
     @Path("/forgot")
     public void forgotPassword(@Suspended AsyncResponse asyncResponse,
@@ -100,6 +124,12 @@ public class PasswordResetResource {
                 });
     }
 
+    /**
+     * Проверяет токен сброса пароля.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param token токен для проверки
+     */
     @GET
     @Path("/validate")
     public void validateToken(@Suspended AsyncResponse asyncResponse,
@@ -142,6 +172,12 @@ public class PasswordResetResource {
                 });
     }
 
+    /**
+     * Сбрасывает пароль по токену.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param request запрос с токеном и новым паролем
+     */
     @POST
     @Path("/reset")
     public void resetPassword(@Suspended AsyncResponse asyncResponse,
@@ -245,6 +281,13 @@ public class PasswordResetResource {
                 });
     }
 
+    /**
+     * Сбрасывает пароль по токену (form-based).
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param token токен сброса
+     * @param newPassword новый пароль
+     */
     @POST
     @Path("/reset-form")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)

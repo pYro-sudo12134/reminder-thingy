@@ -19,19 +19,48 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
+/**
+ * REST ресурс для аутентификации и управления сессиями.
+ * <p>
+ * Предоставляет endpoints для:
+ * <ul>
+ *     <li>Входа в систему (login)</li>
+ *     <li>Регистрации нового пользователя</li>
+ *     <li>Выхода из системы (logout)</li>
+ *     <li>Проверки статуса аутентификации</li>
+ *     <li>Получения информации о текущем пользователе</li>
+ * </ul>
+ */
 @Path("/auth")
 @Produces(MediaType.APPLICATION_JSON)
 @Singleton
 public class AuthResource {
 
     private static final Logger log = LoggerFactory.getLogger(AuthResource.class);
+
+    /** Таймаут сессии по умолчанию (30 минут) */
+    private static final int DEFAULT_SESSION_TIMEOUT_MIN = 30;
+
     private final UserRepository userRepository;
 
+    /**
+     * Создаёт ресурс аутентификации с внедрённым репозиторием.
+     *
+     * @param userRepository репозиторий пользователей
+     */
     @Inject
     public AuthResource(UserRepository userRepository) {
         this.userRepository = userRepository;
     }
 
+    /**
+     * Аутентифицирует пользователя и создаёт сессию.
+     *
+     * @param username имя пользователя
+     * @param password пароль
+     * @param request HTTP запрос для получения сессии
+     * @return Response с sessionId или ошибкой
+     */
     @POST
     @Path("/login")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
@@ -56,12 +85,12 @@ public class AuthResource {
 
         try {
             boolean isValid = userRepository.validateCredentials(username, password);
-            log.info("validateCredentials returned: " + isValid);
+            log.info("validateCredentials returned: {}", isValid);
 
             HttpSession session = request.getSession(true);
-            System.out.println("Session created: " + session.getId());
+            log.debug("Session created: {}", session.getId());
             session.setAttribute("username", username);
-            session.setMaxInactiveInterval(30 * 60);
+            session.setMaxInactiveInterval(DEFAULT_SESSION_TIMEOUT_MIN * 60);
 
             return Response.ok(Map.of(
                     "username", username,
@@ -69,14 +98,22 @@ public class AuthResource {
             )).build();
 
         } catch (Exception e) {
-            log.error("exception in login: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Exception in login: {}", e.getMessage(), e);
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Login failed: " + e.getMessage()))
                     .build();
         }
     }
 
+    /**
+     * Регистрирует нового пользователя.
+     *
+     * @param username имя пользователя
+     * @param password пароль
+     * @param email email
+     * @param request HTTP запрос для получения сессии
+     * @return Response с sessionId или ошибкой
+     */
     @POST
     @Path("/register")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
@@ -119,6 +156,12 @@ public class AuthResource {
         }
     }
 
+    /**
+     * Получает информацию о текущем пользователе.
+     *
+     * @param request HTTP запрос для получения сессии
+     * @return Response с username или ошибкой
+     */
     @GET
     @Path("/me")
     public Response getCurrentUser(@Context HttpServletRequest request) {
@@ -133,12 +176,24 @@ public class AuthResource {
         return Response.ok(Map.of("username", username)).build();
     }
 
+    /**
+     * Проверяет статус аутентификации.
+     *
+     * @param request HTTP запрос для получения сессии
+     * @return Response с active=true/false
+     */
     @GET
     @Path("/is-auth")
     public Response getStatus(@Context HttpServletRequest request) {
         return Response.ok(Map.of("active", request.getSession(false) != null)).build();
     }
 
+    /**
+     * Завершает сессию пользователя (logout).
+     *
+     * @param request HTTP запрос для получения сессии
+     * @return Response с подтверждением
+     */
     @POST
     @Path("/logout")
     public Response logout(@Context HttpServletRequest request) {

@@ -37,6 +37,20 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+/**
+ * REST ресурс для управления напоминаниями.
+ * <p>
+ * Предоставляет endpoints для:
+ * <ul>
+ *     <li>Записи голосовых напоминаний</li>
+ *     <li>Просмотра напоминаний</li>
+ *     <li>Обновления напоминаний</li>
+ *     <li>Удаления напоминаний</li>
+ *     <li>Отмены напоминаний</li>
+ *     <li>Поиска и автодополнения</li>
+ *     <li>Получения статистики</li>
+ * </ul>
+ */
 @Path("/")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -46,12 +60,28 @@ public class ReminderResource {
     private final VoiceReminderService voiceReminderService;
     private final OpenSearchService openSearchService;
 
+    /**
+     * Создаёт ресурс напоминаний с внедрёнными сервисами.
+     *
+     * @param voiceReminderService сервис для обработки напоминаний
+     * @param openSearchService сервис для работы с OpenSearch
+     */
     @Inject
-    public ReminderResource(VoiceReminderService voiceReminderService) {
+    public ReminderResource(VoiceReminderService voiceReminderService, OpenSearchService openSearchService) {
         this.voiceReminderService = voiceReminderService;
-        this.openSearchService = voiceReminderService.getOpenSearchService();
+        this.openSearchService = openSearchService;
     }
 
+    /**
+     * Записывает голосовое напоминание.
+     * <p>
+     * Принимает аудиофайл, загружает в S3, транскрибирует, анализирует и создаёт напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param userEmail email пользователя
+     * @param audioStream поток с аудиофайлом
+     */
     @POST
     @Path("/reminder/record")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -136,6 +166,12 @@ public class ReminderResource {
         }
     }
 
+    /**
+     * Получает напоминание по ID.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @GET
     @Path("/reminder/{id}")
     public void getReminder(
@@ -183,6 +219,14 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает список напоминаний пользователя.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param limit максимальное количество результатов
+     * @param statusFilter фильтр по статусу (опционально)
+     */
     @GET
     @Path("/user/{userId}/reminders")
     public void getUserReminders(
@@ -248,6 +292,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Удаляет напоминание по ID.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @DELETE
     @Path("/reminder/{id}")
     public void deleteReminder(
@@ -284,6 +334,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает транскрипцию напоминания.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @GET
     @Path("/reminder/{id}/transcription")
     public void getReminderTranscription(
@@ -340,6 +396,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает статистику по напоминаниям пользователя.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     */
     @GET
     @Path("/stats/{userId}")
     public void getUserStats(
@@ -389,6 +451,14 @@ public class ReminderResource {
         }
     }
 
+    /**
+     * Автодополнение напоминаний по запросу.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param query поисковый запрос
+     * @param limit максимальное количество результатов
+     */
     @GET
     @Path("/autocomplete")
     public void autocompleteReminders(
@@ -442,6 +512,13 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Обновляет напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     * @param updateRequest данные для обновления
+     */
     @PUT
     @Path("/reminder/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
@@ -529,6 +606,12 @@ public class ReminderResource {
         }).thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Отменяет напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @POST
     @Path("/reminder/{id}/cancel")
     public void cancelReminder(
@@ -568,6 +651,15 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает напоминания по диапазону времени.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param startTime начало диапазона
+     * @param endTime конец диапазона
+     * @param limit максимальное количество результатов
+     */
     @GET
     @Path("/reminders/time-range")
     public void getRemindersByTimeRange(
