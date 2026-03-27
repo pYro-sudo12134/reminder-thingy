@@ -1,6 +1,7 @@
 package by.losik;
 
 import by.losik.composition.root.AWSModule;
+import by.losik.composition.root.FilterModule;
 import by.losik.composition.root.JpaModule;
 import by.losik.composition.root.MailModule;
 import by.losik.composition.root.RateLimitModule;
@@ -16,8 +17,11 @@ public class Main {
     public static void main(String[] args) {
         try {
             Injector injector = Guice.createInjector(
-                    new AWSModule(), new JpaModule(),
-                    new MailModule(), new RateLimitModule());
+                    new AWSModule(),
+                    new JpaModule(),
+                    new MailModule(),
+                    new RateLimitModule(),
+                    new FilterModule());
             OpenSearchService openSearchService = injector.getInstance(OpenSearchService.class);
             openSearchService.initializeIndices().join();
             log.info("OpenSearch indices initialized");

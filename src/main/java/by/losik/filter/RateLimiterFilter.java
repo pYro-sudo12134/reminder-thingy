@@ -25,9 +25,41 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Фильтр для rate limiting через Redis.
+ * <p>
+ * Использует Redis с Lua scripts для атомарного подсчёта запросов.
+ * Поддерживает три уровня лимитов: в минуту, в час, в день.
+ * <p>
+ * Client ID определяется по приоритету:
+ * <ol>
+ *     <li>API key (X-API-Key header)</li>
+ *     <li>Bearer token (Authorization header)</li>
+ *     <li>User ID (из URL /user/{userId}/...)</li>
+ *     <li>IP адрес клиента</li>
+ * </ol>
+ *
+ * @see by.losik.config.RateLimitConfig
+ */
 @Singleton
 public class RateLimiterFilter implements Filter {
     private static final Logger log = LoggerFactory.getLogger(RateLimiterFilter.class);
+    private static final String RATE_LIMIT_PREFIX = "rl:";
+    private static final String MINUTE_SUFFIX = "min:";
+    private static final String HOUR_SUFFIX = "hour:";
+    private static final String DAY_SUFFIX = "day:";
+    private static final String RATE_LIMIT_SCRIPT =
+            "local minute = redis.call('INCR', KEYS[1]) " +
+            "if minute == 1 then redis.call('EXPIRE', KEYS[1], 60) end " +
+            "local hour = redis.call('INCR', KEYS[2]) " +
+            "if hour == 1 then redis.call('EXPIRE', KEYS[2], 3600) end " +
+            "local day = redis.call('INCR', KEYS[3]) " +
+            "if day == 1 then redis.call('EXPIRE', KEYS[3], 86400) end " +
+            "local limits = {ARGV[1], ARGV[2], ARGV[3]} " +
+            "if minute > tonumber(limits[1]) then return 'minute' end " +
+            "if hour > tonumber(limits[2]) then return 'hour' end " +
+            "if day > tonumber(limits[3]) then return 'day' end " +
+            "return 'ok'";
 
     private final RateLimitConfig rateLimitConfig;
     private final RedisRateLimitConfig redisConfig;
@@ -35,6 +67,13 @@ public class RateLimiterFilter implements Filter {
     private final String[] whitelistedIps;
     private JedisPool jedisPool;
 
+    /**
+     * Создаёт фильтр rate limiting.
+     *
+     * @param rateLimitConfig конфигурация лимитов
+     * @param redisConfig конфигурация Redis подключения
+     * @param redisConnectionFactory фабрика подключений к Redis
+     */
     @Inject
     public RateLimiterFilter(RateLimitConfig rateLimitConfig,
                              RedisRateLimitConfig redisConfig,
@@ -246,24 +285,11 @@ public class RateLimiterFilter implements Filter {
         }
 
         try (Jedis jedis = jedisPool.getResource()) {
-            String minuteKey = "rl:min:" + redisKey;
-            String hourKey = "rl:hour:" + redisKey;
-            String dayKey = "rl:day:" + redisKey;
+            String minuteKey = RATE_LIMIT_PREFIX + MINUTE_SUFFIX + redisKey;
+            String hourKey = RATE_LIMIT_PREFIX + HOUR_SUFFIX + redisKey;
+            String dayKey = RATE_LIMIT_PREFIX + DAY_SUFFIX + redisKey;
 
-            String script =
-                    "local minute = redis.call('INCR', KEYS[1]) " +
-                            "if minute == 1 then redis.call('EXPIRE', KEYS[1], 60) end " +
-                            "local hour = redis.call('INCR', KEYS[2]) " +
-                            "if hour == 1 then redis.call('EXPIRE', KEYS[2], 3600) end " +
-                            "local day = redis.call('INCR', KEYS[3]) " +
-                            "if day == 1 then redis.call('EXPIRE', KEYS[3], 86400) end " +
-                            "local limits = {ARGV[1], ARGV[2], ARGV[3]} " +
-                            "if minute > tonumber(limits[1]) then return 'minute' end " +
-                            "if hour > tonumber(limits[2]) then return 'hour' end " +
-                            "if day > tonumber(limits[3]) then return 'day' end " +
-                            "return 'ok'";
-
-            String result = (String) jedis.eval(script,
+            String result = (String) jedis.eval(RATE_LIMIT_SCRIPT,
                     3, minuteKey, hourKey, dayKey,
                     String.valueOf(limit.getMaxRequestsPerMinute()),
                     String.valueOf(limit.getMaxRequestsPerHour()),

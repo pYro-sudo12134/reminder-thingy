@@ -1,5 +1,6 @@
 package by.losik.server;
 
+import by.losik.config.CorsConfig;
 import by.losik.filter.CorsFilter;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.filter.SessionAuthFilter;
@@ -28,6 +29,22 @@ import java.nio.file.Paths;
 import java.util.EnumSet;
 import java.util.Optional;
 
+/**
+ * Веб-сервер Jetty с Jersey JAX-RS.
+ * <p>
+ * Настраивает два контекста:
+ * <ul>
+ *     <li>/api — REST API с Jersey (аутентификация, rate limiting, CORS)</li>
+ *     <li>/ — Статические файлы (CORS, rate limiting)</li>
+ * </ul>
+ * <p>
+ * Фильтры применяются в порядке:
+ * <ol>
+ *     <li>CorsFilter — добавляет CORS заголовки</li>
+ *     <li>RateLimiterFilter — ограничивает частоту запросов</li>
+ *     <li>SessionAuthFilter — проверяет аутентификацию (только /api)</li>
+ * </ol>
+ */
 @Singleton
 public class WebServer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(WebServer.class);
@@ -35,21 +52,39 @@ public class WebServer implements AutoCloseable {
     private final int port;
     private final ReminderResource reminderResource;
     private final RateLimiterFilter rateLimiterFilter;
+    private final SessionAuthFilter sessionAuthFilter;
+    private final CorsConfig corsConfig;
     private final AuthResource authResource;
     private final MetricsResource metricsResource;
     private final PasswordResetResource passwordResetResource;
 
+    /**
+     * Создаёт веб-сервер с конфигурацией.
+     *
+     * @param port порт сервера
+     * @param reminderResource ресурс для управления напоминаниями
+     * @param authResource ресурс для аутентификации
+     * @param metricsResource ресурс для метрик Prometheus
+     * @param passwordResetResource ресурс для сброса пароля
+     * @param rateLimiterFilter фильтр rate limiting
+     * @param sessionAuthFilter фильтр аутентификации
+     * @param corsConfig конфигурация CORS
+     */
     @Inject
     public WebServer(int port,
                      ReminderResource reminderResource,
                      AuthResource authResource,
                      MetricsResource metricsResource,
                      PasswordResetResource passwordResetResource,
-                     RateLimiterFilter rateLimiterFilter) {
+                     RateLimiterFilter rateLimiterFilter,
+                     SessionAuthFilter sessionAuthFilter,
+                     CorsConfig corsConfig) {
         this.port = port;
         this.metricsResource = metricsResource;
         this.reminderResource = reminderResource;
         this.rateLimiterFilter = rateLimiterFilter;
+        this.sessionAuthFilter = sessionAuthFilter;
+        this.corsConfig = corsConfig;
         this.passwordResetResource = passwordResetResource;
         this.authResource = authResource;
     }
@@ -99,18 +134,21 @@ public class WebServer implements AutoCloseable {
         ServletContextHandler apiContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
         apiContext.setContextPath("/api");
 
-        FilterHolder corsFilter = new FilterHolder(new CorsFilter());
+        // CORS фильтр
+        FilterHolder corsFilter = new FilterHolder(new CorsFilter(corsConfig));
         apiContext.addFilter(corsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
+        // Rate limiting фильтр
         FilterHolder rateLimitFilter = new FilterHolder(rateLimiterFilter);
         apiContext.addFilter(rateLimitFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
+        // Jersey конфигурация
         ResourceConfig apiConfig = new ResourceConfig();
         apiConfig.register(reminderResource);
         apiConfig.register(authResource);
         apiConfig.register(metricsResource);
         apiConfig.register(passwordResetResource);
-        apiConfig.register(SessionAuthFilter.class);
+        apiConfig.register(sessionAuthFilter);  // Готовый инстанс из Guice
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);
 
@@ -125,9 +163,11 @@ public class WebServer implements AutoCloseable {
         ServletContextHandler staticContext = new ServletContextHandler(ServletContextHandler.SESSIONS);
         staticContext.setContextPath("/");
 
-        FilterHolder staticCorsFilter = new FilterHolder(new CorsFilter());
+        // CORS фильтр
+        FilterHolder staticCorsFilter = new FilterHolder(new CorsFilter(corsConfig));
         staticContext.addFilter(staticCorsFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 
+        // Rate limiting фильтр
         FilterHolder staticRateLimitFilter = new FilterHolder(rateLimiterFilter);
         staticContext.addFilter(staticRateLimitFilter, "/*", EnumSet.of(DispatcherType.REQUEST));
 

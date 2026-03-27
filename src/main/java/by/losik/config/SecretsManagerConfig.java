@@ -1,5 +1,6 @@
 package by.losik.config;
 
+import by.losik.util.ConfigUtils;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Singleton;
@@ -21,9 +22,24 @@ import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Менеджер секретов с поддержкой нескольких источников.
+ * <p>
+ * Загружает секреты из (в порядке приоритета):
+ * <ul>
+ *     <li>Docker Secrets (/app/secrets/)</li>
+ *     <li>Локальных файлов (./secrets/, ../secrets/)</li>
+ *     <li>AWS Secrets Manager (если доступен)</li>
+ *     <li>Переменных окружения</li>
+ * </ul>
+ * <p>
+ * Секреты кэшируются в ConcurrentHashMap для производительности.
+ *
+ * @see by.losik.composition.root.AWSModule
+ * @see by.losik.composition.root.JpaModule
+ */
 @Singleton
 public class SecretsManagerConfig implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(SecretsManagerConfig.class);
@@ -36,15 +52,22 @@ public class SecretsManagerConfig implements AutoCloseable {
     private final boolean useAwsSecretsManager;
     private final boolean useLocalFiles;
 
+    /**
+     * Создаёт менеджер секретов с автоопределением источника.
+     *
+     * @param endpoint URL эндпоинта AWS/LocalStack
+     * @param region AWS регион
+     * @param accessKey AWS access key
+     * @param secretKey AWS secret key
+     * @param environmentName имя окружения (dev/prod)
+     */
     public SecretsManagerConfig(String endpoint, String region, String accessKey,
                                 String secretKey, String environmentName) {
         this.environmentName = environmentName;
         this.secretName = environmentName + "/voice-reminder/secrets";
 
         this.useAwsSecretsManager = isAwsSecretsManagerAvailable(endpoint, accessKey, secretKey);
-        this.useLocalFiles = Boolean.parseBoolean(
-                System.getenv().getOrDefault("USE_LOCAL_SECRETS", "true")
-        );
+        this.useLocalFiles = ConfigUtils.getBooleanEnvOrDefault("USE_LOCAL_SECRETS", true);
 
         this.secretsManagerClient = useAwsSecretsManager ?
                 SecretsManagerClient.builder()
@@ -308,15 +331,15 @@ public class SecretsManagerConfig implements AutoCloseable {
     private void loadFromEnvironment() {
         Map<String, String> envSecrets = new HashMap<>();
 
-        envSecrets.put("NLP_GRPC_API_KEY", getEnv("NLP_GRPC_API_KEY"));
-        envSecrets.put("JWT_SECRET", getEnv("JWT_SECRET"));
-        envSecrets.put("SERVICE_TOKEN", getEnv("SERVICE_TOKEN"));
-        envSecrets.put("NLP_SERVICE_HOST", getEnv("NLP_SERVICE_HOST", "localhost"));
-        envSecrets.put("NLP_SERVICE_PORT", getEnv("NLP_SERVICE_PORT", "50051"));
-        envSecrets.put("GRPC_USE_TLS", getEnv("GRPC_USE_TLS", "false"));
-        envSecrets.put("WS_PORT", getEnv("WS_PORT", "8090"));
-        envSecrets.put("AWS_ACCESS_KEY_ID", getEnv("AWS_ACCESS_KEY_ID"));
-        envSecrets.put("AWS_SECRET_ACCESS_KEY", getEnv("AWS_SECRET_ACCESS_KEY"));
+        envSecrets.put("NLP_GRPC_API_KEY", ConfigUtils.getEnvOrNull("NLP_GRPC_API_KEY"));
+        envSecrets.put("JWT_SECRET", ConfigUtils.getEnvOrNull("JWT_SECRET"));
+        envSecrets.put("SERVICE_TOKEN", ConfigUtils.getEnvOrNull("SERVICE_TOKEN"));
+        envSecrets.put("NLP_SERVICE_HOST", ConfigUtils.getEnvOrDefault("NLP_SERVICE_HOST", "localhost"));
+        envSecrets.put("NLP_SERVICE_PORT", ConfigUtils.getEnvOrDefault("NLP_SERVICE_PORT", "50051"));
+        envSecrets.put("GRPC_USE_TLS", ConfigUtils.getEnvOrDefault("GRPC_USE_TLS", "false"));
+        envSecrets.put("WS_PORT", ConfigUtils.getEnvOrDefault("WS_PORT", "8090"));
+        envSecrets.put("AWS_ACCESS_KEY_ID", ConfigUtils.getEnvOrNull("AWS_ACCESS_KEY_ID"));
+        envSecrets.put("AWS_SECRET_ACCESS_KEY", ConfigUtils.getEnvOrNull("AWS_SECRET_ACCESS_KEY"));
 
         envSecrets.entrySet().stream()
                 .filter(entry -> entry.getValue() != null && !entry.getValue().isEmpty())
@@ -329,11 +352,11 @@ public class SecretsManagerConfig implements AutoCloseable {
     private void supplementFromEnvironment() {
         Map<String, String> defaults = new HashMap<>();
 
-        defaults.put("NLP_SERVICE_HOST", getEnv("NLP_SERVICE_HOST", "localhost"));
-        defaults.put("NLP_SERVICE_PORT", getEnv("NLP_SERVICE_PORT", "50051"));
-        defaults.put("GRPC_USE_TLS", getEnv("GRPC_USE_TLS", "false"));
-        defaults.put("WS_PORT", getEnv("WS_PORT", "8090"));
-        defaults.put("NLP_GRPC_API_KEY", getEnv("NLP_GRPC_API_KEY"));
+        defaults.put("NLP_SERVICE_HOST", ConfigUtils.getEnvOrDefault("NLP_SERVICE_HOST", "localhost"));
+        defaults.put("NLP_SERVICE_PORT", ConfigUtils.getEnvOrDefault("NLP_SERVICE_PORT", "50051"));
+        defaults.put("GRPC_USE_TLS", ConfigUtils.getEnvOrDefault("GRPC_USE_TLS", "false"));
+        defaults.put("WS_PORT", ConfigUtils.getEnvOrDefault("WS_PORT", "8090"));
+        defaults.put("NLP_GRPC_API_KEY", ConfigUtils.getEnvOrNull("NLP_GRPC_API_KEY"));
 
         defaults.forEach((key, value) -> {
             if (!cachedSecrets.containsKey(key) && value != null) {
@@ -367,19 +390,6 @@ public class SecretsManagerConfig implements AutoCloseable {
                     value.substring(0, Math.min(3, value.length())) + "..." : "null";
             log.debug("  {}: {}", key, maskedValue);
         });
-
-    }
-
-    private String getEnv(String key) {
-        return Optional.ofNullable(System.getenv(key))
-                .or(() -> Optional.ofNullable(System.getProperty(key)))
-                .orElse(null);
-    }
-
-    private String getEnv(String key, String defaultValue) {
-        return Optional.ofNullable(System.getenv(key))
-                .or(() -> Optional.ofNullable(System.getProperty(key)))
-                .orElse(defaultValue);
     }
 
     public Map<String, String> getAllSecrets() {

@@ -86,7 +86,7 @@ public class VoiceReminderService {
                             parsed.intent()
                     );
 
-                    return eventBridgeService.createScheduleRule(ruleRequest)
+                    return eventBridgeService.createEmailRule(ruleRequest)
                             .thenCompose(rule -> {
                                 ReminderRecord reminderWithRule = new ReminderRecord(
                                         reminderId,
@@ -243,7 +243,7 @@ public class VoiceReminderService {
                                 existing.intent()
                         );
 
-                        return eventBridgeService.createScheduleRule(ruleRequest)
+                        return eventBridgeService.createEmailRule(ruleRequest)
                                 .thenCompose(rule -> {
                                     ReminderRecord updated = new ReminderRecord(
                                             existing.reminderId(),

@@ -7,6 +7,7 @@ import by.losik.repository.UserRepository;
 import by.losik.service.EmailPasswordResetService;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
@@ -44,7 +45,7 @@ public class PasswordResetResource {
     @POST
     @Path("/forgot")
     public void forgotPassword(@Suspended AsyncResponse asyncResponse,
-                               PasswordResetRequest request) {
+                               @Valid PasswordResetRequest request) {
         String email = request.email();
 
         if (email == null || email.isBlank()) {
@@ -144,7 +145,7 @@ public class PasswordResetResource {
     @POST
     @Path("/reset")
     public void resetPassword(@Suspended AsyncResponse asyncResponse,
-                              PasswordResetRequest request) {
+                              @Valid PasswordResetRequest request) {
         String token = request.token();
         String newPassword = request.newPassword();
 

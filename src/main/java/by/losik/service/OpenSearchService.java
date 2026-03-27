@@ -1,9 +1,13 @@
 package by.losik.service;
 
 import by.losik.config.LocalStackConfig;
+import by.losik.config.OpenSearchConfig;
 import by.losik.dto.AutocompleteResult;
 import by.losik.dto.ReminderRecord;
 import by.losik.dto.TranscriptionResult;
+import by.losik.service.mapper.ReminderIndexMapper;
+import by.losik.service.mapper.TranscriptionIndexMapper;
+import by.losik.util.DateTimeParser;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest;
@@ -20,7 +24,6 @@ import org.opensearch.client.RequestOptions;
 import org.opensearch.client.RestHighLevelClient;
 import org.opensearch.client.indices.CreateIndexRequest;
 import org.opensearch.client.indices.GetIndexRequest;
-import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.query.BoolQueryBuilder;
@@ -36,9 +39,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -48,20 +49,60 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+/**
+ * Сервис для работы с OpenSearch (поисковый движок).
+ * <p>
+ * Предоставляет методы для:
+ * <ul>
+ *     <li>Инициализации индексов (reminders, transcriptions)</li>
+ *     <li>Индексации напоминаний и транскрипций</li>
+ *     <li>Поиска напоминаний по пользователю, времени, статусу</li>
+ *     <li>Autocomplete для напоминаний с подсветкой совпадений</li>
+ *     <li>Обновления и удаления напоминаний</li>
+ *     <li>Статистики по напоминаниям пользователя</li>
+ * </ul>
+ * <p>
+ * Использует асинхронные операции через CompletableFuture для всех методов.
+ *
+ * @see OpenSearchConfig
+ * @see ReminderIndexMapper
+ * @see TranscriptionIndexMapper
+ */
 @Singleton
 public class OpenSearchService {
 
     private static final Logger log = LoggerFactory.getLogger(OpenSearchService.class);
     private final RestHighLevelClient openSearchClient;
+    private final OpenSearchConfig config;
+    private final ReminderIndexMapper reminderMapper;
+    private final TranscriptionIndexMapper transcriptionMapper;
 
-    private static final String TRANSCRIPTION_INDEX = "transcriptions";
-    private static final String REMINDER_INDEX = "reminders";
-
+    /**
+     * Создаёт OpenSearch сервис с конфигурацией и мапперами.
+     *
+     * @param localStackConfig конфигурация LocalStack для клиента
+     * @param config конфигурация OpenSearch
+     * @param reminderMapper маппер для напоминаний
+     * @param transcriptionMapper маппер для транскрипций
+     */
     @Inject
-    public OpenSearchService(LocalStackConfig config) {
-        this.openSearchClient = config.getOpenSearchClient();
+    public OpenSearchService(LocalStackConfig localStackConfig,
+                             OpenSearchConfig config,
+                             ReminderIndexMapper reminderMapper,
+                             TranscriptionIndexMapper transcriptionMapper) {
+        this.openSearchClient = localStackConfig.getOpenSearchClient();
+        this.config = config;
+        this.reminderMapper = reminderMapper;
+        this.transcriptionMapper = transcriptionMapper;
     }
 
+    /**
+     * Инициализирует индексы OpenSearch.
+     * <p>
+     * Создаёт индексы reminders и transcriptions, если они не существуют.
+     *
+     * @return CompletableFuture для асинхронного ожидания
+     */
     public CompletableFuture<Void> initializeIndices() {
         return CompletableFuture.runAsync(() -> {
             try {
@@ -75,90 +116,18 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Создаёт индекс напоминаний, если он не существует.
+     *
+     * @throws IOException если не удалось создать индекс
+     */
     private void ensureReminderIndex() throws IOException {
-        if (!indexExists(REMINDER_INDEX)) {
-            CreateIndexRequest request = new CreateIndexRequest(REMINDER_INDEX);
-
-            XContentBuilder mapping = XContentFactory.jsonBuilder()
-                    .startObject()
-                    .startObject("settings")
-                    .startObject("analysis")
-                    .startObject("analyzer")
-                    .startObject("autocomplete_analyzer")
-                    .field("type", "custom")
-                    .field("tokenizer", "standard")
-                    .field("filter", new String[]{"lowercase", "autocomplete_filter"})
-                    .endObject()
-                    .startObject("autocomplete_search_analyzer")
-                    .field("type", "custom")
-                    .field("tokenizer", "standard")
-                    .field("filter", new String[]{"lowercase"})
-                    .endObject()
-                    .endObject()
-                    .startObject("filter")
-                    .startObject("autocomplete_filter")
-                    .field("type", "edge_ngram")
-                    .field("min_gram", 2)
-                    .field("max_gram", 10)
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .startObject("mappings")
-                    .startObject("properties")
-                    .startObject("user_id")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("original_text")
-                    .field("type", "text")
-                    .field("analyzer", "russian")
-                    .field("search_analyzer", "russian")
-                    .startObject("fields")
-                    .startObject("autocomplete")
-                    .field("type", "text")
-                    .field("analyzer", "autocomplete_analyzer")
-                    .field("search_analyzer", "autocomplete_search_analyzer")
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .startObject("extracted_action")
-                    .field("type", "text")
-                    .field("analyzer", "russian")
-                    .field("search_analyzer", "russian")
-                    .startObject("fields")
-                    .startObject("autocomplete")
-                    .field("type", "text")
-                    .field("analyzer", "autocomplete_analyzer")
-                    .field("search_analyzer", "autocomplete_search_analyzer")
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .startObject("scheduled_time")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .startObject("status")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("notification_sent")
-                    .field("type", "boolean")
-                    .endObject()
-                    .startObject("eventbridge_rule_name")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("created_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .startObject("updated_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .endObject();
-
+        String indexName = config.getReminderIndexName();
+        if (!indexExists(indexName)) {
+            CreateIndexRequest request = new CreateIndexRequest(indexName);
+            XContentBuilder mapping = reminderMapper.buildReminderIndexMapping();
             request.source(mapping);
+
             var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
             if (response != null && response.index() != null) {
                 log.info("Created reminder index with autocomplete support: {}", response.index());
@@ -168,46 +137,18 @@ public class OpenSearchService {
         }
     }
 
+    /**
+     * Создаёт индекс транскрипций, если он не существует.
+     *
+     * @throws IOException если не удалось создать индекс
+     */
     private void ensureTranscriptionIndex() throws IOException {
-        if (!indexExists(TRANSCRIPTION_INDEX)) {
-            CreateIndexRequest request = new CreateIndexRequest(TRANSCRIPTION_INDEX);
-
-            XContentBuilder mapping = XContentFactory.jsonBuilder()
-                    .startObject()
-                    .startObject("mappings")
-                    .startObject("properties")
-                    .startObject("original_audio_key")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("transcribed_text")
-                    .field("type", "text")
-                    .field("analyzer", "russian")
-                    .endObject()
-                    .startObject("confidence")
-                    .field("type", "float")
-                    .endObject()
-                    .startObject("language")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("duration_seconds")
-                    .field("type", "float")
-                    .endObject()
-                    .startObject("user_id")
-                    .field("type", "keyword")
-                    .endObject()
-                    .startObject("completed_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .startObject("indexed_at")
-                    .field("type", "date")
-                    .field("format", "strict_date_optional_time||epoch_millis")
-                    .endObject()
-                    .endObject()
-                    .endObject()
-                    .endObject();
-
+        String indexName = config.getTranscriptionIndexName();
+        if (!indexExists(indexName)) {
+            CreateIndexRequest request = new CreateIndexRequest(indexName);
+            XContentBuilder mapping = transcriptionMapper.buildTranscriptionIndexMapping();
             request.source(mapping);
+
             var response = openSearchClient.indices().create(request, RequestOptions.DEFAULT);
             if (response != null && response.index() != null) {
                 log.info("Created transcription index: {}", response.index());
@@ -222,19 +163,19 @@ public class OpenSearchService {
         return openSearchClient.indices().exists(request, RequestOptions.DEFAULT);
     }
 
+    /**
+     * Индексирует транскрипцию в OpenSearch.
+     *
+     * @param transcription транскрипция для индексации
+     * @return ID индексированной транскрипции
+     */
     public CompletableFuture<String> indexTranscription(TranscriptionResult transcription) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> source = new HashMap<>();
-                source.put("original_audio_key", transcription.originalAudioKey());
-                source.put("transcribed_text", transcription.transcribedText());
-                source.put("confidence", transcription.confidence());
-                source.put("language", transcription.language());
-                source.put("duration_seconds", transcription.durationSeconds());
-                source.put("completed_at", transcription.completedAt());
-                source.put("indexed_at", LocalDateTime.now());
+                Map<String, Object> source = transcriptionMapper.toIndexSource(transcription);
+                String indexName = config.getTranscriptionIndexName();
 
-                IndexRequest request = new IndexRequest(TRANSCRIPTION_INDEX)
+                IndexRequest request = new IndexRequest(indexName)
                         .id(transcription.transcriptionId())
                         .source(source, XContentType.JSON);
 
@@ -248,21 +189,19 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Индексирует напоминание в OpenSearch.
+     *
+     * @param reminder напоминание для индексации
+     * @return ID индексированного напоминания
+     */
     public CompletableFuture<String> indexReminder(ReminderRecord reminder) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> source = new HashMap<>();
-                source.put("user_id", reminder.userId());
-                source.put("user_email", reminder.userEmail());
-                source.put("original_text", reminder.originalText());
-                source.put("extracted_action", reminder.extractedAction());
-                source.put("scheduled_time", reminder.scheduledTime());
-                source.put("status", reminder.status().toString());
-                source.put("notification_sent", reminder.notificationSent());
-                source.put("created_at", reminder.createdAt());
-                source.put("updated_at", LocalDateTime.now());
+                Map<String, Object> source = reminderMapper.toIndexSource(reminder);
+                String indexName = config.getReminderIndexName();
 
-                IndexRequest request = new IndexRequest(REMINDER_INDEX)
+                IndexRequest request = new IndexRequest(indexName)
                         .id(reminder.reminderId())
                         .source(source, XContentType.JSON);
 
@@ -276,6 +215,12 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Находит напоминания по времени выполнения.
+     *
+     * @param time время для поиска
+     * @return список напоминаний в диапазоне ±5 минут от времени
+     */
     public CompletableFuture<List<ReminderRecord>> findRemindersByTime(LocalDateTime time) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -295,13 +240,13 @@ public class OpenSearchService {
                 sourceBuilder.size(100);
                 sourceBuilder.sort("scheduled_time", SortOrder.ASC);
 
-                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                SearchRequest request = new SearchRequest(config.getReminderIndexName())
                         .source(sourceBuilder);
 
                 SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
 
                 return Arrays.stream(response.getHits().getHits())
-                        .map(this::mapToReminderRecord)
+                        .map(hit -> reminderMapper.mapToReminderRecord(hit.getSourceAsMap(), hit.getId()))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
@@ -312,6 +257,13 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Находит напоминания пользователя.
+     *
+     * @param userId ID пользователя
+     * @param limit максимальное количество результатов
+     * @return список напоминаний пользователя
+     */
     public CompletableFuture<List<ReminderRecord>> findRemindersByUser(String userId, int limit) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -320,13 +272,13 @@ public class OpenSearchService {
                 sourceBuilder.size(limit);
                 sourceBuilder.sort("scheduled_time", SortOrder.DESC);
 
-                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                SearchRequest request = new SearchRequest(config.getReminderIndexName())
                         .source(sourceBuilder);
 
                 SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
 
                 return Arrays.stream(response.getHits().getHits())
-                        .map(this::mapToReminderRecord)
+                        .map(hit -> reminderMapper.mapToReminderRecord(hit.getSourceAsMap(), hit.getId()))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
@@ -337,10 +289,16 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Получает напоминание по ID.
+     *
+     * @param reminderId ID напоминания
+     * @return Optional с напоминанием или пустой, если не найдено
+     */
     public CompletableFuture<Optional<ReminderRecord>> getReminderById(String reminderId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                GetRequest request = new GetRequest(REMINDER_INDEX, reminderId);
+                GetRequest request = new GetRequest(config.getReminderIndexName(), reminderId);
                 GetResponse response = openSearchClient.get(request, RequestOptions.DEFAULT);
 
                 if (!response.isExists()) {
@@ -348,7 +306,7 @@ public class OpenSearchService {
                 }
 
                 Map<String, Object> source = response.getSourceAsMap();
-                ReminderRecord record = mapToReminderRecord(source, reminderId);
+                ReminderRecord record = reminderMapper.mapToReminderRecord(source, reminderId);
                 return Optional.ofNullable(record);
 
             } catch (IOException e) {
@@ -358,6 +316,14 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Обновляет статус напоминания.
+     *
+     * @param reminderId ID напоминания
+     * @param status новый статус
+     * @param notificationSent флаг отправки уведомления
+     * @return true если обновлено успешно
+     */
     public CompletableFuture<Boolean> updateReminderStatus(String reminderId,
                                                            ReminderRecord.ReminderStatus status,
                                                            boolean notificationSent) {
@@ -368,7 +334,7 @@ public class OpenSearchService {
                 updates.put("notification_sent", notificationSent);
                 updates.put("updated_at", LocalDateTime.now());
 
-                UpdateRequest request = new UpdateRequest(REMINDER_INDEX, reminderId)
+                UpdateRequest request = new UpdateRequest(config.getReminderIndexName(), reminderId)
                         .doc(updates, XContentType.JSON);
 
                 UpdateResponse response = openSearchClient.update(request, RequestOptions.DEFAULT);
@@ -382,10 +348,16 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Удаляет напоминание.
+     *
+     * @param reminderId ID напоминания
+     * @return true если удалено успешно
+     */
     public CompletableFuture<Boolean> deleteReminder(String reminderId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                DeleteRequest request = new DeleteRequest(REMINDER_INDEX, reminderId);
+                DeleteRequest request = new DeleteRequest(config.getReminderIndexName(), reminderId);
                 DeleteResponse response = openSearchClient.delete(request, RequestOptions.DEFAULT);
 
                 log.info("Deleted reminder: {}", reminderId);
@@ -398,6 +370,14 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Ищет транскрипции по тексту.
+     *
+     * @param query поисковый запрос
+     * @param userId ID пользователя (опционально)
+     * @param limit максимальное количество результатов
+     * @return список транскрипций
+     */
     public CompletableFuture<List<TranscriptionResult>> searchTranscriptions(String query,
                                                                              String userId,
                                                                              int limit) {
@@ -416,13 +396,13 @@ public class OpenSearchService {
                 sourceBuilder.size(limit);
                 sourceBuilder.sort("completed_at", SortOrder.DESC);
 
-                SearchRequest request = new SearchRequest(TRANSCRIPTION_INDEX)
+                SearchRequest request = new SearchRequest(config.getTranscriptionIndexName())
                         .source(sourceBuilder);
 
                 SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
 
                 return Arrays.stream(response.getHits().getHits())
-                        .map(this::mapToTranscriptionResult)
+                        .map(hit -> transcriptionMapper.mapToTranscriptionResult(hit.getSourceAsMap(), hit.getId()))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
@@ -433,6 +413,12 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Получает статистику по напоминаниям пользователя.
+     *
+     * @param userId ID пользователя
+     * @return карта со статистикой по статусам
+     */
     public CompletableFuture<Map<String, Object>> getReminderStats(String userId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -442,7 +428,7 @@ public class OpenSearchService {
                 totalBuilder.query(QueryBuilders.termQuery("user_id", userId));
                 totalBuilder.size(0);
 
-                SearchRequest totalRequest = new SearchRequest(REMINDER_INDEX)
+                SearchRequest totalRequest = new SearchRequest(config.getReminderIndexName())
                         .source(totalBuilder);
 
                 SearchResponse totalResponse = openSearchClient.search(totalRequest, RequestOptions.DEFAULT);
@@ -457,7 +443,7 @@ public class OpenSearchService {
                     statusBuilder.query(query);
                     statusBuilder.size(0);
 
-                    SearchRequest statusRequest = new SearchRequest(REMINDER_INDEX)
+                    SearchRequest statusRequest = new SearchRequest(config.getReminderIndexName())
                             .source(statusBuilder);
 
                     SearchResponse statusResponse = openSearchClient.search(statusRequest, RequestOptions.DEFAULT);
@@ -474,55 +460,13 @@ public class OpenSearchService {
         });
     }
 
-    private ReminderRecord mapToReminderRecord(SearchHit hit) {
-        try {
-            return mapToReminderRecord(hit.getSourceAsMap(), hit.getId());
-        } catch (Exception e) {
-            log.error("Failed to map SearchHit to ReminderRecord", e);
-            return null;
-        }
-    }
-
-    private ReminderRecord mapToReminderRecord(Map<String, Object> source, String id) {
-        try {
-            return new ReminderRecord(
-                    id,
-                    (String) source.get("user_id"),
-                    (String) source.get("user_email"),
-                    (String) source.get("original_text"),
-                    (String) source.get("extracted_action"),
-                    parseDateTime((String) source.get("scheduled_time")),
-                    parseDateTime((String) source.get("created_at")),
-                    ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
-                    (Boolean) source.get("notification_sent"),
-                    (String) source.get("intent"),
-                    (String) source.get("eventbridge_rule_name")
-            );
-        } catch (Exception e) {
-            log.error("Failed to map source to ReminderRecord: {}", source, e);
-            return null;
-        }
-    }
-
-    private LocalDateTime parseDateTime(String dateTimeStr) {
-        if (dateTimeStr == null) return null;
-
-        try {
-            return LocalDateTime.parse(dateTimeStr, DateTimeFormatter.ISO_DATE_TIME);
-        } catch (DateTimeParseException e) {
-            try {
-                return OffsetDateTime.parse(dateTimeStr).toLocalDateTime();
-            } catch (DateTimeParseException e2) {
-                try {
-                    return LocalDateTime.parse(dateTimeStr);
-                } catch (DateTimeParseException e3) {
-                    log.error("Failed to parse date: {}", dateTimeStr, e3);
-                    return LocalDateTime.now();
-                }
-            }
-        }
-    }
-
+    /**
+     * Обновляет правило EventBridge для напоминания.
+     *
+     * @param reminderId ID напоминания
+     * @param ruleName новое имя правила
+     * @return true если обновлено успешно
+     */
     public CompletableFuture<Boolean> updateReminderEventBridgeRule(
             String reminderId, String ruleName) {
         return CompletableFuture.supplyAsync(() -> {
@@ -531,7 +475,7 @@ public class OpenSearchService {
                 updates.put("eventbridge_rule_name", ruleName);
                 updates.put("updated_at", LocalDateTime.now());
 
-                UpdateRequest request = new UpdateRequest(REMINDER_INDEX, reminderId)
+                UpdateRequest request = new UpdateRequest(config.getReminderIndexName(), reminderId)
                         .doc(updates, XContentType.JSON);
 
                 UpdateResponse response = openSearchClient.update(request, RequestOptions.DEFAULT);
@@ -543,47 +487,14 @@ public class OpenSearchService {
         });
     }
 
-    private TranscriptionResult mapToTranscriptionResult(SearchHit hit) {
-        try {
-            Map<String, Object> source = hit.getSourceAsMap();
-
-            return new TranscriptionResult(
-                    hit.getId(),
-                    (String) source.get("original_audio_key"),
-                    (String) source.get("transcribed_text"),
-                    source.get("confidence") != null ?
-                            ((Number) source.get("confidence")).doubleValue() : null,
-                    (String) source.get("language"),
-                    source.get("duration_seconds") != null ?
-                            ((Number) source.get("duration_seconds")).doubleValue() : null,
-                    LocalDateTime.parse((String) source.get("completed_at"))
-            );
-        } catch (Exception e) {
-            log.error("Failed to map SearchHit to TranscriptionResult", e);
-            return null;
-        }
-    }
-
-    public CompletableFuture<Void> cleanupIndices() {
-        return CompletableFuture.runAsync(() -> {
-            try {
-                if (indexExists(TRANSCRIPTION_INDEX)) {
-                    DeleteIndexRequest request = new DeleteIndexRequest(TRANSCRIPTION_INDEX);
-                    openSearchClient.indices().delete(request, RequestOptions.DEFAULT);
-                    log.info("Deleted transcription index");
-                }
-
-                if (indexExists(REMINDER_INDEX)) {
-                    DeleteIndexRequest request = new DeleteIndexRequest(REMINDER_INDEX);
-                    openSearchClient.indices().delete(request, RequestOptions.DEFAULT);
-                    log.info("Deleted reminder index");
-                }
-            } catch (IOException e) {
-                log.error("Failed to cleanup indices", e);
-            }
-        });
-    }
-
+    /**
+     * Автодополнение напоминаний с подсветкой совпадений.
+     *
+     * @param userId ID пользователя
+     * @param query поисковый запрос
+     * @param limit максимальное количество результатов
+     * @return результат автодополнения
+     */
     public CompletableFuture<AutocompleteResult> autocompleteReminders(
             String userId, String query, int limit) {
         return CompletableFuture.supplyAsync(() -> {
@@ -611,7 +522,7 @@ public class OpenSearchService {
                 highlightBuilder.numOfFragments(1);
                 sourceBuilder.highlighter(highlightBuilder);
 
-                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                SearchRequest request = new SearchRequest(config.getReminderIndexName())
                         .source(sourceBuilder);
 
                 SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
@@ -654,23 +565,19 @@ public class OpenSearchService {
         });
     }
 
+    /**
+     * Обновляет напоминание в OpenSearch.
+     *
+     * @param reminder напоминание для обновления
+     * @return true если обновлено успешно
+     */
     public CompletableFuture<Boolean> updateReminder(ReminderRecord reminder) {
         return CompletableFuture.supplyAsync(() -> {
             try {
-                Map<String, Object> source = new HashMap<>();
-                source.put("user_id", reminder.userId());
-                source.put("user_email", reminder.userEmail());
-                source.put("original_text", reminder.originalText());
-                source.put("extracted_action", reminder.extractedAction());
-                source.put("scheduled_time", reminder.scheduledTime());
-                source.put("status", reminder.status().toString());
-                source.put("notification_sent", reminder.notificationSent());
-                source.put("created_at", reminder.createdAt());
-                source.put("updated_at", LocalDateTime.now());
-                source.put("intent", reminder.intent());
-                source.put("eventbridge_rule_name", reminder.eventBridgeRuleName());
+                Map<String, Object> source = reminderMapper.toIndexSource(reminder);
+                String indexName = config.getReminderIndexName();
 
-                IndexRequest request = new IndexRequest(REMINDER_INDEX)
+                IndexRequest request = new IndexRequest(indexName)
                         .id(reminder.reminderId())
                         .source(source, XContentType.JSON);
 
@@ -684,25 +591,15 @@ public class OpenSearchService {
         });
     }
 
-    @Deprecated
-    public CompletableFuture<Boolean> updateReminderFields(String reminderId, Map<String, Object> fields) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                fields.put("updated_at", LocalDateTime.now());
-
-                UpdateRequest request = new UpdateRequest(REMINDER_INDEX, reminderId)
-                        .doc(fields, XContentType.JSON);
-
-                UpdateResponse response = openSearchClient.update(request, RequestOptions.DEFAULT);
-                log.info("Reminder fields updated: {}", reminderId);
-                return response.getResult() == UpdateResponse.Result.UPDATED;
-            } catch (IOException e) {
-                log.error("Failed to update reminder fields: {}", reminderId, e);
-                throw new RuntimeException("Failed to update reminder fields", e);
-            }
-        });
-    }
-
+    /**
+     * Находит напоминания по диапазону времени.
+     *
+     * @param userId ID пользователя
+     * @param startTime начало диапазона
+     * @param endTime конец диапазона
+     * @param limit максимальное количество результатов
+     * @return список напоминаний в диапазоне
+     */
     public CompletableFuture<List<ReminderRecord>> findRemindersByTimeRange(
             String userId,
             LocalDateTime startTime,
@@ -727,13 +624,13 @@ public class OpenSearchService {
                 sourceBuilder.size(limit);
                 sourceBuilder.sort("scheduled_time", SortOrder.ASC);
 
-                SearchRequest request = new SearchRequest(REMINDER_INDEX)
+                SearchRequest request = new SearchRequest(config.getReminderIndexName())
                         .source(sourceBuilder);
 
                 SearchResponse response = openSearchClient.search(request, RequestOptions.DEFAULT);
 
                 return Arrays.stream(response.getHits().getHits())
-                        .map(this::mapToReminderRecord)
+                        .map(hit -> reminderMapper.mapToReminderRecord(hit.getSourceAsMap(), hit.getId()))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 

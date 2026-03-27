@@ -6,6 +6,7 @@ import by.losik.service.OpenSearchService;
 import by.losik.service.VoiceReminderService;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -447,7 +448,7 @@ public class ReminderResource {
     public void updateReminder(
             @Suspended AsyncResponse asyncResponse,
             @PathParam("id") String reminderId,
-            UpdateReminderRequest updateRequest) {
+            @Valid UpdateReminderRequest updateRequest) {
 
         log.info("Updating reminder: {}", reminderId);
 
