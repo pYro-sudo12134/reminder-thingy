@@ -24,6 +24,9 @@ public class EmailConfig {
     private final String fromEmail;
     private final boolean useSsl;
     private final boolean useTls;
+    private final int connectionTimeoutMs;
+    private final int writeTimeoutMs;
+    private final int emailThreadPoolSize;
 
     /**
      * Создаёт конфигурацию email сервиса.
@@ -35,9 +38,13 @@ public class EmailConfig {
      * @param fromEmail email отправителя
      * @param useSsl использовать ли SSL
      * @param useTls использовать ли TLS
+     * @param connectionTimeoutMs таймаут подключения в мс (по умолчанию 5000)
+     * @param writeTimeoutMs таймаут записи в мс (по умолчанию 10000)
+     * @param emailThreadPoolSize размер пула потоков (по умолчанию 5)
      */
     public EmailConfig(String smtpHost, int smtpPort, String smtpUsername,
-                       String smtpPassword, String fromEmail, boolean useSsl, boolean useTls) {
+                       String smtpPassword, String fromEmail, boolean useSsl, boolean useTls,
+                       int connectionTimeoutMs, int writeTimeoutMs, int emailThreadPoolSize) {
         this.smtpHost = smtpHost;
         this.smtpPort = smtpPort;
         this.smtpUsername = smtpUsername;
@@ -45,6 +52,26 @@ public class EmailConfig {
         this.fromEmail = fromEmail;
         this.useSsl = useSsl;
         this.useTls = useTls;
+        this.connectionTimeoutMs = connectionTimeoutMs;
+        this.writeTimeoutMs = writeTimeoutMs;
+        this.emailThreadPoolSize = emailThreadPoolSize;
+    }
+
+    /**
+     * Создаёт конфигурацию email сервиса с настройками по умолчанию.
+     *
+     * @param smtpHost SMTP сервер
+     * @param smtpPort порт SMTP сервера
+     * @param smtpUsername имя пользователя SMTP
+     * @param smtpPassword пароль SMTP
+     * @param fromEmail email отправителя
+     * @param useSsl использовать ли SSL
+     * @param useTls использовать ли TLS
+     */
+    public EmailConfig(String smtpHost, int smtpPort, String smtpUsername,
+                       String smtpPassword, String fromEmail, boolean useSsl, boolean useTls) {
+        this(smtpHost, smtpPort, smtpUsername, smtpPassword, fromEmail, useSsl, useTls,
+                5000, 10000, 5);
     }
     
     /**
@@ -88,4 +115,22 @@ public class EmailConfig {
      * @return true если TLS включён
      */
     public boolean isUseTls() { return useTls; }
+
+    /**
+     * Получает таймаут подключения в миллисекундах.
+     * @return таймаут подключения (по умолчанию 5000 мс)
+     */
+    public int getConnectionTimeoutMs() { return connectionTimeoutMs; }
+
+    /**
+     * Получает таймаут записи в миллисекундах.
+     * @return таймаут записи (по умолчанию 10000 мс)
+     */
+    public int getWriteTimeoutMs() { return writeTimeoutMs; }
+
+    /**
+     * Получает размер пула потоков для отправки email.
+     * @return размер пула (по умолчанию 5)
+     */
+    public int getEmailThreadPoolSize() { return emailThreadPoolSize; }
 }

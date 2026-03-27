@@ -13,26 +13,55 @@ import org.slf4j.LoggerFactory;
 import java.util.Date;
 import java.util.UUID;
 
+/**
+ * Сервис для генерации и проверки токенов сброса пароля.
+ * <p>
+ * Использует JWT (JSON Web Tokens) для создания безопасных токенов сброса пароля.
+ * Токены содержат:
+ * <ul>
+ *     <li>Issuer (эмитент) — идентификатор приложения</li>
+ *     <li>Subject (тема) — имя пользователя</li>
+ *     <li>JWT ID — уникальный идентификатор токена</li>
+ *     <li>Issued At — время создания токена</li>
+ *     <li>Expires At — время истечения токена</li>
+ *     <li>Claim "type" — тип токена (password_reset)</li>
+ * </ul>
+ * <p>
+ * Время жизни токена настраивается через {@code TOKEN_EXPIRATION} (по умолчанию 24 часа).
+ *
+ * @see EmailPasswordResetService
+ */
 @Singleton
 public class PasswordResetTokenService {
     private static final Logger log = LoggerFactory.getLogger(PasswordResetTokenService.class);
 
-    private final String secretKey;
+    private final Algorithm algorithm;
     private final long expirationTime;
     private final String issuer;
 
+    /**
+     * Создаёт сервис токенов с внедрёнными параметрами.
+     *
+     * @param secretKey секретный ключ для HMAC256 подписи
+     * @param expirationTime время жизни токена в миллисекундах
+     * @param issuer идентификатор эмитента (приложения)
+     */
     @Inject
-    public PasswordResetTokenService(@Named("secret.key")String secretKey,
-                                     @Named("token.expiration")long expirationTime,
-                                     @Named("issuer")String issuer) {
-        this.secretKey = secretKey;
+    public PasswordResetTokenService(@Named("secret.key") String secretKey,
+                                     @Named("token.expiration") long expirationTime,
+                                     @Named("issuer") String issuer) {
+        this.algorithm = Algorithm.HMAC256(secretKey);
         this.expirationTime = expirationTime;
         this.issuer = issuer;
     }
 
+    /**
+     * Генерирует токен сброса пароля для пользователя.
+     *
+     * @param username имя пользователя
+     * @return JWT токен для сброса пароля
+     */
     public String generateToken(String username) {
-        Algorithm algorithm = Algorithm.HMAC256(secretKey);
-
         String token = JWT.create()
                 .withIssuer(issuer)
                 .withSubject(username)
@@ -46,10 +75,22 @@ public class PasswordResetTokenService {
         return token;
     }
 
+    /**
+     * Проверяет валидность токена сброса пароля.
+     * <p>
+     * Проверяет:
+     * <ul>
+     *     <li>Подпись токена (HMAC256)</li>
+     *     <li>Эмитента токена</li>
+     *     <li>Тип токена (password_reset)</li>
+     *     <li>Время истечения токена</li>
+     * </ul>
+     *
+     * @param token JWT токен для проверки
+     * @return имя пользователя если токен валиден, null если невалиден
+     */
     public String validateToken(String token) {
         try {
-            Algorithm algorithm = Algorithm.HMAC256(secretKey);
-
             DecodedJWT jwt = JWT.require(algorithm)
                     .withIssuer(issuer)
                     .withClaim("type", "password_reset")

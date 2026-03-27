@@ -107,7 +107,15 @@ public class MailModule extends AbstractModule {
             @Named("smtp.ssl") boolean useSsl,
             @Named("smtp.tls") boolean useTls) {
 
+        int connectionTimeout = Integer.parseInt(
+                System.getenv().getOrDefault("EMAIL_CONNECTION_TIMEOUT_MS", "5000"));
+        int writeTimeout = Integer.parseInt(
+                System.getenv().getOrDefault("EMAIL_WRITE_TIMEOUT_MS", "10000"));
+        int poolSize = Integer.parseInt(
+                System.getenv().getOrDefault("EMAIL_THREAD_POOL_SIZE", "5"));
+
         return new EmailConfig(smtpHost, smtpPort, smtpUsername,
-                smtpPassword, fromEmail, useSsl, useTls);
+                smtpPassword, fromEmail, useSsl, useTls,
+                connectionTimeout, writeTimeout, poolSize);
     }
 }
