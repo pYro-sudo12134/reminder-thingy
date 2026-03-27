@@ -7,6 +7,7 @@ import by.losik.grpc.ParseRequest;
 import by.losik.grpc.ParseResponse;
 import by.losik.grpc.RelativeTime;
 import by.losik.grpc.TemporalExpression;
+import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,6 +26,7 @@ import java.util.stream.Collectors;
  *     <li>Извлечение LocalDateTime из TemporalExpression</li>
  * </ul>
  */
+@Singleton
 public class GrpcRequestMapper {
 
     private static final Logger log = LoggerFactory.getLogger(GrpcRequestMapper.class);

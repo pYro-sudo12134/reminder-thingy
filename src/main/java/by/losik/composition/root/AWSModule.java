@@ -12,6 +12,7 @@ import by.losik.resource.MetricsResource;
 import by.losik.resource.PasswordResetResource;
 import by.losik.resource.ReminderResource;
 import by.losik.server.WebServer;
+import by.losik.service.LambdaHandler;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
@@ -19,6 +20,7 @@ import com.google.inject.name.Named;
 import com.google.inject.name.Names;
 
 import java.util.Optional;
+import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 
 /**
  * Guice модуль для конфигурации AWS сервисов и LocalStack.
@@ -248,6 +250,19 @@ public class AWSModule extends AbstractModule {
             LocalStackConfig localStackConfig,
             SecretsManagerConfig secretsManagerConfig) {
         return new MonitoringConfig(localStackConfig, secretsManagerConfig);
+    }
+
+    /**
+     * Создаёт и предоставляет {@link LambdaAsyncClient} для работы с AWS Lambda.
+     *
+     * @param localStackConfig конфигурация LocalStack
+     * @return LambdaAsyncClient для вызова Lambda функций
+     * @see LambdaAsyncClient
+     */
+    @Provides
+    @Singleton
+    public LambdaAsyncClient provideLambdaAsyncClient(LocalStackConfig localStackConfig) {
+        return localStackConfig.getLambdaAsyncClient();
     }
 
     /**

@@ -2,6 +2,8 @@ package by.losik.service.mapper;
 
 import by.losik.config.OpenSearchConfig;
 import by.losik.dto.ReminderRecord;
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.slf4j.Logger;
@@ -24,6 +26,7 @@ import java.util.Map;
  *
  * @see OpenSearchConfig
  */
+@Singleton
 public class ReminderIndexMapper {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderIndexMapper.class);
@@ -35,6 +38,7 @@ public class ReminderIndexMapper {
      *
      * @param config конфигурация OpenSearch
      */
+    @Inject
     public ReminderIndexMapper(OpenSearchConfig config) {
         this.config = config;
     }

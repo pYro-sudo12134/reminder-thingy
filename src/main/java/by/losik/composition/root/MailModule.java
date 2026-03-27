@@ -1,6 +1,8 @@
 package by.losik.composition.root;
 
 import by.losik.config.EmailConfig;
+import by.losik.service.EmailSender;
+import by.losik.service.EmailService;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
@@ -117,5 +119,18 @@ public class MailModule extends AbstractModule {
         return new EmailConfig(smtpHost, smtpPort, smtpUsername,
                 smtpPassword, fromEmail, useSsl, useTls,
                 connectionTimeout, writeTimeout, poolSize);
+    }
+
+    /**
+     * Создаёт и предоставляет {@link EmailSender} для отправки email уведомлений.
+     *
+     * @param emailService сервис для отправки email
+     * @return EmailSender реализация
+     * @see EmailService
+     */
+    @Provides
+    @Singleton
+    public EmailSender provideEmailSender(EmailService emailService) {
+        return emailService;
     }
 }

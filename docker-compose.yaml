@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   ollama:
-    image: ollama/ollama:0.18.2-rocm
+    image: ollama/ollama:latest
     container_name: ollama
     ports:
       - "11434:11434"
@@ -197,7 +197,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pyrodocker1/reminder-backend:1.1-1
+    image: pyrodocker1/reminder-backend:1.1-2
     container_name: reminder-app
     ports:
       - "8090:8090"

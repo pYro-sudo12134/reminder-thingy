@@ -1,6 +1,7 @@
 package by.losik.service.mapper;
 
 import by.losik.dto.TranscriptionResult;
+import com.google.inject.Singleton;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ import java.util.Map;
  *     <li>Конвертацию SearchHit в TranscriptionResult</li>
  * </ul>
  */
+@Singleton
 public class TranscriptionIndexMapper {
 
     private static final Logger log = LoggerFactory.getLogger(TranscriptionIndexMapper.class);

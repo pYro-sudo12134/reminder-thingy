@@ -13,6 +13,7 @@ import by.losik.filter.SessionAuthFilter;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
 import com.google.inject.Singleton;
+import com.google.inject.name.Named;
 
 /**
  * Guice модуль для конфигурации фильтров.
@@ -50,27 +51,6 @@ public class FilterModule extends AbstractModule {
     public void configure() {
         bind(AuthFilterConfig.class).in(Singleton.class);
         bind(CorsConfig.class).in(Singleton.class);
-    }
-
-    /**
-     * Создаёт и предоставляет {@link RateLimiterFilter} для ограничения частоты запросов.
-     * <p>
-     * RateLimiterFilter использует Redis с Lua scripts для атомарного подсчёта запросов.
-     * Поддерживает три уровня лимитов: в минуту, в час, в день.
-     *
-     * @param rateLimitConfig конфигурация лимитов
-     * @param redisRateLimitConfig конфигурация Redis подключения
-     * @param redisConnectionFactory фабрика подключений к Redis
-     * @return настроенный RateLimiterFilter
-     * @see RateLimiterFilter
-     */
-    @Provides
-    @Singleton
-    public RateLimiterFilter createRateLimiterFilter(
-            RateLimitConfig rateLimitConfig,
-            RedisRateLimitConfig redisRateLimitConfig,
-            RedisConnectionFactory redisConnectionFactory) {
-        return new RateLimiterFilter(rateLimitConfig, redisRateLimitConfig, redisConnectionFactory);
     }
 
     /**
@@ -127,6 +107,7 @@ public class FilterModule extends AbstractModule {
      */
     @Provides
     @Singleton
+    @Named("upload")
     public EndpointLimit provideUploadEndpointLimit(RateLimitConfig rateLimitConfig) {
         return new EndpointLimit(
                 rateLimitConfig.getUploadLimitPerMinute(),
@@ -151,6 +132,7 @@ public class FilterModule extends AbstractModule {
      */
     @Provides
     @Singleton
+    @Named("api")
     public EndpointLimit provideApiEndpointLimit(RateLimitConfig rateLimitConfig) {
         return new EndpointLimit(
                 rateLimitConfig.getApiLimitPerMinute(),
@@ -175,6 +157,7 @@ public class FilterModule extends AbstractModule {
      */
     @Provides
     @Singleton
+    @Named("stats")
     public EndpointLimit provideStatsEndpointLimit(RateLimitConfig rateLimitConfig) {
         return new EndpointLimit(
                 rateLimitConfig.getMaxRequestsPerMinute() / 2,
@@ -199,6 +182,7 @@ public class FilterModule extends AbstractModule {
      */
     @Provides
     @Singleton
+    @Named("general")
     public EndpointLimit provideGeneralEndpointLimit(RateLimitConfig rateLimitConfig) {
         return new EndpointLimit(
                 rateLimitConfig.getMaxRequestsPerMinute(),
