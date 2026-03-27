@@ -1,5 +1,6 @@
 package by.losik.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 
 /**
@@ -9,7 +10,13 @@ import java.util.List;
  * @param suggestions Список предложений
  * @param total Общее количество результатов
  */
-public record AutocompleteResult(String userId, String query, List<Suggestion> suggestions, int total) {
+public record AutocompleteResult(
+        @JsonProperty("user_id")
+        String userId,
+        String query,
+        List<Suggestion> suggestions,
+        int total
+) {
 
     /**
      * Предложение для автодополнения.
@@ -18,6 +25,12 @@ public record AutocompleteResult(String userId, String query, List<Suggestion> s
      * @param text Исходный текст напоминания
      * @param score релевантность (0.0-1.0)
      */
-    public record Suggestion(String reminderId, String action, String text, double score) {
+    public record Suggestion(
+            @JsonProperty("reminder_id")
+            String reminderId,
+            String action,
+            String text,
+            double score
+    ) {
     }
 }

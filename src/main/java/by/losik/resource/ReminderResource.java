@@ -186,7 +186,7 @@ public class ReminderResource {
                         return Response.status(Response.Status.NOT_FOUND)
                                 .entity(Map.of(
                                         "error", "Reminder not found",
-                                        "reminderId", reminderId
+                                        "reminder_id", reminderId
                                 ))
                                 .build();
                     }
@@ -203,7 +203,7 @@ public class ReminderResource {
                     response.put("createdAt", reminder.createdAt().toString());
                     response.put("notificationSent", reminder.notificationSent());
                     response.put("intent", reminder.intent());
-                    response.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                    response.put("ruleName", reminder.eventBridgeRuleName());
 
                     return Response.ok(response).build();
                 })
@@ -265,7 +265,7 @@ public class ReminderResource {
                                 map.put("createdAt", reminder.createdAt().toString());
                                 map.put("notificationSent", reminder.notificationSent());
                                 map.put("intent", reminder.intent());
-                                map.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                                map.put("ruleName", reminder.eventBridgeRuleName());
                                 return map;
                             })
                             .collect(Collectors.toList());
@@ -724,7 +724,7 @@ public class ReminderResource {
                                 map.put("createdAt", reminder.createdAt().toString());
                                 map.put("notificationSent", reminder.notificationSent());
                                 map.put("intent", reminder.intent());
-                                map.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                                map.put("ruleName", reminder.eventBridgeRuleName());
                                 return map;
                             })
                             .collect(Collectors.toList());

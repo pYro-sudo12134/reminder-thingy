@@ -442,5 +442,14 @@ else
     echo "route53.yaml not found, skipping Route53 deployment"
 fi
 
+aws --endpoint-url=http://localhost:4566 events create-event-bus \
+    --name email-events \
+    --region us-east-1
+
+aws --endpoint-url=http://localhost:4566 events create-event-bus \
+    --name telegram-events \
+    --region us-east-1
+
+
 echo ""
 echo "LocalStack initialization complete!"

@@ -347,7 +347,7 @@
 <h2 style="text-align: center; color: #333; margin-bottom: 20px;">Мои напоминания</h2>
 
 <div class="form-group">
-    <input type="text" id="userId" placeholder="Введите ваш ID" value="">
+    <input type="text" id="userId" placeholder="ID загружается..." value="" readonly style="background: #f5f5f5; cursor: not-allowed;">
     <button onclick="loadReminders()">Загрузить</button>
     <button class="refresh-btn" onclick="loadReminders()" title="Обновить">↻</button>
 </div>
@@ -399,25 +399,31 @@
     document.addEventListener('DOMContentLoaded', async () => {
         try {
             const response = await fetch('/api/auth/me');
-            if (!response.ok) window.location.href = '/';
-
-            const userId = localStorage.getItem('userId') || document.getElementById('userId').value;
-            if (userId) {
-                document.getElementById('userId').value = userId;
-                activeUserId = userId;
+            if (response.ok) {
+                const data = await response.json();
+                activeUserId = data.userId;
+                localStorage.setItem('userId', data.userId);
+                document.getElementById('userId').value = data.userId;
                 loadReminders();
-                setupAutocomplete('reminderText', userId);
+                setupAutocomplete('reminderText', data.userId);
+            } else {
+                const userId = localStorage.getItem('userId');
+                if (userId) {
+                    document.getElementById('userId').value = userId;
+                    activeUserId = userId;
+                    loadReminders();
+                    setupAutocomplete('reminderText', userId);
+                }
             }
-        } catch {
-            window.location.href = '/';
+        } catch (error) {
+            console.error('Error initializing page:', error);
         }
     });
 
-    // Определяем ВСЕ функции ДО их использования
     function loadReminders() {
         console.log('loadReminders called');
-        const userId = document.getElementById('userId').value.trim();
-        if (!userId) return alert('Введите ID пользователя');
+        const userId = activeUserId || document.getElementById('userId').value.trim();
+        if (!userId) return alert('Пользователь не авторизован');
 
         activeUserId = userId;
         localStorage.setItem('userId', userId);
@@ -704,7 +710,7 @@
                     `Создано: ${createdDate.toLocaleString('ru-RU')}`,
                     `Уведомление: ${data.notificationSent ? 'Отправлено' : 'Не отправлено'}`,
                     data.intent ? `🎯 Намерение: ${data.intent}` : null,
-                    data.eventBridgeRuleName ? `📅 Правило: ${data.eventBridgeRuleName.substring(0, 20)}...` : null
+                    data.ruleName ? `📅 Правило: ${data.ruleName.substring(0, 20)}...` : null
                 ].filter(Boolean).join('\n');
 
                 alert(details);

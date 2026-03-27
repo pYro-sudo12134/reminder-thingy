@@ -26,10 +26,10 @@ import com.google.inject.Singleton;
 public class EventBridgeConfig {
 
     /** Имя шины для email уведомлений по умолчанию */
-    private static final String DEFAULT_EMAIL_BUS = "email-events";
+    private static final String DEFAULT_EMAIL_BUS = "default";
 
     /** Имя шины для Telegram уведомлений по умолчанию */
-    private static final String DEFAULT_TELEGRAM_BUS = "telegram-events";
+    private static final String DEFAULT_TELEGRAM_BUS = "default";
 
     /** ARN Lambda функции для напоминаний по умолчанию */
     private static final String DEFAULT_SEND_REMINDER_ARN = "arn:aws:lambda:us-east-1:000000000000:function:send-reminder";

@@ -102,6 +102,8 @@ public class EventBridgeService {
                 request.ruleName() :
                 "reminder-rule-" + System.currentTimeMillis();
 
+        log.info("Creating rule with schedule expression: '{}' for time: {}",
+                scheduleExpression, request.scheduleTime());
         PutRuleRequest ruleRequest = PutRuleRequest.builder()
                 .name(ruleName)
                 .scheduleExpression(scheduleExpression)

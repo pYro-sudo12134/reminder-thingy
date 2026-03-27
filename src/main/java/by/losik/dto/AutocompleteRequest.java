@@ -9,7 +9,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * @param limit Максимальное количество результатов
  */
 public record AutocompleteRequest(
-        @JsonProperty("userId") String userId,
+        @JsonProperty("user_id") String userId,
         @JsonProperty("query") String query,
         @JsonProperty("limit") int limit
 ) {}

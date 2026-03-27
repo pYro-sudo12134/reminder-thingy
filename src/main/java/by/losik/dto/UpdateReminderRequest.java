@@ -17,18 +17,18 @@ public record UpdateReminderRequest(
         @NotNull(message = "Reminder ID is required")
         @JsonProperty(value = "reminderId", required = true)
         String reminderId,
-        
-        @JsonProperty("extracted_action")
+
+        @JsonProperty("extractedAction")
         String extractedAction,
-        
+
         @NotBlank(message = "Scheduled time is required")
-        @JsonProperty("scheduled_time")
+        @JsonProperty("scheduledTime")
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
         String scheduledTime,
-        
+
         @JsonProperty("status")
         String status,
-        
-        @JsonProperty("user_email")
+
+        @JsonProperty("userEmail")
         String userEmail
 ) {}

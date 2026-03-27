@@ -160,7 +160,7 @@ public class AuthResource {
      * Получает информацию о текущем пользователе.
      *
      * @param request HTTP запрос для получения сессии
-     * @return Response с username или ошибкой
+     * @return Response с username и userId или ошибкой
      */
     @GET
     @Path("/me")
@@ -173,7 +173,19 @@ public class AuthResource {
         }
 
         String username = (String) session.getAttribute("username");
-        return Response.ok(Map.of("username", username)).build();
+        
+        var userOpt = userRepository.findByUsername(username);
+        if (userOpt.isEmpty()) {
+            return Response.status(Response.Status.NOT_FOUND)
+                    .entity(Map.of("error", "User not found"))
+                    .build();
+        }
+        
+        var user = userOpt.get();
+        return Response.ok(Map.of(
+                "username", username,
+                "userId", String.valueOf(user.getId())
+        )).build();
     }
 
     /**
