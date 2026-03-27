@@ -110,9 +110,12 @@ public class UserRepository {
                 user.setLastLogin(LocalDateTime.now());
                 em.merge(user);
                 log.info("User logged in: {}", username);
+                em.getTransaction().commit();
+            } else {
+                log.info("Invalid password for user: {}", username);
+                em.getTransaction().rollback();
             }
 
-            em.getTransaction().commit();
             return isValid;
 
         } catch (Exception e) {
