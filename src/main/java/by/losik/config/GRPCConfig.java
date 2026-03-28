@@ -39,7 +39,7 @@ public class GRPCConfig {
     private ManagedChannel channel;
 
     /** Таймаут парсинга по умолчанию (30 секунд) */
-    private static final long DEFAULT_PARSE_DEADLINE_SEC = 30L;
+    private static final long DEFAULT_PARSE_DEADLINE_SEC = 180L;
 
     /** Таймаут health check по умолчанию (5 секунд) */
     private static final long DEFAULT_HEALTH_CHECK_DEADLINE_SEC = 5L;
