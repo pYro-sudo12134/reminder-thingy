@@ -12,6 +12,18 @@ java {
     }
 }
 
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
+
+tasks.withType(Javadoc) {
+    options.encoding = 'UTF-8'
+}
+
+repositories {
+    mavenCentral()
+}
+
 repositories {
     mavenCentral()
 }
@@ -19,22 +31,38 @@ repositories {
 dependencies {
     implementation 'com.amazonaws:aws-lambda-java-core:1.2.3'
     implementation 'com.amazonaws:aws-lambda-java-events:3.11.6'
-    
+
+    implementation platform('software.amazon.awssdk:bom:2.21.20')
+    implementation 'software.amazon.awssdk:secretsmanager'
+    implementation 'software.amazon.awssdk:ssm'
+    implementation 'software.amazon.awssdk:auth'
+    implementation 'software.amazon.awssdk:regions'
+
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.16.1'
     implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.16.1'
-    
+
     implementation 'com.sun.mail:jakarta.mail:2.0.1'
-    
+
     implementation 'org.slf4j:slf4j-api:2.0.12'
     implementation 'ch.qos.logback:logback-classic:1.4.14'
+
+    implementation 'software.amazon.awssdk:apache-client'
 }
 
 shadowJar {
     archiveBaseName.set('send-reminder-lambda')
     archiveClassifier.set('')
     archiveVersion.set('')
-    
+
     mergeServiceFiles()
+
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+
+    transform(com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer.class) {
+        path = 'META-INF/services'
+    }
 }
 
 tasks.build.dependsOn shadowJar

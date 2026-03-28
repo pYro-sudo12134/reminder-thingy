@@ -32,7 +32,7 @@ import java.util.concurrent.Executors;
  *
  * @see EmailConfig
  */
-public class EmailService implements EmailSender, AutoCloseable {
+public class EmailService implements EmailSender {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
 
     private final String smtpHost;

@@ -44,7 +44,6 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SecretsManagerConfig implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(SecretsManagerConfig.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
-
     private final SecretsManagerClient secretsManagerClient;
     private final String secretName;
     private final Map<String, String> cachedSecrets = new ConcurrentHashMap<>();
