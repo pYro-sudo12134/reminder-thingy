@@ -1,0 +1,107 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Route53 Configuration for ECS - NLB and ALB DNS records'
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  DomainName:
+    Type: String
+    Default: reminder.local
+    Description: Base domain name for the application
+
+  ALBDNSName:
+    Type: String
+    Description: Application Load Balancer DNS name from infrastructure stack
+
+  NLBDNSName:
+    Type: String
+    Description: Network Load Balancer DNS name from infrastructure stack
+
+  ALBHostedZoneId:
+    Type: String
+    Description: ALB canonical hosted zone ID
+
+  NLBHostedZoneId:
+    Type: String
+    Description: NLB canonical hosted zone ID
+
+  MainHostedZoneId:
+    Type: String
+    Description: ID of main hosted zone for external DNS
+
+Resources:
+  ApiRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "api.${EnvironmentName}.${DomainName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: !Ref ALBHostedZoneId
+        DNSName: !Ref ALBDNSName
+        EvaluateTargetHealth: true
+
+  AppRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "app.${EnvironmentName}.${DomainName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: !Ref ALBHostedZoneId
+        DNSName: !Ref ALBDNSName
+        EvaluateTargetHealth: true
+
+  NLPServiceRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref MainHostedZoneId
+      Name: !Sub "nlp.${EnvironmentName}.${DomainName}"
+      Type: A
+      AliasTarget:
+        HostedZoneId: !Ref NLBHostedZoneId
+        DNSName: !Ref NLBDNSName
+        EvaluateTargetHealth: true
+
+  HealthCheckALB:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        FullyQualifiedDomainName: !Ref ALBDNSName
+        Port: 80
+        Type: HTTP
+        ResourcePath: /api/test
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-alb-health-check
+
+  HealthCheckNLB:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        FullyQualifiedDomainName: !Ref NLBDNSName
+        Port: 50051
+        Type: TCP
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlb-health-check
+
+Outputs:
+  ApiDNS:
+    Description: API DNS name
+    Value: !Sub "api.${EnvironmentName}.${DomainName}"
+
+  AppDNS:
+    Description: App DNS name
+    Value: !Sub "app.${EnvironmentName}.${DomainName}"
+
+  NLPDNS:
+    Description: NLP Service DNS name
+    Value: !Sub "nlp.${EnvironmentName}.${DomainName}"

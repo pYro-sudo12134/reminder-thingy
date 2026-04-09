@@ -1,0 +1,531 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder - ECS CloudWatch Dashboards and Alarms
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  ECSClusterName:
+    Type: String
+    Description: ECS Cluster name
+
+  AppServiceName:
+    Type: String
+    Description: App ECS Service name
+
+  NLPServiceName:
+    Type: String
+    Description: NLP ECS Service name
+
+  OllamaServiceName:
+    Type: String
+    Description: Ollama ECS Service name
+
+  DLQServiceName:
+    Type: String
+    Description: DLQ ECS Service name
+
+  ALBDNSName:
+    Type: String
+    Description: ALB DNS name
+
+  ALBFullName:
+    Type: String
+    Description: ALB full name for CloudWatch metrics (app/name/id format)
+
+  NLBDNSName:
+    Type: String
+    Description: NLB DNS name
+
+  NLBFullName:
+    Type: String
+    Description: NLB full name for CloudWatch metrics (net/name/id format)
+
+  AppTargetGroupFullName:
+    Type: String
+    Description: ALB Target Group full name for CloudWatch metrics (targetgroup/name/id)
+
+  RDSEndpoint:
+    Type: String
+    Description: RDS endpoint
+
+  RedisEndpoint:
+    Type: String
+    Description: Redis endpoint
+
+  NotificationEmail:
+    Type: String
+    Default: random@gmail.com
+    Description: Notification email for alerts
+
+Resources:
+  ReminderNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${EnvironmentName}-reminder-notifications
+      DisplayName: Voice Reminder Notifications
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+  ECSDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-ecs-monitoring
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ServiceName", "${AppServiceName}", "ClusterName", "${ECSClusterName}", { "label": "App CPU %" }],
+                  [".", "MemoryUtilization", ".", ".", ".", ".", { "label": "App Memory %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "App Service - CPU & Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ServiceName", "${NLPServiceName}", "ClusterName", "${ECSClusterName}", { "label": "NLP CPU %" }],
+                  [".", "MemoryUtilization", ".", ".", ".", ".", { "label": "NLP Memory %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "NLP Service - CPU & Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ServiceName", "${OllamaServiceName}", "ClusterName", "${ECSClusterName}", { "label": "Ollama CPU %" }],
+                  [".", "GPUUtilization", ".", ".", ".", ".", { "label": "Ollama GPU %" }],
+                  [".", "MemoryUtilization", ".", ".", ".", ".", { "label": "Ollama Memory %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Ollama Service - CPU, GPU & Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "CPUUtilization", "ServiceName", "${DLQServiceName}", "ClusterName", "${ECSClusterName}", { "label": "DLQ CPU %" }],
+                  [".", "MemoryUtilization", ".", ".", ".", ".", { "label": "DLQ Memory %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "DLQ Service - CPU & Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "RunningTaskCount", "ServiceName", "${AppServiceName}", "ClusterName", "${ECSClusterName}", { "label": "App Tasks" }],
+                  [".", "RunningTaskCount", ".", "${NLPServiceName}", ".", ".", { "label": "NLP Tasks" }],
+                  [".", "RunningTaskCount", ".", "${OllamaServiceName}", ".", ".", { "label": "Ollama Tasks" }],
+                  [".", "RunningTaskCount", ".", "${DLQServiceName}", ".", ".", { "label": "DLQ Tasks" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Running Tasks Count",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ECS", "DesiredTaskCount", "ServiceName", "${AppServiceName}", "ClusterName", "${ECSClusterName}", { "label": "App Desired" }],
+                  [".", "PendingTaskCount", ".", ".", ".", ".", { "label": "App Pending" }],
+                  [".", "RunningTaskCount", ".", ".", ".", ".", { "label": "App Running" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "App Service - Task States",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${EnvironmentName}-ecs-cpu-asg", { "label": "CPU ASG CPU %" }],
+                  [".", "NetworkIn", ".", ".", { "label": "Network In", "yAxis": "right" }],
+                  [".", "NetworkOut", ".", ".", { "label": "Network Out", "yAxis": "right" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "CPU Auto Scaling Group - EC2 Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 18,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/EC2", "CPUUtilization", "AutoScalingGroupName", "${EnvironmentName}-ecs-gpu-asg", { "label": "GPU ASG CPU %" }],
+                  [".", "NetworkIn", ".", ".", { "label": "Network In", "yAxis": "right" }],
+                  [".", "NetworkOut", ".", ".", { "label": "Network Out", "yAxis": "right" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "GPU Auto Scaling Group - EC2 Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+  RDSDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-rds-monitoring
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", "${EnvironmentName}-reminder-db", { "label": "CPU %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS - CPU Utilization",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "DatabaseConnections", "DBInstanceIdentifier", "${EnvironmentName}-reminder-db", { "label": "Connections" }],
+                  [".", "ActiveTransactions", ".", ".", { "label": "Active Transactions" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS - Connections & Transactions",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "FreeableMemory", "DBInstanceIdentifier", "${EnvironmentName}-reminder-db", { "label": "Freeable Memory (Bytes)" }],
+                  [".", "BufferCacheHitRatio", ".", ".", { "label": "Buffer Cache Hit Ratio %", "yAxis": "right" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS - Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "ReadIOPS", "DBInstanceIdentifier", "${EnvironmentName}-reminder-db", { "label": "Read IOPS" }],
+                  [".", "WriteIOPS", ".", ".", { "label": "Write IOPS" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS - IOPS",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/RDS", "FreeStorageSpace", "DBInstanceIdentifier", "${EnvironmentName}-reminder-db", { "label": "Free Storage (Bytes)" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "RDS - Free Storage Space",
+                "period": 300,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+  RedisDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-redis-monitoring
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ElastiCache", "CPUUtilization", "CacheClusterId", "${EnvironmentName}-redis-001", { "label": "Primary CPU %" }],
+                  [".", "CPUUtilization", ".", "${EnvironmentName}-redis-002", { "label": "Replica CPU %" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Redis - CPU Utilization",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ElastiCache", "CurrConnections", "CacheClusterId", "${EnvironmentName}-redis-001", { "label": "Current Connections" }],
+                  [".", "NewConnections", ".", ".", { "label": "New Connections/sec" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Redis - Connections",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ElastiCache", "BytesUsedForCache", "CacheClusterId", "${EnvironmentName}-redis-001", { "label": "Cache Used (Bytes)" }],
+                  [".", "CacheHits", ".", ".", { "label": "Cache Hits" }],
+                  [".", "CacheMisses", ".", ".", { "label": "Cache Misses" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Redis - Cache Metrics",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ElastiCache", "FreeableMemory", "CacheClusterId", "${EnvironmentName}-redis-001", { "label": "Freeable Memory (Bytes)" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "Redis - Memory",
+                "period": 300,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+  LoadBalancerDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Sub ${EnvironmentName}-load-balancers
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", "${ALBFullName}", { "label": "Request Count" }],
+                  [".", "ActiveConnectionCount", ".", ".", { "label": "Active Connections" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "ALB - Requests & Connections",
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${ALBFullName}", { "label": "Response Time (s)" }],
+                  [".", "HTTPCode_Target_5XX_Count", ".", ".", { "label": "5XX Errors" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "ALB - Response Time & Errors",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/NetworkELB", "ActiveFlowCount", "LoadBalancer", "${NLBFullName}", { "label": "Active Flows" }],
+                  [".", "NewFlowCount", ".", ".", { "label": "New Flows/sec" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "NLB - gRPC Flows",
+                "period": 300,
+                "stat": "Average"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 6,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", "${AppTargetGroupFullName}", "LoadBalancer", "${ALBFullName}", { "label": "Healthy Hosts" }],
+                  [".", "UnHealthyHostCount", ".", ".", ".", ".", { "label": "Unhealthy Hosts" }]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${AWS::Region}",
+                "title": "ALB - Target Health",
+                "period": 300,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  ECSDashboardUrl:
+    Description: ECS Dashboard URL
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-ecs-monitoring
+
+  RDSDashboardUrl:
+    Description: RDS Dashboard URL
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-rds-monitoring
+
+  RedisDashboardUrl:
+    Description: Redis Dashboard URL
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-redis-monitoring
+
+  LoadBalancerDashboardUrl:
+    Description: Load Balancer Dashboard URL
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${EnvironmentName}-load-balancers

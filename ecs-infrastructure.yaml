@@ -1,0 +1,966 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder - ECS Infrastructure
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID for ECS cluster
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs for ECS cluster and services
+
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 Key Pair for SSH access
+
+  OpenSearchDomain:
+    Type: String
+    Default: reminder-domain
+    Description: OpenSearch domain endpoint
+
+  S3BucketName:
+    Type: String
+    Default: voice-reminder-audio-bucket
+    Description: S3 bucket for audio files
+
+  AppBaseURL:
+    Type: String
+    Default: http://localhost:8090
+    Description: Application base URL
+
+  OllamaModel:
+    Type: String
+    Default: llama3.2:latest
+    Description: Ollama model to use
+
+  RDSMasterUsername:
+    Type: String
+    Default: voiceadmin
+    Description: RDS master username
+
+  RDSMasterUserPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: RDS master user password
+
+  RedisAuthToken:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: ElastiCache Redis auth token
+
+  SMTPUsername:
+    Type: String
+    Default: random@gmail.com
+    Description: SMTP username
+
+  SMTPPassword:
+    Type: String
+    NoEcho: true
+    Description: SMTP password
+
+  FromEmail:
+    Type: String
+    Default: random@gmail.com
+    Description: From email address
+
+  NotificationEmail:
+    Type: String
+    Default: random@gmail.com
+    Description: Notification email for alerts
+
+Resources:
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-reminder-cluster
+      CapacityProviders:
+        - !Ref CPUAutoScalingGroup
+        - !Ref GPUAutoScalingGroup
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: !Ref CPUAutoScalingGroup
+          Weight: 1
+          Base: 1
+      ClusterSettings:
+        - Name: containerInsights
+          Value: enabled
+      Tags:
+        - Key: Environment
+          Value: !Ref EnvironmentName
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-reminder-cluster
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-ecs-task-execution-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource:
+                  - !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${EnvironmentName}/*
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: arn:aws:logs:*:*:*
+
+  AppTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-reminder-app-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub arn:aws:s3:::${S3BucketName}
+                  - !Sub arn:aws:s3:::${S3BucketName}/*
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:ListTranscriptionJobs
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - events:PutRule
+                  - events:PutTargets
+                  - events:EnableRule
+                  - events:DisableRule
+                  - events:ListRules
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPost
+                  - es:ESHttpGet
+                  - es:ESHttpPut
+                  - es:ESHttpDelete
+                Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomain}/*
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !Sub AppTaskRole.Arn
+                  - !GetAtt NLPServiceTaskRole.Arn
+                  - !GetAtt DLQProcessorTaskRole.Arn
+                  - !GetAtt OllamaTaskRole.Arn
+
+  NLPServiceTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-nlp-service-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: NLPServicePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - es:ESHttpPost
+                  - es:ESHttpGet
+                  - es:ESHttpPut
+                Resource: !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/${OpenSearchDomain}/*
+
+  DLQProcessorTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-dlq-processor-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DLQPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-reminder-dlq
+
+  OllamaTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-ollama-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+
+  ECSInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${EnvironmentName}-ecs-instance-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: ECSInstanceExtras
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogStreams
+                Resource: arn:aws:logs:*:*:*
+
+  ECSInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${EnvironmentName}-ecs-instance-profile
+      Roles:
+        - !Ref ECSInstanceRole
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-alb-sg
+      GroupDescription: Security group for ALB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP ingress
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-alb-sg
+
+  NLBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-nlb-sg
+      GroupDescription: Security group for NLB
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 50051
+          ToPort: 50051
+          CidrIp: 0.0.0.0/0
+          Description: gRPC ingress
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlb-sg
+
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-app-sg
+      GroupDescription: Security group for ECS app tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8090
+          ToPort: 8090
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+          Description: Allow from ALB
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-app-sg
+
+  NLPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-nlp-sg
+      GroupDescription: Security group for ECS NLP tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 50051
+          ToPort: 50051
+          SourceSecurityGroupId: !Ref NLBSecurityGroup
+          Description: Allow from NLB
+        - IpProtocol: tcp
+          FromPort: 11434
+          ToPort: 11434
+          SourceSecurityGroupId: !Ref OllamaSecurityGroup
+          Description: Allow from Ollama
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlp-sg
+
+  OllamaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-ollama-sg
+      GroupDescription: Security group for Ollama tasks
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 11434
+          ToPort: 11434
+          SourceSecurityGroupId: !Ref NLPSecurityGroup
+          Description: Allow from NLP service
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ollama-sg
+
+  DLQSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-dlq-sg
+      GroupDescription: Security group for DLQ processor
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8085
+          ToPort: 8085
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          Description: Allow health check from app
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-dlq-sg
+
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-rds-sg
+      GroupDescription: Security group for RDS
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          Description: Allow PostgreSQL from app
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-rds-sg
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-redis-sg
+      GroupDescription: Security group for ElastiCache Redis
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref AppSecurityGroup
+          Description: Allow Redis from app
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-redis-sg
+
+  ECSClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${EnvironmentName}-ecs-cluster-sg
+      GroupDescription: Security group for ECS EC2 instances
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 10.0.0.0/8
+          Description: SSH from VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecs-cluster-sg
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-app-alb
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: '60'
+        - Key: routing.http.desync_mitigation_mode
+          Value: defensive
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-app-alb
+
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-app-tg
+      Port: 8090
+      Protocol: HTTP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /api/test
+      HealthCheckIntervalSeconds: 60
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: '200'
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-app-tg
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${EnvironmentName}-nlp-nlb
+      Scheme: internet-facing
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: 'true'
+      SecurityGroups:
+        - !Ref NLBSecurityGroup
+      Subnets: !Ref SubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlp-nlb
+
+  NLPTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub ${EnvironmentName}-nlp-tg
+      Port: 50051
+      Protocol: TCP
+      VpcId: !Ref VpcId
+      TargetType: instance
+      HealthCheckProtocol: TCP
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 10
+      HealthyThresholdCount: 3
+      UnhealthyThresholdCount: 3
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlp-tg
+
+  NLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 50051
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref NLPTargetGroup
+
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub ${EnvironmentName}-rds-subnet-group
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds: !Ref SubnetIds
+
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub ${EnvironmentName}-reminder-db
+      DBInstanceClass: db.t3.medium
+      Engine: postgres
+      EngineVersion: '15.7'
+      MasterUsername: !Ref RDSMasterUsername
+      MasterUserPassword: !Ref RDSMasterUserPassword
+      AllocatedStorage: 20
+      MaxAllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: true
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBName: voice_reminder
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'Mon:04:00-Mon:05:00'
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: false
+      PubliclyAccessible: false
+      EnableCloudwatchLogsExports:
+        - postgresql
+        - upgrade
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-reminder-db
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      CacheSubnetGroupName: !Sub ${EnvironmentName}-redis-subnet-group
+      Description: Subnet group for ElastiCache Redis
+      SubnetIds: !Ref SubnetIds
+
+  RedisReplicationGroup:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      ReplicationGroupId: !Sub ${EnvironmentName}-redis
+      ReplicationGroupDescription: Redis cluster for reminder app
+      Engine: redis
+      EngineVersion: '7.0'
+      CacheNodeType: cache.t3.medium
+      NumCacheClusters: 2
+      AutomaticFailoverEnabled: true
+      MultiAZEnabled: true
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      SecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      TransitEncryptionEnabled: true
+      AtRestEncryptionEnabled: true
+      AuthToken: !Ref RedisAuthToken
+      Port: 6379
+      SnapshotRetentionLimit: 7
+      SnapshotWindow: '02:00-03:00'
+      PreferredMaintenanceWindow: 'Mon:03:00-Mon:04:00'
+      AutoMinorVersionUpgrade: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-redis
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  CPULaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${EnvironmentName}-ecs-cpu-lt
+      LaunchTemplateData:
+        ImageId: resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/recommended/image_id
+        InstanceType: t3.large
+        IamInstanceProfile:
+          Name: !Ref ECSInstanceProfile
+        SecurityGroupIds:
+          - !Ref ECSClusterSecurityGroup
+        KeyName: !Ref KeyName
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 50
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_ENCRYPTION_VIA_TASK_ROLE=true >> /etc/ecs/ecs.config
+            echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config
+            echo ECS_CONTAINER_INSTANCE_TAGS=${EnvironmentName} >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_SPOT_INSTANCE_DRAINING=false >> /etc/ecs/ecs.config
+            
+            # Install CloudWatch agent
+            yum install -y amazon-cloudwatch-agent
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config -m ec2 -c ssm:AmazonCloudWatch-linux-config -s
+            
+            # Start ECS agent
+            start ecs
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName}-ecs-cpu
+              - Key: Environment
+                Value: !Ref EnvironmentName
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName}-ecs-cpu
+              - Key: Environment
+                Value: !Ref EnvironmentName
+
+  CPUAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-ecs-cpu-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref CPULaunchTemplate
+        Version: !GetAtt CPULaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 6
+      DesiredCapacity: 2
+      VPCZoneIdentifier: !Ref SubnetIds
+      TargetGroupARNs:
+        - !Ref AppTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecs-cpu
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref EnvironmentName
+          PropagateAtLaunch: true
+        - Key: ecs:cluster
+          Value: !Ref ECSCluster
+          PropagateAtLaunch: true
+
+  CPUASGScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref CPUAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  GPULaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub ${EnvironmentName}-ecs-gpu-lt
+      LaunchTemplateData:
+        ImageId: resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2/gpu/recommended/image_id
+        InstanceType: g4dn.xlarge
+        IamInstanceProfile:
+          Name: !Ref ECSInstanceProfile
+        SecurityGroupIds:
+          - !Ref ECSClusterSecurityGroup
+        KeyName: !Ref KeyName
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 100
+              VolumeType: gp3
+              Encrypted: true
+              DeleteOnTermination: true
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            SpotInstanceType: persistent
+            InstanceInterruptionBehavior: hibernate
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo ECS_CLUSTER=${ECSCluster} >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_IAM_ROLE=true >> /etc/ecs/ecs.config
+            echo ECS_ENABLE_TASK_ENCRYPTION_VIA_TASK_ROLE=true >> /etc/ecs/ecs.config
+            echo ECS_LOGLEVEL=info >> /etc/ecs/ecs.config
+            echo ECS_GPU_VERSION=latest >> /etc/ecs/ecs.config
+            
+            # Install NVIDIA drivers if not present
+            if ! command -v nvidia-smi &> /dev/null; then
+              amazon-linux-extras install -y nvidia-driver-latest
+            fi
+            
+            # Install ECS GPU init config
+            echo 'ECS_ENABLE_GPU_SUPPORT=true' >> /etc/ecs/ecs.config
+            
+            # Install CloudWatch agent
+            yum install -y amazon-cloudwatch-agent
+            /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+              -a fetch-config -m ec2 -c ssm:AmazonCloudWatch-linux-config -s
+            
+            # Start ECS agent
+            start ecs
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName}-ecs-gpu
+              - Key: Environment
+                Value: !Ref EnvironmentName
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: !Sub ${EnvironmentName}-ecs-gpu
+              - Key: Environment
+                Value: !Ref EnvironmentName
+
+  GPUAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub ${EnvironmentName}-ecs-gpu-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref GPULaunchTemplate
+        Version: !GetAtt GPULaunchTemplate.LatestVersionNumber
+      MinSize: 1
+      MaxSize: 3
+      DesiredCapacity: 1
+      VPCZoneIdentifier: !Ref SubnetIds
+      TargetGroupARNs:
+        - !Ref NLPTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ecs-gpu
+          PropagateAtLaunch: true
+        - Key: Environment
+          Value: !Ref EnvironmentName
+          PropagateAtLaunch: true
+        - Key: ecs:cluster
+          Value: !Ref ECSCluster
+          PropagateAtLaunch: true
+
+  GPUASGScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref GPUAutoScalingGroup
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: 75.0
+        ScaleInCooldown: 600
+        ScaleOutCooldown: 120
+
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${EnvironmentName}/reminder-app
+      RetentionInDays: 30
+
+  NLPLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${EnvironmentName}/nlp-service
+      RetentionInDays: 30
+
+  DLQLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${EnvironmentName}/dlq-processor
+      RetentionInDays: 30
+
+  OllamaLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /ecs/${EnvironmentName}/ollama
+      RetentionInDays: 14
+
+  ECSHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-ecs-high-cpu
+      AlarmDescription: High CPU utilization in ECS cluster
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ClusterName
+          Value: !Ref ECSCluster
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  RDSCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-rds-high-cpu
+      AlarmDescription: High CPU utilization in RDS
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref RDSInstance
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  RedisCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-redis-high-cpu
+      AlarmDescription: High CPU utilization in Redis primary node
+      MetricName: CPUUtilization
+      Namespace: AWS/ElastiCache
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: CacheClusterId
+          Value: !Sub ${EnvironmentName}-redis-001
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  ReminderNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${EnvironmentName}-reminder-notifications
+      DisplayName: Voice Reminder Notifications
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+Outputs:
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+
+  ALBDNSName:
+    Description: Application Load Balancer DNS
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  NLBDNSName:
+    Description: Network Load Balancer DNS
+    Value: !GetAtt NetworkLoadBalancer.DNSName
+
+  RDSEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt RDSInstance.Endpoint.Address
+
+  RedisPrimaryEndpoint:
+    Description: ElastiCache Redis Primary Endpoint
+    Value: !GetAtt RedisReplicationGroup.PrimaryEndPoint.Address
+
+  CPUAutoScalingGroupName:
+    Description: CPU Auto Scaling Group Name
+    Value: !Ref CPUAutoScalingGroup
+
+  GPUAutoScalingGroupName:
+    Description: GPU Auto Scaling Group Name
+    Value: !Ref GPUAutoScalingGroup
+
+  AppSecurityGroupId:
+    Description: App Security Group ID
+    Value: !GetAtt AppSecurityGroup.GroupId
+
+  NLPSecurityGroupId:
+    Description: NLP Security Group ID
+    Value: !GetAtt NLPSecurityGroup.GroupId
+
+  TaskExecutionRoleArn:
+    Description: ECS Task Execution Role ARN
+    Value: !Sub arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-ecs-task-execution-role
+
+  AppTaskRoleArn:
+    Description: App Task Role ARN
+    Value: !Sub arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-reminder-app-task-role
+
+  NLPServiceTaskRoleArn:
+    Description: NLP Service Task Role ARN
+    Value: !Sub arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-nlp-service-task-role
+
+  DLQProcessorTaskRoleArn:
+    Description: DLQ Processor Task Role ARN
+    Value: !Sub arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-dlq-processor-task-role
+
+  OllamaTaskRoleArn:
+    Description: Ollama Task Role ARN
+    Value: !Sub arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-ollama-task-role
+
+  ALBFullName:
+    Description: ALB full name for CloudWatch metrics
+    Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+
+  NLBFullName:
+    Description: NLB full name for CloudWatch metrics
+    Value: !GetAtt NetworkLoadBalancer.LoadBalancerFullName
+
+  AppTargetGroupFullName:
+    Description: ALB Target Group full name for CloudWatch metrics
+    Value: !GetAtt AppTargetGroup.TargetGroupFullName
+
+  AppTargetGroupArn:
+    Description: ALB Target Group ARN
+    Value: !Ref AppTargetGroup
+
+  NLPTargetGroupArn:
+    Description: NLB Target Group ARN
+    Value: !Ref NLPTargetGroup
+
+  AppLogGroupName:
+    Description: App CloudWatch Log Group name
+    Value: !Ref AppLogGroup
+
+  NLPLogGroupName:
+    Description: NLP CloudWatch Log Group name
+    Value: !Ref NLPLogGroup
+
+  DLQLogGroupName:
+    Description: DLQ CloudWatch Log Group name
+    Value: !Ref DLQLogGroup
+
+  OllamaLogGroupName:
+    Description: Ollama CloudWatch Log Group name
+    Value: !Ref OllamaLogGroup

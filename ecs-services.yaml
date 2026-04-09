@@ -1,0 +1,772 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Voice Reminder - ECS Services
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: dev
+    Description: Environment name
+
+  ECSClusterName:
+    Type: String
+    Description: ECS Cluster name
+
+  AppTargetGroupArn:
+    Type: String
+    Description: ALB Target Group ARN for App
+
+  NLPTargetGroupArn:
+    Type: String
+    Description: NLB Target Group ARN for NLP
+
+  AppSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: App Security Group ID
+
+  NLPSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: NLP Security Group ID
+
+  OllamaSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Ollama Security Group ID
+
+  DLQSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: DLQ Security Group ID
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnet IDs
+
+  RDSEndpoint:
+    Type: String
+    Description: RDS endpoint
+
+  RedisEndpoint:
+    Type: String
+    Description: Redis endpoint
+
+  OpenSearchDomain:
+    Type: String
+    Description: OpenSearch domain endpoint
+
+  NLBDNSName:
+    Type: String
+    Description: NLB DNS name for NLP service
+
+  AppBaseURL:
+    Type: String
+    Default: http://localhost:8090
+    Description: Application base URL
+
+  DLQUrl:
+    Type: String
+    Description: SQS DLQ URL
+
+  NotificationEmail:
+    Type: String
+    Default: random@gmail.com
+    Description: Notification email for alerts
+
+  AppImage:
+    Type: String
+    Default: pyrodocker1/reminder-backend:1.1-1
+    Description: Docker image for app service
+
+  NLPImage:
+    Type: String
+    Default: pyrodocker1/reminder-nlp-ollama:1.0
+    Description: Docker image for NLP service
+
+  DLQImage:
+    Type: String
+    Default: pyrodocker1/reminder-dlq-processor:1.0
+    Description: Docker image for DLQ processor
+
+  OllamaImage:
+    Type: String
+    Default: ollama/ollama:0.18.2-rocm
+    Description: Docker image for Ollama
+
+  SecretsArn:
+    Type: String
+    Description: Secrets Manager secret ARN for voice-reminder/secrets
+
+  RDSecretsArn:
+    Type: String
+    Description: Secrets Manager secret ARN for RDS credentials
+
+  RedisSecretsArn:
+    Type: String
+    Description: Secrets Manager secret ARN for Redis credentials
+
+  SMTPSecretsArn:
+    Type: String
+    Description: Secrets Manager secret ARN for SMTP credentials
+
+  TaskExecutionRoleArn:
+    Type: String
+    Description: ECS Task Execution Role ARN from infrastructure
+
+  AppTaskRoleArn:
+    Type: String
+    Description: App Task Role ARN from infrastructure
+
+  NLPTaskRoleArn:
+    Type: String
+    Description: NLP Task Role ARN from infrastructure
+
+  DLQTaskRoleArn:
+    Type: String
+    Description: DLQ Task Role ARN from infrastructure
+
+  OllamaTaskRoleArn:
+    Type: String
+    Description: Ollama Task Role ARN from infrastructure
+
+  AppLogGroupName:
+    Type: String
+    Description: App CloudWatch Log Group name
+
+  NLPLogGroupName:
+    Type: String
+    Description: NLP CloudWatch Log Group name
+
+  DLQLogGroupName:
+    Type: String
+    Description: DLQ CloudWatch Log Group name
+
+  OllamaLogGroupName:
+    Type: String
+    Description: Ollama CloudWatch Log Group name
+
+Resources:
+  AppTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${EnvironmentName}-reminder-app
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref AppTaskRoleArn
+      RequiresCompatibilities:
+        - EC2
+      Cpu: "512"
+      Memory: "768"
+      ContainerDefinitions:
+        - Name: reminder-app
+          Image: !Ref AppImage
+          Cpu: 512
+          Memory: 768
+          MemoryReservation: 512
+          PortMappings:
+            - ContainerPort: 8090
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: USE_LOCAL_SECRETS
+              Value: "false"
+            - Name: OPENSEARCH_HOST
+              Value: !Ref OpenSearchDomain
+            - Name: OPENSEARCH_PORT
+              Value: "443"
+            - Name: OPENSEARCH_USE_SSL
+              Value: "true"
+            - Name: NLP_SERVICE_HOST
+              Value: !Ref NLBDNSName
+            - Name: NLP_SERVICE_PORT
+              Value: "50051"
+            - Name: GRPC_USE_TLS
+              Value: "false"
+            - Name: WS_PORT
+              Value: "8090"
+            - Name: DB_ENABLED
+              Value: "true"
+            - Name: DB_HOST
+              Value: !Ref RDSEndpoint
+            - Name: DB_PORT
+              Value: "5432"
+            - Name: DB_NAME
+              Value: voice_reminder
+            - Name: DB_SCHEMA
+              Value: voice_schema
+            - Name: DB_POOL_SIZE
+              Value: "10"
+            - Name: DB_POOL_MIN_IDLE
+              Value: "5"
+            - Name: FLYWAY_ENABLED
+              Value: "true"
+            - Name: JPA_DDL_GENERATION
+              Value: "none"
+            - Name: JPA_SHOW_SQL
+              Value: "false"
+            - Name: APP_BASE_URL
+              Value: !Ref AppBaseURL
+            - Name: REDIS_HOST
+              Value: !Ref RedisEndpoint
+            - Name: REDIS_PORT
+              Value: "6379"
+            - Name: REDIS_USE_SSL
+              Value: "true"
+            - Name: REDIS_TIMEOUT
+              Value: "5000"
+            - Name: REDIS_MAX_TOTAL
+              Value: "50"
+            - Name: REDIS_MAX_IDLE
+              Value: "10"
+            - Name: REDIS_MIN_IDLE
+              Value: "5"
+          Secrets:
+            - Name: AWS_ACCESS_KEY_ID
+              ValueFrom: !Sub ${SecretsArn}:AWS_ACCESS_KEY_ID::
+            - Name: AWS_SECRET_ACCESS_KEY
+              ValueFrom: !Sub ${SecretsArn}:AWS_SECRET_ACCESS_KEY::
+            - Name: DB_USER
+              ValueFrom: !Sub ${RDSecretsArn}:username::
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub ${RDSecretsArn}:password::
+            - Name: REDIS_PASSWORD
+              ValueFrom: !Sub ${RedisSecretsArn}:auth_token::
+            - Name: SECRET_KEY
+              ValueFrom: !Sub ${SecretsArn}:jwt_secret::
+            - Name: SMTP_PASSWORD
+              ValueFrom: !Sub ${SMTPSecretsArn}:password::
+            - Name: NLP_GRPC_API_KEY
+              ValueFrom: !Sub ${SecretsArn}:NLP_GRPC_KEY::
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AppLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8090/api/test
+            Interval: 60
+            Timeout: 10
+            Retries: 5
+            StartPeriod: 120
+          Essential: true
+
+  NLPTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${EnvironmentName}-nlp-service
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref NLPTaskRoleArn
+      RequiresCompatibilities:
+        - EC2
+      Cpu: "1024"
+      Memory: "4096"
+      ContainerDefinitions:
+        - Name: nlp-service
+          Image: !Ref NLPImage
+          Cpu: 1024
+          Memory: 4096
+          MemoryReservation: 2048
+          PortMappings:
+            - ContainerPort: 50051
+              Protocol: tcp
+          Environment:
+            - Name: NLP_MODE
+              Value: ollama-rag
+            - Name: LOG_LEVEL
+              Value: INFO
+            - Name: GRPC_PORT
+              Value: "50051"
+            - Name: GRPC_WORKERS
+              Value: "10"
+            - Name: GRPC_USE_TLS
+              Value: "false"
+            - Name: MODEL_VERSION
+              Value: 3.0.0-ollama
+            - Name: OLLAMA_HOST
+              Value: !Sub ${EnvironmentName}-ollama.internal
+            - Name: OLLAMA_PORT
+              Value: "11434"
+            - Name: OLLAMA_MODEL
+              Value: llama3.2:latest
+            - Name: OLLAMA_TEMPERATURE
+              Value: "0.1"
+            - Name: OLLAMA_TIMEOUT
+              Value: "30"
+            - Name: OPENSEARCH_HOST
+              Value: !Ref OpenSearchDomain
+            - Name: OPENSEARCH_PORT
+              Value: "443"
+            - Name: OPENSEARCH_USE_SSL
+              Value: "true"
+            - Name: OPENSEARCH_USER
+              Value: admin
+            - Name: OPENSEARCH_INDEX
+              Value: reminder_formats
+            - Name: RAG_TOP_K
+              Value: "5"
+            - Name: RAG_MIN_SCORE
+              Value: "0.3"
+          Secrets:
+            - Name: NLP_GRPC_API_KEY
+              ValueFrom: !Sub ${SecretsArn}:NLP_GRPC_KEY::
+            - Name: OPENSEARCH_ADMIN_PASSWORD
+              ValueFrom: !Sub ${SecretsArn}:opensearch_password::
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref NLPLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - python -c "import grpc; grpc.insecure_channel('localhost:50051').channel_ready(timeout=5)"
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 60
+          Essential: true
+
+  DLQTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${EnvironmentName}-dlq-processor
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref DLQTaskRoleArn
+      RequiresCompatibilities:
+        - EC2
+      Cpu: "256"
+      Memory: "512"
+      ContainerDefinitions:
+        - Name: dlq-processor
+          Image: !Ref DLQImage
+          Cpu: 256
+          Memory: 512
+          MemoryReservation: 256
+          PortMappings:
+            - ContainerPort: 8085
+              Protocol: tcp
+          Environment:
+            - Name: ENVIRONMENT_NAME
+              Value: !Ref EnvironmentName
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+            - Name: DLQ_URL
+              Value: !Ref DLQUrl
+            - Name: QUEUE_SUFFIX
+              Value: -reminder-dlq
+            - Name: VISIBILITY_TIMEOUT
+              Value: "60"
+            - Name: MAX_BATCH_SIZE
+              Value: "10"
+            - Name: NOTIFY_AFTER_ATTEMPTS
+              Value: "3"
+            - Name: METRICS_ENABLED
+              Value: "true"
+            - Name: CLOUDWATCH_NAMESPACE
+              Value: Reminder/DLQ
+          Secrets:
+            - Name: AWS_ACCESS_KEY_ID
+              ValueFrom: !Sub ${SecretsArn}:AWS_ACCESS_KEY_ID::
+            - Name: AWS_SECRET_ACCESS_KEY
+              ValueFrom: !Sub ${SecretsArn}:AWS_SECRET_ACCESS_KEY::
+            - Name: SMTP_PASSWORD
+              ValueFrom: !Sub ${SMTPSecretsArn}:password::
+            - Name: SMTP_USERNAME
+              ValueFrom: !Sub ${SMTPSecretsArn}:username::
+            - Name: FROM_EMAIL
+              ValueFrom: !Sub ${SMTPSecretsArn}:from_email::
+            - Name: NOTIFICATION_EMAIL
+              ValueFrom: !Sub ${SecretsArn}:notification_email::
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref DLQLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:8085/health
+            Interval: 30
+            Timeout: 10
+            Retries: 3
+            StartPeriod: 40
+          Essential: true
+
+  OllamaTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${EnvironmentName}-ollama
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !Ref TaskExecutionRoleArn
+      TaskRoleArn: !Ref OllamaTaskRoleArn
+      RequiresCompatibilities:
+        - EC2
+      Cpu: "2048"
+      Memory: "8192"
+      ContainerDefinitions:
+        - Name: ollama
+          Image: !Ref OllamaImage
+          Cpu: 2048
+          Memory: 8192
+          MemoryReservation: 4096
+          PortMappings:
+            - ContainerPort: 11434
+              Protocol: tcp
+          Environment:
+            - Name: OLLAMA_HOST
+              Value: 0.0.0.0
+            - Name: OLLAMA_ORIGINS
+              Value: "*"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref OllamaLogGroupName
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - ollama list
+            Interval: 30
+            Timeout: 10
+            Retries: 5
+            StartPeriod: 40
+          Essential: true
+  AppService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${EnvironmentName}-reminder-app
+      Cluster: !Ref ECSClusterName
+      TaskDefinition: !Ref AppTaskDefinition
+      DesiredCount: 2
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      LoadBalancers:
+        - TargetGroupArn: !Ref AppTargetGroupArn
+          ContainerName: reminder-app
+          ContainerPort: 8090
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref AppSecurityGroupId
+          AssignPublicIp: DISABLED
+      PlacementStrategies:
+        - Field: attribute:ecs.availability-zone
+          Type: spread
+        - Field: cpu
+          Type: binpack
+      SchedulingStrategy: REPLICA
+      HealthCheckGracePeriodSeconds: 120
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-reminder-app
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  AppServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-app-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref AppScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 70.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  AppScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 6
+      MinCapacity: 2
+      ResourceId: !Sub service/${ECSClusterName}/${EnvironmentName}-reminder-app
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  NLPService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${EnvironmentName}-nlp-service
+      Cluster: !Ref ECSClusterName
+      TaskDefinition: !Ref NLPTaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      LoadBalancers:
+        - TargetGroupArn: !Ref NLPTargetGroupArn
+          ContainerName: nlp-service
+          ContainerPort: 50051
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref NLPSecurityGroupId
+          AssignPublicIp: DISABLED
+      PlacementStrategies:
+        - Field: attribute:ecs.availability-zone
+          Type: spread
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: attribute:ecs.instance-type =~ g4dn.*
+      SchedulingStrategy: REPLICA
+      HealthCheckGracePeriodSeconds: 120
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-nlp-service
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  NLPServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-nlp-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref NLPScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 75.0
+        ScaleInCooldown: 600
+        ScaleOutCooldown: 120
+
+  NLPScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 3
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSClusterName}/${EnvironmentName}-nlp-service
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  OllamaService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${EnvironmentName}-ollama
+      Cluster: !Ref ECSClusterName
+      TaskDefinition: !Ref OllamaTaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref OllamaSecurityGroupId
+          AssignPublicIp: DISABLED
+      PlacementStrategies:
+        - Field: attribute:ecs.availability-zone
+          Type: spread
+      PlacementConstraints:
+        - Type: memberOf
+          Expression: attribute:ecs.instance-type =~ g4dn.*
+      SchedulingStrategy: REPLICA
+      HealthCheckGracePeriodSeconds: 60
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-ollama
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  DLQService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub ${EnvironmentName}-dlq-processor
+      Cluster: !Ref ECSClusterName
+      TaskDefinition: !Ref DLQTaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 0
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref DLQSecurityGroupId
+          AssignPublicIp: DISABLED
+      PlacementStrategies:
+        - Field: attribute:ecs.availability-zone
+          Type: spread
+        - Field: cpu
+          Type: binpack
+      SchedulingStrategy: REPLICA
+      HealthCheckGracePeriodSeconds: 60
+      Tags:
+        - Key: Name
+          Value: !Sub ${EnvironmentName}-dlq-processor
+        - Key: Environment
+          Value: !Ref EnvironmentName
+
+  DLQServiceScalingPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    Properties:
+      PolicyName: !Sub ${EnvironmentName}-dlq-scaling-policy
+      PolicyType: TargetTrackingScaling
+      ScalingTargetId: !Ref DLQScalableTarget
+      TargetTrackingScalingPolicyConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        TargetValue: 80.0
+        ScaleInCooldown: 300
+        ScaleOutCooldown: 60
+
+  DLQScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      MaxCapacity: 2
+      MinCapacity: 1
+      ResourceId: !Sub service/${ECSClusterName}/${EnvironmentName}-dlq-processor
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+
+  AppHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-app-high-cpu
+      AlarmDescription: High CPU utilization in App service
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !Sub ${EnvironmentName}-reminder-app
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  NLPHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-nlp-high-cpu
+      AlarmDescription: High CPU utilization in NLP service
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !Sub ${EnvironmentName}-nlp-service
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  OllamaHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-ollama-high-cpu
+      AlarmDescription: High CPU utilization in Ollama service
+      MetricName: GPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 90
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !Sub ${EnvironmentName}-ollama
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  DLQHighCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${EnvironmentName}-dlq-high-cpu
+      AlarmDescription: High CPU utilization in DLQ service
+      MetricName: CPUUtilization
+      Namespace: AWS/ECS
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ServiceName
+          Value: !Sub ${EnvironmentName}-dlq-processor
+        - Name: ClusterName
+          Value: !Ref ECSClusterName
+      AlarmActions:
+        - !Ref ReminderNotificationTopic
+
+  ReminderNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub ${EnvironmentName}-reminder-services-notifications
+      DisplayName: Voice Reminder Services Notifications
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref NotificationEmail
+
+Outputs:
+  AppServiceName:
+    Description: App ECS Service Name
+    Value: !Ref AppService
+
+  NLPServiceName:
+    Description: NLP ECS Service Name
+    Value: !Ref NLPService
+
+  OllamaServiceName:
+    Description: Ollama ECS Service Name
+    Value: !Ref OllamaService
+
+  DLQServiceName:
+    Description: DLQ ECS Service Name
+    Value: !Ref DLQService
+
+  AppTaskDefinitionArn:
+    Description: App Task Definition ARN
+    Value: !Ref AppTaskDefinition
+
+  NLPTaskDefinitionArn:
+    Description: NLP Task Definition ARN
+    Value: !Ref NLPTaskDefinition
+
+  DLQTaskDefinitionArn:
+    Description: DLQ Task Definition ARN
+    Value: !Ref DLQTaskDefinition
+
+  OllamaTaskDefinitionArn:
+    Description: Ollama Task Definition ARN
+    Value: !Ref OllamaTaskDefinition
