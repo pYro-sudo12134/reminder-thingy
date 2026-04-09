@@ -1,0 +1,5 @@
+*.java eof=lf
+*.sh text eof=lf
+*.bat eof=crlf
+*.py eof=lf
+*.yaml eof=lf

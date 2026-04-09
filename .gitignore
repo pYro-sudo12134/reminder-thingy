@@ -2,6 +2,7 @@
 !/.gitignore
 !/k3s/
 !/k3s/**
+!.gitattributes
 k3s/.vagrant
 
 **/*.secret
@@ -21,11 +22,6 @@ k3s/.vagrant
 
 **/opensearch_certs/
 **/redis/certs/
-**/*.pem
-**/*.jks
-**/*.p12
-**/*.key
-**/*.crt
 **/*.conf
 **/*.sql
 k3s/tokens
@@ -51,5 +47,4 @@ k3s.yaml
 *.bak
 *.swp
 *.swo
-*~
 .DS_Store
