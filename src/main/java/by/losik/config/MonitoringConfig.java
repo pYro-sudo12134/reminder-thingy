@@ -39,15 +39,12 @@ import java.util.Map;
 public class MonitoringConfig implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(MonitoringConfig.class);
     private final LocalStackConfig localStackConfig;
-    private final SecretsManagerConfig secretsManagerConfig;
     private MeterRegistry meterRegistry;
     private final PrometheusMeterRegistry prometheusRegistry;
 
     @Inject
-    public MonitoringConfig(LocalStackConfig localStackConfig,
-                            SecretsManagerConfig secretsManagerConfig) {
+    public MonitoringConfig(LocalStackConfig localStackConfig) {
         this.localStackConfig = localStackConfig;
-        this.secretsManagerConfig = secretsManagerConfig;
         this.prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         initMetrics();
     }

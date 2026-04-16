@@ -239,16 +239,14 @@ public class AWSModule extends AbstractModule {
      * </ul>
      *
      * @param localStackConfig конфигурация LocalStack для CloudWatch клиента
-     * @param secretsManagerConfig конфигурация Secrets Manager
      * @return настроенный MonitoringConfig
      * @see MonitoringConfig
      */
     @Provides
     @Singleton
     public MonitoringConfig createCloudWatchConfig(
-            LocalStackConfig localStackConfig,
-            SecretsManagerConfig secretsManagerConfig) {
-        return new MonitoringConfig(localStackConfig, secretsManagerConfig);
+            LocalStackConfig localStackConfig) {
+        return new MonitoringConfig(localStackConfig);
     }
 
     /**
