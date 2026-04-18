@@ -1,5 +1,7 @@
 package by.losik.filter;
 
+import by.losik.config.AuthFilterConfig;
+import com.google.inject.Inject;
 import jakarta.annotation.Priority;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
@@ -13,31 +15,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.HashSet;
-import java.util.Set;
 
+/**
+ * Фильтр аутентификации через сессии.
+ * <p>
+ * Проверяет наличие активной сессии (JSESSIONID) для защищённых путей.
+ * Публичные пути (login, register, health, metrics) доступны без аутентификации.
+ * <p>
+ * Приоритет: AUTHENTICATION (выполняется одним из первых).
+ *
+ * @see by.losik.config.AuthFilterConfig
+ */
 @Provider
 @Priority(Priorities.AUTHENTICATION)
 public class SessionAuthFilter implements ContainerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(SessionAuthFilter.class);
+
+    private final AuthFilterConfig config;
+
     @Context
     private HttpServletRequest httpRequest;
-    private static final Set<String> PUBLIC_PATHS = new HashSet<>();
 
-    static {
-        PUBLIC_PATHS.add("test");
-        PUBLIC_PATHS.add("auth/login");
-        PUBLIC_PATHS.add("auth/logout");
-        PUBLIC_PATHS.add("auth/me");
-        PUBLIC_PATHS.add("auth/register");
-        PUBLIC_PATHS.add("health");
-        PUBLIC_PATHS.add("metrics");
-        PUBLIC_PATHS.add("auth/password/forgot");
-        PUBLIC_PATHS.add("auth/password/reset");
-        PUBLIC_PATHS.add("auth/password/validate");
-        PUBLIC_PATHS.add("auth/password/reset-form");
-        PUBLIC_PATHS.add("auth/password");
-        PUBLIC_PATHS.add("auth/password/");
+    /**
+     * Создаёт фильтр аутентификации с конфигурацией.
+     *
+     * @param config конфигурация public paths
+     */
+    @Inject
+    public SessionAuthFilter(AuthFilterConfig config) {
+        this.config = config;
     }
 
     @Override
@@ -52,7 +58,7 @@ public class SessionAuthFilter implements ContainerRequestFilter {
             return;
         }
 
-        if (isPublicPath(path)) {
+        if (config.isPublicPath(path)) {
             log.debug("Skipping auth for public path: {}", path);
             return;
         }
@@ -79,24 +85,6 @@ public class SessionAuthFilter implements ContainerRequestFilter {
 
         ctx.setProperty("username", username);
         log.debug("Authenticated user '{}' for path: {}", username, path);
-    }
-
-    private boolean isPublicPath(String path) {
-        if (path == null || path.isEmpty() || path.equals("/")) {
-            return true;
-        }
-
-        if (PUBLIC_PATHS.contains(path)) {
-            return true;
-        }
-
-        for (String publicPath : PUBLIC_PATHS) {
-            if (path.startsWith(publicPath + "/") || path.equals(publicPath)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private void abortWithUnauthorized(ContainerRequestContext ctx, String message) {

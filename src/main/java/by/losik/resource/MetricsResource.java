@@ -17,18 +17,36 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * REST ресурс для получения метрик Prometheus.
+ * <p>
+ * Предоставляет endpoint для scraping метрик системой мониторинга.
+ */
 @Path("/metrics")
 @Singleton
 public class MetricsResource {
     private static final Logger log = LoggerFactory.getLogger(MetricsResource.class);
 
+    /** Таймаут на scraping метрик по умолчанию (10 секунд) */
+    private static final long METRICS_SCRAPING_TIMEOUT_SEC = 10L;
+
     private final PrometheusMeterRegistry prometheusRegistry;
 
+    /**
+     * Создаёт ресурс метрик с внедрённым реестром Prometheus.
+     *
+     * @param monitoringConfig конфигурация мониторинга
+     */
     @Inject
     public MetricsResource(MonitoringConfig monitoringConfig) {
         this.prometheusRegistry = monitoringConfig.getPrometheusRegistry();
     }
 
+    /**
+     * Получает метрики Prometheus в формате text/plain.
+     *
+     * @param asyncResponse асинхронный ответ
+     */
     @GET
     @Produces(MediaType.TEXT_PLAIN)
     public void getPrometheusMetrics(@Suspended AsyncResponse asyncResponse) {
@@ -44,7 +62,7 @@ public class MetricsResource {
             }
         }).thenAccept(asyncResponse::resume);
 
-        asyncResponse.setTimeout(10, TimeUnit.SECONDS);
+        asyncResponse.setTimeout(METRICS_SCRAPING_TIMEOUT_SEC, TimeUnit.SECONDS);
         asyncResponse.setTimeoutHandler(ar ->
                 ar.resume(Response.status(Response.Status.REQUEST_TIMEOUT)
                         .entity("Metrics scraping timeout")

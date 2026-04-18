@@ -14,6 +14,19 @@ import java.io.FileInputStream;
 import java.security.KeyStore;
 import java.time.Duration;
 
+/**
+ * Фабрика подключений к Redis для rate limiting.
+ * <p>
+ * Создаёт пул подключений Jedis с:
+ * <ul>
+ *     <li>SSL/TLS поддержкой (если включено)</li>
+ *     <li>Truststore для проверки сервера</li>
+ *     <li>Паролем для аутентификации</li>
+ *     <li>Настройками пула (maxTotal, maxIdle, minIdle)</li>
+ * </ul>
+ *
+ * @see by.losik.filter.RateLimiterFilter
+ */
 @Singleton
 public class RedisConnectionFactory {
     private static final Logger log = LoggerFactory.getLogger(RedisConnectionFactory.class);

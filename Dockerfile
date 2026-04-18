@@ -9,6 +9,7 @@ COPY gradlew .
 COPY gradle gradle
 COPY build.gradle .
 COPY settings.gradle .
+COPY lambda/build.gradle lambda/build.gradle
 
 COPY src/main/proto src/main/proto
 COPY db/migration db/migration
@@ -17,12 +18,18 @@ COPY src/main/resources src/main/resources
 COPY src src
 COPY src/main/python src/main/python
 COPY web web
+COPY lambda lambda
 
 RUN chmod +x gradlew
 
 RUN ./gradlew generateProto --no-daemon
 
+RUN ./gradlew :lambda:shadowJar --no-daemon
+
 RUN ./gradlew build --no-daemon -x test
+
+RUN find /app/lambda/build -name "*.jar" -type f | xargs ls -la || true
+RUN mkdir -p /app/build/libs && cp /app/lambda/build/libs/*.jar /app/build/libs/ 2>/dev/null || true
 
 RUN find /app/build -name "*.jar" -type f | xargs ls -la
 RUN jar tf /app/build/libs/*.jar 2>/dev/null | head -20 || true
@@ -41,7 +48,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 RUN mkdir -p /run/secrets && chown appuser:appgroup /run/secrets
 
-COPY --from=builder /app/build/libs/*.jar app.jar
+COPY --from=builder /app/build/libs/reminder-app.jar app.jar
 
 USER appuser
 

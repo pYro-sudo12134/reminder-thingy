@@ -5,6 +5,20 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
+/**
+ * Запись напоминания для передачи между слоями системы.
+ * @param reminderId ID напоминания
+ * @param userId ID пользователя
+ * @param userEmail Email пользователя для уведомлений
+ * @param originalText Исходный текст напоминания
+ * @param extractedAction Извлечённое действие
+ * @param scheduledTime Запланированное время выполнения
+ * @param createdAt Время создания
+ * @param status Статус напоминания
+ * @param notificationSent Отправлено ли уведомление
+ * @param intent Намерение (reminder, alert, etc.)
+ * @param eventBridgeRuleName Имя правила EventBridge
+ */
 public record ReminderRecord(
         @JsonProperty("reminder_id")
         String reminderId,
@@ -40,7 +54,22 @@ public record ReminderRecord(
         @JsonProperty("rule_name")
         String eventBridgeRuleName
 ) {
+
+    /**
+     * Статус напоминания в системе.
+     */
     public enum ReminderStatus {
-        PENDING, SCHEDULED, TRIGGERED, CANCELLED, FAILED, COMPLETED
+        /** Ожидает обработки */
+        PENDING,
+        /** Запланировано */
+        SCHEDULED,
+        /** Активировано (уведомление отправлено) */
+        TRIGGERED,
+        /** Отменено пользователем */
+        CANCELLED,
+        /** Ошибка обработки */
+        FAILED,
+        /** Успешно выполнено */
+        COMPLETED
     }
 }

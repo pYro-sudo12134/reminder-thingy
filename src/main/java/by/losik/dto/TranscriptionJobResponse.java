@@ -4,6 +4,16 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 
+/**
+ * Ответ от сервиса транскрибации (AWS Transcribe).
+ * @param jobId ID задачи транскрибации
+ * @param jobStatus Статус задачи (QUEUED, IN_PROGRESS, COMPLETED, FAILED)
+ * @param transcriptionText Расшифрованный текст
+ * @param transcriptionFileUri URI файла с транскрипцией
+ * @param failureReason Причина ошибки (если failed)
+ * @param createdAt Время создания задачи
+ * @param completedAt Время завершения задачи
+ */
 public record TranscriptionJobResponse(
         @JsonProperty("job_id")
         String jobId,

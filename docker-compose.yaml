@@ -198,7 +198,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pyrodocker1/reminder-backend:1.1-1
+    image: pyrodocker1/reminder-backend:1.1-2
     container_name: reminder-app
     ports:
       - "8090:8090"

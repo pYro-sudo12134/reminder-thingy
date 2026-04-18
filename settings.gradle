@@ -1,3 +1,4 @@
 rootProject.name = 'reminder'
 include 'dlq-processor'
+include 'lambda'
 

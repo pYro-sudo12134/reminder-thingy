@@ -109,7 +109,7 @@ services:
       - "traefik.enable=false"
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.18.2-rocm
     deploy:
       mode: replicated
       replicas: 1

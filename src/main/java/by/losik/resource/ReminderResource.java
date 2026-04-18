@@ -6,6 +6,7 @@ import by.losik.service.OpenSearchService;
 import by.losik.service.VoiceReminderService;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
@@ -36,6 +37,20 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+/**
+ * REST ресурс для управления напоминаниями.
+ * <p>
+ * Предоставляет endpoints для:
+ * <ul>
+ *     <li>Записи голосовых напоминаний</li>
+ *     <li>Просмотра напоминаний</li>
+ *     <li>Обновления напоминаний</li>
+ *     <li>Удаления напоминаний</li>
+ *     <li>Отмены напоминаний</li>
+ *     <li>Поиска и автодополнения</li>
+ *     <li>Получения статистики</li>
+ * </ul>
+ */
 @Path("/")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -45,12 +60,28 @@ public class ReminderResource {
     private final VoiceReminderService voiceReminderService;
     private final OpenSearchService openSearchService;
 
+    /**
+     * Создаёт ресурс напоминаний с внедрёнными сервисами.
+     *
+     * @param voiceReminderService сервис для обработки напоминаний
+     * @param openSearchService сервис для работы с OpenSearch
+     */
     @Inject
-    public ReminderResource(VoiceReminderService voiceReminderService) {
+    public ReminderResource(VoiceReminderService voiceReminderService, OpenSearchService openSearchService) {
         this.voiceReminderService = voiceReminderService;
-        this.openSearchService = voiceReminderService.getOpenSearchService();
+        this.openSearchService = openSearchService;
     }
 
+    /**
+     * Записывает голосовое напоминание.
+     * <p>
+     * Принимает аудиофайл, загружает в S3, транскрибирует, анализирует и создаёт напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param userEmail email пользователя
+     * @param audioStream поток с аудиофайлом
+     */
     @POST
     @Path("/reminder/record")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -135,6 +166,12 @@ public class ReminderResource {
         }
     }
 
+    /**
+     * Получает напоминание по ID.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @GET
     @Path("/reminder/{id}")
     public void getReminder(
@@ -149,7 +186,7 @@ public class ReminderResource {
                         return Response.status(Response.Status.NOT_FOUND)
                                 .entity(Map.of(
                                         "error", "Reminder not found",
-                                        "reminderId", reminderId
+                                        "reminder_id", reminderId
                                 ))
                                 .build();
                     }
@@ -166,7 +203,7 @@ public class ReminderResource {
                     response.put("createdAt", reminder.createdAt().toString());
                     response.put("notificationSent", reminder.notificationSent());
                     response.put("intent", reminder.intent());
-                    response.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                    response.put("ruleName", reminder.eventBridgeRuleName());
 
                     return Response.ok(response).build();
                 })
@@ -182,6 +219,14 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает список напоминаний пользователя.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param limit максимальное количество результатов
+     * @param statusFilter фильтр по статусу (опционально)
+     */
     @GET
     @Path("/user/{userId}/reminders")
     public void getUserReminders(
@@ -207,7 +252,7 @@ public class ReminderResource {
                         }
                     }
 
-                    List<Map<String, Object>> reminderList = filteredReminders.stream()
+                    List<Map<String, Object>> reminderList = filteredReminders.parallelStream()
                             .map(reminder -> {
                                 Map<String, Object> map = new HashMap<>();
                                 map.put("reminderId", reminder.reminderId());
@@ -220,7 +265,7 @@ public class ReminderResource {
                                 map.put("createdAt", reminder.createdAt().toString());
                                 map.put("notificationSent", reminder.notificationSent());
                                 map.put("intent", reminder.intent());
-                                map.put("eventBridgeRuleName", reminder.eventBridgeRuleName());
+                                map.put("ruleName", reminder.eventBridgeRuleName());
                                 return map;
                             })
                             .collect(Collectors.toList());
@@ -247,6 +292,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Удаляет напоминание по ID.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @DELETE
     @Path("/reminder/{id}")
     public void deleteReminder(
@@ -283,6 +334,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает транскрипцию напоминания.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @GET
     @Path("/reminder/{id}/transcription")
     public void getReminderTranscription(
@@ -339,6 +396,12 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Получает статистику по напоминаниям пользователя.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     */
     @GET
     @Path("/stats/{userId}")
     public void getUserStats(
@@ -388,6 +451,14 @@ public class ReminderResource {
         }
     }
 
+    /**
+     * Автодополнение напоминаний по запросу.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param query поисковый запрос
+     * @param limit максимальное количество результатов
+     */
     @GET
     @Path("/autocomplete")
     public void autocompleteReminders(
@@ -441,13 +512,20 @@ public class ReminderResource {
                 .thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Обновляет напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     * @param updateRequest данные для обновления
+     */
     @PUT
     @Path("/reminder/{id}")
     @Consumes(MediaType.APPLICATION_JSON)
     public void updateReminder(
             @Suspended AsyncResponse asyncResponse,
             @PathParam("id") String reminderId,
-            UpdateReminderRequest updateRequest) {
+            @Valid UpdateReminderRequest updateRequest) {
 
         log.info("Updating reminder: {}", reminderId);
 
@@ -528,6 +606,12 @@ public class ReminderResource {
         }).thenAccept(asyncResponse::resume);
     }
 
+    /**
+     * Отменяет напоминание.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param reminderId ID напоминания
+     */
     @POST
     @Path("/reminder/{id}/cancel")
     public void cancelReminder(
@@ -560,6 +644,107 @@ public class ReminderResource {
                     return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                             .entity(Map.of(
                                     "error", "Failed to cancel reminder",
+                                    "message", ex.getMessage()
+                            ))
+                            .build();
+                })
+                .thenAccept(asyncResponse::resume);
+    }
+
+    /**
+     * Получает напоминания по диапазону времени.
+     *
+     * @param asyncResponse асинхронный ответ
+     * @param userId ID пользователя
+     * @param startTime начало диапазона
+     * @param endTime конец диапазона
+     * @param limit максимальное количество результатов
+     */
+    @GET
+    @Path("/reminders/time-range")
+    public void getRemindersByTimeRange(
+            @Suspended AsyncResponse asyncResponse,
+            @QueryParam("userId") String userId,
+            @QueryParam("startTime") String startTime,
+            @QueryParam("endTime") String endTime,
+            @QueryParam("limit") @DefaultValue("100") int limit) {
+
+        log.info("Getting reminders by time range for user: {} from {} to {}",
+                userId, startTime, endTime);
+
+        if (userId == null || userId.isBlank()) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "userId is required"))
+                    .build());
+            return;
+        }
+
+        if (startTime == null || startTime.isBlank() || endTime == null || endTime.isBlank()) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of("error", "startTime and endTime are required"))
+                    .build());
+            return;
+        }
+
+        LocalDateTime startDateTime;
+        LocalDateTime endDateTime;
+
+        try {
+            startDateTime = LocalDateTime.parse(startTime);
+            endDateTime = LocalDateTime.parse(endTime);
+
+            if (startDateTime.isAfter(endDateTime)) {
+                asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                        .entity(Map.of("error", "startTime must be before endTime"))
+                        .build());
+                return;
+            }
+        } catch (Exception e) {
+            asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
+                    .entity(Map.of(
+                            "error", "Invalid date format. Use ISO format: yyyy-MM-ddTHH:mm:ss",
+                            "message", e.getMessage()
+                    ))
+                    .build());
+            return;
+        }
+
+        openSearchService.findRemindersByTimeRange(userId, startDateTime, endDateTime, limit)
+                .thenApply(reminders -> {
+                    List<Map<String, Object>> reminderList = reminders.parallelStream()
+                            .map(reminder -> {
+                                Map<String, Object> map = new HashMap<>();
+                                map.put("reminderId", reminder.reminderId());
+                                map.put("userId", reminder.userId());
+                                map.put("userEmail", reminder.userEmail());
+                                map.put("originalText", reminder.originalText());
+                                map.put("extractedAction", reminder.extractedAction());
+                                map.put("scheduledTime", reminder.scheduledTime().toString());
+                                map.put("status", reminder.status().toString());
+                                map.put("createdAt", reminder.createdAt().toString());
+                                map.put("notificationSent", reminder.notificationSent());
+                                map.put("intent", reminder.intent());
+                                map.put("ruleName", reminder.eventBridgeRuleName());
+                                return map;
+                            })
+                            .collect(Collectors.toList());
+
+                    Map<String, Object> response = Map.of(
+                            "userId", userId,
+                            "startTime", startTime,
+                            "endTime", endTime,
+                            "total", reminderList.size(),
+                            "reminders", reminderList,
+                            "timestamp", LocalDateTime.now().toString()
+                    );
+
+                    return Response.ok(response).build();
+                })
+                .exceptionally(ex -> {
+                    log.error("Error getting reminders by time range", ex);
+                    return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                            .entity(Map.of(
+                                    "error", "Failed to get reminders",
                                     "message", ex.getMessage()
                             ))
                             .build();

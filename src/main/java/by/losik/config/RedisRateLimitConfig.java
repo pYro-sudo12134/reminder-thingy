@@ -1,10 +1,29 @@
 package by.losik.config;
 
-import com.google.inject.Inject;
+import by.losik.util.ConfigUtils;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * Конфигурация Redis подключения для rate limiting.
+ * <p>
+ * Загружает настройки из переменных окружения:
+ * <ul>
+ *     <li>REDIS_HOST — хост Redis (redis)</li>
+ *     <li>REDIS_PORT — порт Redis (6379)</li>
+ *     <li>REDIS_PASSWORD — пароль Redis</li>
+ *     <li>REDIS_TIMEOUT — таймаут подключения (2000 мс)</li>
+ *     <li>REDIS_MAX_TOTAL — максимальное количество соединений (50)</li>
+ *     <li>REDIS_MAX_IDLE — максимальное количество idle соединений (10)</li>
+ *     <li>REDIS_MIN_IDLE — минимальное количество idle соединений (5)</li>
+ *     <li>REDIS_USE_SSL — использовать ли SSL (true)</li>
+ *     <li>REDIS_SSL_TRUSTSTORE_PATH — путь к truststore</li>
+ *     <li>REDIS_SSL_PROTOCOL — SSL протокол (TLSv1.2)</li>
+ * </ul>
+ *
+ * @see by.losik.config.RedisConnectionFactory
+ */
 @Singleton
 public class RedisRateLimitConfig {
     private static final Logger log = LoggerFactory.getLogger(RedisRateLimitConfig.class);
@@ -25,23 +44,27 @@ public class RedisRateLimitConfig {
     private final String sslProtocol;
     private final String sslCipherSuites;
 
-    @Inject
-    public RedisRateLimitConfig(SecretsManagerConfig secretsManager) {
-        this.host = secretsManager.getSecret("REDIS_HOST", "redis");
-        this.port = Integer.parseInt(secretsManager.getSecret("REDIS_PORT", "6379"));
-        this.password = secretsManager.getSecret("REDIS_PASSWORD", System.getenv("REDIS_PASSWORD"));
-        this.timeout = Integer.parseInt(secretsManager.getSecret("REDIS_TIMEOUT", "2000"));
-        this.maxTotal = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_TOTAL", "50"));
-        this.maxIdle = Integer.parseInt(secretsManager.getSecret("REDIS_MAX_IDLE", "10"));
-        this.minIdle = Integer.parseInt(secretsManager.getSecret("REDIS_MIN_IDLE", "5"));
-        this.useSsl = Boolean.parseBoolean(secretsManager.getSecret("REDIS_USE_SSL", "true"));
-        this.sslTruststorePath = secretsManager.getSecret("REDIS_SSL_TRUSTSTORE_PATH", "/app/redis_certs/redis_truststore.jks");
-        this.sslTruststorePassword = secretsManager.getSecret("REDIS_SSL_TRUSTSTORE_PASSWORD", "changeit");
-        this.sslKeystorePath = secretsManager.getSecret("REDIS_SSL_KEYSTORE_PATH", "/app/redis_certs/redis_keystore.jks");
-        this.sslKeystorePassword = secretsManager.getSecret("REDIS_SSL_KEYSTORE_PASSWORD", "changeit");
-        this.sslVerifyMode = secretsManager.getSecret("REDIS_SSL_VERIFY_MODE", "full");
-        this.sslProtocol = secretsManager.getSecret("REDIS_SSL_PROTOCOL", "TLSv1.2");
-        this.sslCipherSuites = secretsManager.getSecret("REDIS_SSL_CIPHER_SUITES",
+    /**
+     * Создаёт конфигурацию Redis подключения.
+     * <p>
+     * Настройки загружаются из переменных окружения через ConfigUtils.
+     */
+    public RedisRateLimitConfig() {
+        this.host = ConfigUtils.getEnvOrDefault("REDIS_HOST", "redis");
+        this.port = ConfigUtils.getIntEnvOrDefault("REDIS_PORT", 6379);
+        this.password = ConfigUtils.getEnvOrDefault("REDIS_PASSWORD", "");
+        this.timeout = ConfigUtils.getIntEnvOrDefault("REDIS_TIMEOUT", 2000);
+        this.maxTotal = ConfigUtils.getIntEnvOrDefault("REDIS_MAX_TOTAL", 50);
+        this.maxIdle = ConfigUtils.getIntEnvOrDefault("REDIS_MAX_IDLE", 10);
+        this.minIdle = ConfigUtils.getIntEnvOrDefault("REDIS_MIN_IDLE", 5);
+        this.useSsl = ConfigUtils.getBooleanEnvOrDefault("REDIS_USE_SSL", true);
+        this.sslTruststorePath = ConfigUtils.getEnvOrDefault("REDIS_SSL_TRUSTSTORE_PATH", "/app/redis_certs/redis_truststore.jks");
+        this.sslTruststorePassword = ConfigUtils.getEnvOrDefault("REDIS_SSL_TRUSTSTORE_PASSWORD", "changeit");
+        this.sslKeystorePath = ConfigUtils.getEnvOrDefault("REDIS_SSL_KEYSTORE_PATH", "/app/redis_certs/redis_keystore.jks");
+        this.sslKeystorePassword = ConfigUtils.getEnvOrDefault("REDIS_SSL_KEYSTORE_PASSWORD", "changeit");
+        this.sslVerifyMode = ConfigUtils.getEnvOrDefault("REDIS_SSL_VERIFY_MODE", "full");
+        this.sslProtocol = ConfigUtils.getEnvOrDefault("REDIS_SSL_PROTOCOL", "TLSv1.2");
+        this.sslCipherSuites = ConfigUtils.getEnvOrDefault("REDIS_SSL_CIPHER_SUITES",
                 "TLS_AES_256_GCM_SHA384,TLS_CHACHA20_POLY1305_SHA256,TLS_AES_128_GCM_SHA256");
 
         log.info("Redis Rate Limit Config: {}:{}, SSL={}, timeout={}ms",

@@ -90,6 +90,8 @@ dependencies {
     implementation 'jakarta.annotation:jakarta.annotation-api:2.1.1'
     implementation 'jakarta.inject:jakarta.inject-api:2.0.1'
     implementation 'jakarta.xml.bind:jakarta.xml.bind-api:4.0.1'
+    implementation 'jakarta.validation:jakarta.validation-api:3.0.2'
+    implementation 'org.hibernate.validator:hibernate-validator:8.0.1.Final'
     implementation 'org.glassfish.jaxb:jaxb-runtime:4.0.4'
 
     implementation 'org.postgresql:postgresql:42.7.2'
@@ -192,6 +194,10 @@ shadowJar {
     manifest {
         attributes 'Main-Class': 'by.losik.Main'
     }
+}
+
+tasks.jar {
+    exclude 'by/losik/lambda/**'
 }
 
 tasks.build.dependsOn shadowJar

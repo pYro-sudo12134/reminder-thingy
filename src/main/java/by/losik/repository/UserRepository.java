@@ -7,18 +7,39 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.NoResultException;
 import jakarta.transaction.Transactional;
-import org.mindrot.jbcrypt.BCrypt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
+/**
+ * Репозиторий для работы с пользователями в базе данных PostgreSQL.
+ * <p>
+ * Предоставляет CRUD операции для сущности {@link User}:
+ * <ul>
+ *     <li>Поиск по username и email</li>
+ *     <li>Создание нового пользователя с хэшированием пароля</li>
+ *     <li>Валидация учётных данных (логин/пароль)</li>
+ *     <li>Обновление пароля</li>
+ * </ul>
+ * <p>
+ * Использует JPA (EclipseLink) для доступа к базе данных.
+ * Все методы, изменяющие данные, аннотированы {@code @Transactional} для обеспечения целостности.
+ *
+ * @see User
+ * @see EntityManager
+ */
 @Singleton
 public class UserRepository {
     private static final Logger log = LoggerFactory.getLogger(UserRepository.class);
     private final EntityManagerFactory emf;
 
+    /**
+     * Создаёт репозиторий с фабрикой EntityManager.
+     *
+     * @param emf фабрика EntityManager для создания подключений к БД
+     */
     @Inject
     public UserRepository(EntityManagerFactory emf) {
         this.emf = emf;
@@ -28,6 +49,12 @@ public class UserRepository {
         return emf.createEntityManager();
     }
 
+    /**
+     * Находит пользователя по имени пользователя.
+     *
+     * @param username имя пользователя для поиска
+     * @return {@link Optional} с найденным пользователем или пустой, если не найден
+     */
     @Transactional
     public Optional<User> findByUsername(String username) {
         try (EntityManager em = getEntityManager()) {
@@ -50,41 +77,45 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Проверяет учётные данные пользователя (логин/пароль).
+     * <p>
+     * При успешной проверке обновляет {@code lastLogin} пользователя.
+     *
+     * @param username имя пользователя
+     * @param password пароль в открытом виде
+     * @return true если учётные данные верны
+     */
     @Transactional
     public boolean validateCredentials(String username, String password) {
         EntityManager em = getEntityManager();
         try {
-            log.info("=== VALIDATE CREDENTIALS START ===");
-            log.info("Username: '{}'", username);
-            log.info("Password: '{}'", password);
-
             em.getTransaction().begin();
 
             Optional<User> userOpt = findByUsername(username);
 
             if (userOpt.isEmpty()) {
-                log.error("USER NOT FOUND: {}", username);
+                log.info("USER NOT FOUND: {}", username);
                 em.getTransaction().rollback();
-                log.info("=== VALIDATE CREDENTIALS END (user not found) ===");
                 return false;
             }
 
             User user = userOpt.get();
             log.info("User found: {}", user.getUsername());
-            log.info("Stored hash: {}", user.getPasswordHash());
-            log.info("Hash length: {}", user.getPasswordHash().length());
 
-            boolean isValid = BCrypt.checkpw(password, user.getPasswordHash());
-            log.info("BCrypt.checkpw result: {}", isValid);
+            boolean isValid = user.checkPassword(password);
+            log.info("Password validation result: {}", isValid);
 
             if (isValid) {
                 user.setLastLogin(LocalDateTime.now());
                 em.merge(user);
                 log.info("User logged in: {}", username);
+                em.getTransaction().commit();
+            } else {
+                log.info("Invalid password for user: {}", username);
+                em.getTransaction().rollback();
             }
 
-            em.getTransaction().commit();
-            log.info("=== VALIDATE CREDENTIALS END (result={}) ===", isValid);
             return isValid;
 
         } catch (Exception e) {
@@ -98,14 +129,24 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Создаёт нового пользователя с хэшированием пароля.
+     * <p>
+     * Использует {@link User#create(String, String, String)} для безопасного создания.
+     *
+     * @param username имя пользователя (3-50 символов)
+     * @param email email пользователя
+     * @param password пароль в открытом виде (будет захэширован)
+     * @return созданный пользователь с установленным ID
+     * @throws RuntimeException если не удалось создать пользователя
+     */
     @Transactional
     public User createUser(String username, String email, String password) {
         EntityManager em = getEntityManager();
         try {
             em.getTransaction().begin();
 
-            String passwordHash = BCrypt.hashpw(password, BCrypt.gensalt());
-            User user = new User(username, email, passwordHash);
+            User user = User.create(username, email, password);
 
             log.info("Persisting user: {}", username);
             em.persist(user);
@@ -127,6 +168,12 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Находит пользователя по email.
+     *
+     * @param email email для поиска
+     * @return {@link Optional} с найденным пользователем или пустой, если не найден
+     */
     @Transactional
     public Optional<User> findByEmail(String email) {
         try (EntityManager em = getEntityManager()) {
@@ -149,6 +196,15 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Обновляет пароль пользователя.
+     * <p>
+     * Пароль хэшируется через {@link User#updatePassword(String)}.
+     *
+     * @param username имя пользователя
+     * @param newPassword новый пароль в открытом виде (будет захэширован)
+     * @return true если пароль успешно обновлён
+     */
     @Transactional
     public boolean updatePassword(String username, String newPassword) {
         EntityManager em = getEntityManager();
@@ -163,9 +219,7 @@ public class UserRepository {
             }
 
             User user = userOpt.get();
-            String newHash = BCrypt.hashpw(newPassword, BCrypt.gensalt());
-            user.setPasswordHash(newHash);
-            user.setUpdatedAt(LocalDateTime.now());
+            user.updatePassword(newPassword);
 
             em.merge(user);
             em.getTransaction().commit();
@@ -184,6 +238,12 @@ public class UserRepository {
         }
     }
 
+    /**
+     * Проверяет существование пользователя по имени.
+     *
+     * @param username имя пользователя для проверки
+     * @return true если пользователь существует
+     */
     public boolean userExists(String username) {
         return findByUsername(username).isPresent();
     }

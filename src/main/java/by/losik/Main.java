@@ -1,6 +1,7 @@
 package by.losik;
 
 import by.losik.composition.root.AWSModule;
+import by.losik.composition.root.FilterModule;
 import by.losik.composition.root.JpaModule;
 import by.losik.composition.root.MailModule;
 import by.losik.composition.root.RateLimitModule;
@@ -10,7 +11,6 @@ import com.google.inject.Guice;
 import com.google.inject.Injector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import by.losik.service.LambdaHandler;
 
 
 public class Main {
@@ -18,18 +18,15 @@ public class Main {
     public static void main(String[] args) {
         try {
             Injector injector = Guice.createInjector(
-                    new AWSModule(), new JpaModule(),
-                    new MailModule(), new RateLimitModule());
+                    new AWSModule(),
+                    new JpaModule(),
+                    new MailModule(),
+                    new RateLimitModule(),
+                    new FilterModule());
+            
             OpenSearchService openSearchService = injector.getInstance(OpenSearchService.class);
             openSearchService.initializeIndices().join();
             log.info("OpenSearch indices initialized");
-            
-            LambdaHandler lambdaHandler = injector.getInstance(LambdaHandler.class);
-            lambdaHandler.deployLambdaFunction().join();
-            log.info("Lambda function deployed: send-reminder-email");
-            
-            
-
             WebServer webServer = injector.getInstance(WebServer.class);
             webServer.start();
             log.info("Web application started!");

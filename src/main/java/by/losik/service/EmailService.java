@@ -21,9 +21,24 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * Сервис для отправки email уведомлений через SMTP.
+ * <p>
+ * Предоставляет методы для:
+ * <ul>
+ *     <li>Отправки email (текст или HTML)</li>
+ *     <li>Отправки уведомлений о напоминаниях</li>
+ * </ul>
+ * <p>
+ * Использует асинхронную отправку через ExecutorService.
+ *
+ * @see EmailConfig
+ * @see EmailPasswordResetService
+ */
 @Singleton
 public class EmailService implements EmailSender, AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+
     private final String smtpHost;
     private final int smtpPort;
     private final String smtpUsername;
@@ -31,8 +46,15 @@ public class EmailService implements EmailSender, AutoCloseable {
     private final String fromEmail;
     private final boolean useSsl;
     private final boolean useTls;
+    private final int connectionTimeoutMs;
+    private final int writeTimeoutMs;
     private final ExecutorService executorService;
 
+    /**
+     * Создаёт email сервис с внедрённой конфигурацией.
+     *
+     * @param emailConfig конфигурация SMTP сервера
+     */
     @Inject
     public EmailService(EmailConfig emailConfig) {
         this.smtpHost = emailConfig.getSmtpHost();
@@ -42,9 +64,16 @@ public class EmailService implements EmailSender, AutoCloseable {
         this.fromEmail = emailConfig.getFromEmail();
         this.useSsl = emailConfig.isUseSsl();
         this.useTls = emailConfig.isUseTls();
-        this.executorService = Executors.newFixedThreadPool(5);
+        this.connectionTimeoutMs = emailConfig.getConnectionTimeoutMs();
+        this.writeTimeoutMs = emailConfig.getWriteTimeoutMs();
+        this.executorService = Executors.newFixedThreadPool(emailConfig.getEmailThreadPoolSize());
     }
 
+    /**
+     * Создаёт сессию JavaMail с настройками SMTP.
+     *
+     * @return Session для отправки email
+     */
     protected Session createMailSession() {
         Properties props = new Properties();
         props.put("mail.smtp.auth", "true");
@@ -60,9 +89,9 @@ public class EmailService implements EmailSender, AutoCloseable {
             props.put("mail.smtp.starttls.required", "true");
         }
 
-        props.put("mail.smtp.connectiontimeout", "5000");
-        props.put("mail.smtp.timeout", "10000");
-        props.put("mail.smtp.writetimeout", "10000");
+        props.put("mail.smtp.connectiontimeout", String.valueOf(connectionTimeoutMs));
+        props.put("mail.smtp.timeout", String.valueOf(writeTimeoutMs));
+        props.put("mail.smtp.writetimeout", String.valueOf(writeTimeoutMs));
 
         return Session.getInstance(props, new Authenticator() {
             @Override
@@ -72,6 +101,15 @@ public class EmailService implements EmailSender, AutoCloseable {
         });
     }
 
+    /**
+     * Отправляет email асинхронно.
+     *
+     * @param toEmail email получателя
+     * @param subject тема письма
+     * @param body тело письма
+     * @param isHtml true если тело в формате HTML, false если plain text
+     * @return CompletableFuture с MessageID отправленного письма
+     */
     @Override
     public CompletableFuture<String> sendEmail(String toEmail, String subject, String body, boolean isHtml) {
         return CompletableFuture.supplyAsync(() -> {
@@ -109,6 +147,15 @@ public class EmailService implements EmailSender, AutoCloseable {
         }, executorService);
     }
 
+    /**
+     * Отправляет уведомление о напоминании.
+     *
+     * @param toEmail email получателя
+     * @param reminderId ID напоминания
+     * @param action текст напоминания (действие)
+     * @param scheduledTime запланированное время
+     * @return CompletableFuture с MessageID отправленного письма
+     */
     public CompletableFuture<String> sendReminderNotification(
             String toEmail,
             String reminderId,
@@ -156,6 +203,11 @@ public class EmailService implements EmailSender, AutoCloseable {
         return sendEmail(toEmail, subject, htmlBody, true);
     }
 
+    /**
+     * Закрывает сервис и освобождает ресурсы.
+     * <p>
+     * Останавливает ExecutorService.
+     */
     @Override
     public void close() {
         executorService.shutdown();

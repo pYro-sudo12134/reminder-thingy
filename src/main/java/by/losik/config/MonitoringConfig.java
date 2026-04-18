@@ -1,6 +1,6 @@
 package by.losik.config;
 
-import com.google.inject.Inject;
+import by.losik.util.ConfigUtils;
 import com.google.inject.Singleton;
 import io.micrometer.cloudwatch2.CloudWatchConfig;
 import io.micrometer.cloudwatch2.CloudWatchMeterRegistry;
@@ -14,25 +14,37 @@ import io.micrometer.core.instrument.binder.jvm.JvmThreadMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
 import io.micrometer.prometheus.PrometheusConfig;
 import io.micrometer.prometheus.PrometheusMeterRegistry;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.cloudwatch.CloudWatchAsyncClient;
 
 import java.util.Map;
 
+/**
+ * Конфигурация мониторинга через Micrometer.
+ * <p>
+ * Предоставляет:
+ * <ul>
+ *     <li>CloudWatch Meter Registry для AWS CloudWatch</li>
+ *     <li>Prometheus Meter Registry для Prometheus scraping</li>
+ *     <li>JVM метрики (memory, GC, threads, CPU)</li>
+ * </ul>
+ * <p>
+ * Используется в {@link by.losik.composition.root.AWSModule}.
+ *
+ * @see by.losik.composition.root.AWSModule
+ */
 @Singleton
 public class MonitoringConfig implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(MonitoringConfig.class);
     private final LocalStackConfig localStackConfig;
-    private final SecretsManagerConfig secretsManagerConfig;
     private MeterRegistry meterRegistry;
     private final PrometheusMeterRegistry prometheusRegistry;
 
     @Inject
-    public MonitoringConfig(LocalStackConfig localStackConfig,
-                            SecretsManagerConfig secretsManagerConfig) {
+    public MonitoringConfig(LocalStackConfig localStackConfig) {
         this.localStackConfig = localStackConfig;
-        this.secretsManagerConfig = secretsManagerConfig;
         this.prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
         initMetrics();
     }
@@ -41,9 +53,8 @@ public class MonitoringConfig implements AutoCloseable {
         try {
             CloudWatchAsyncClient cloudWatchAsyncClient = localStackConfig.getCloudWatchAsyncClient();
 
-            String namespace = secretsManagerConfig.getSecret("CLOUDWATCH_NAMESPACE",
-                    "VoiceReminderApp");
-            String step = secretsManagerConfig.getSecret("METRICS_STEP", "PT1M");
+            String namespace = ConfigUtils.getEnvOrDefault("CLOUDWATCH_NAMESPACE", "VoiceReminderApp");
+            String step = ConfigUtils.getEnvOrDefault("METRICS_STEP", "PT1M");
 
             CloudWatchConfig cloudWatchConfig = new CloudWatchConfig() {
                 private final Map<String, String> configuration = Map.of(

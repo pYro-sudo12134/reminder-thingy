@@ -1,48 +1,72 @@
 package by.losik.service;
 
 import by.losik.config.GRPCConfig;
-import by.losik.dto.Entity;
 import by.losik.dto.ParsedResult;
-import by.losik.grpc.AbsoluteTime;
 import by.losik.grpc.HealthRequest;
 import by.losik.grpc.HealthResponse;
 import by.losik.grpc.ParseRequest;
 import by.losik.grpc.ParseResponse;
-import by.losik.grpc.RelativeTime;
 import by.losik.grpc.ReminderParserServiceGrpc;
-import by.losik.grpc.TemporalExpression;
+import by.losik.service.mapper.GrpcRequestMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
-import io.grpc.ManagedChannel;
 import io.grpc.StatusRuntimeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
+/**
+ * Сервис для взаимодействия с NLP сервисом через gRPC.
+ * <p>
+ * Предоставляет методы для:
+ * <ul>
+ *     <li>Парсинга текста напоминания (извлечение действия и времени)</li>
+ *     <li>Проверки здоровья NLP сервиса (health check)</li>
+ *     <li>Получения списка поддерживаемых языков</li>
+ * </ul>
+ * <p>
+ * Использует Circuit breaker паттерн для обработки недоступности сервиса.
+ * При недоступности gRPC используется fallback (упрощённый парсинг).
+ *
+ * @see GRPCConfig
+ * @see GrpcRequestMapper
+ */
 @Singleton
 public class GRPCService implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(GRPCService.class);
     private final GRPCConfig grpcConfig;
+    private final GrpcRequestMapper mapper;
     private final ReminderParserServiceGrpc.ReminderParserServiceBlockingStub blockingStub;
     private volatile boolean grpcAvailable = true;
     private long lastHealthCheck = 0;
-    private static final long HEALTH_CHECK_INTERVAL_MS = 30000;
 
+    /**
+     * Создаёт gRPC сервис с конфигурацией и маппером.
+     *
+     * @param grpcConfig конфигурация gRPC клиента
+     * @param mapper маппер для преобразования protobuf ↔ DTO
+     */
     @Inject
-    public GRPCService(GRPCConfig grpcConfig) {
+    public GRPCService(GRPCConfig grpcConfig, GrpcRequestMapper mapper) {
         this.grpcConfig = grpcConfig;
-        ManagedChannel channel = grpcConfig.getChannel();
-        this.blockingStub = ReminderParserServiceGrpc.newBlockingStub(channel);
-
-        checkGRPCAvailability();
+        this.mapper = mapper;
+        this.blockingStub = ReminderParserServiceGrpc.newBlockingStub(grpcConfig.getChannel());
+        this.lastHealthCheck = 0;
     }
 
+    /**
+     * Парсит текст напоминания через gRPC сервис.
+     * <p>
+     * Если gRPC сервис недоступен, используется fallback парсинг.
+     *
+     * @param text текст напоминания
+     * @param language код языка (например, "ru", "en")
+     * @param userId ID пользователя
+     * @return ParsedResult с извлечёнными данными
+     */
     public ParsedResult parse(String text, String language, String userId) {
         if (!isGRPCAvailable()) {
             log.warn("gRPC service unavailable, using fallback parsing");
@@ -50,17 +74,13 @@ public class GRPCService implements AutoCloseable {
         }
 
         try {
-            ParseRequest request = ParseRequest.newBuilder()
-                    .setText(text)
-                    .setLanguageCode(language != null ? language : "")
-                    .setUserId(userId != null ? userId : "anonymous")
-                    .build();
+            ParseRequest request = mapper.createParseRequest(text, language, userId);
 
             ParseResponse response = blockingStub
-                    .withDeadlineAfter(30, TimeUnit.SECONDS)
+                    .withDeadlineAfter(grpcConfig.getParseDeadlineSec(), TimeUnit.SECONDS)
                     .parseReminder(request);
 
-            return mapResponseToResult(response);
+            return mapper.mapResponseToResult(response);
 
         } catch (StatusRuntimeException e) {
             log.error("gRPC parsing error: {} - {}", e.getStatus().getCode(), e.getStatus().getDescription());
@@ -78,71 +98,15 @@ public class GRPCService implements AutoCloseable {
         }
     }
 
-    private ParsedResult mapResponseToResult(ParseResponse response) {
-        try {
-            LocalDateTime scheduledTime = extractDateTime(response.getParsed().getTimeExpression());
-
-            List<Entity> entities = response.getParsed().getEntitiesList().stream()
-                    .map(this::mapProtoEntity)
-                    .collect(Collectors.toList());
-
-            return new ParsedResult(
-                    scheduledTime,
-                    response.getParsed().getAction(),
-                    response.getConfidence(),
-                    response.getLanguageDetected(),
-                    response.getReminderId(),
-                    "reminder",
-                    entities,
-                    response.getParsed().getNormalizedText(),
-                    response.getParsed().getNormalizedText()
-            );
-
-        } catch (Exception e) {
-            log.error("Error mapping gRPC response", e);
-            throw new RuntimeException("Invalid gRPC response format", e);
-        }
-    }
-
-    private LocalDateTime extractDateTime(TemporalExpression timeExpr) {
-        try {
-            if (timeExpr.hasAbsolute()) {
-                AbsoluteTime absolute = timeExpr.getAbsolute();
-                return LocalDateTime.parse(absolute.getIsoDatetime());
-
-            } else if (timeExpr.hasRelative()) {
-                RelativeTime relative = timeExpr.getRelative();
-                LocalDateTime now = LocalDateTime.now();
-
-                return switch (relative.getUnit()) {
-                    case "seconds" -> now.plusSeconds(relative.getAmount());
-                    case "minutes" -> now.plusMinutes(relative.getAmount());
-                    case "hours" -> now.plusHours(relative.getAmount());
-                    case "days" -> now.plusDays(relative.getAmount());
-                    case "weeks" -> now.plusWeeks(relative.getAmount());
-                    default -> now.plusHours(1);
-                };
-
-            } else if (timeExpr.hasRecurring()) {
-                return LocalDateTime.now().plusDays(1);
-            }
-        } catch (DateTimeParseException e) {
-            log.warn("Failed to parse date from gRPC response", e);
-        }
-
-        return LocalDateTime.now().plusHours(1);
-    }
-
-    private Entity mapProtoEntity(by.losik.grpc.Entity protoEntity) {
-        return new Entity(
-                protoEntity.getText(),
-                protoEntity.getType(),
-                protoEntity.getStart(),
-                protoEntity.getEnd(),
-                protoEntity.getConfidence()
-        );
-    }
-
+    /**
+     * Fallback парсинг при недоступности gRPC сервиса.
+     * <p>
+     * Возвращает упрощённый результат с текущим временем +1 час.
+     *
+     * @param text текст напоминания
+     * @param language код языка
+     * @return ParsedResult с дефолтными значениями
+     */
     private ParsedResult fallbackParse(String text, String language) {
         LocalDateTime scheduledTime = LocalDateTime.now().plusHours(1);
 
@@ -159,10 +123,42 @@ public class GRPCService implements AutoCloseable {
         );
     }
 
+    /**
+     * Получает список поддерживаемых языков от NLP сервиса.
+     *
+     * @return список кодов языков (например, ["ru", "en"])
+     */
+    public List<String> getSupportedLanguages() {
+        try {
+            HealthResponse response = blockingStub
+                    .withDeadlineAfter(grpcConfig.getHealthCheckDeadlineSec(), TimeUnit.SECONDS)
+                    .healthCheck(HealthRequest.newBuilder().build());
+
+            return response.getSupportedLanguagesList();
+
+        } catch (Exception e) {
+            log.warn("Failed to get supported languages", e);
+            return List.of("ru", "en");
+        }
+    }
+
+    /**
+     * Форматирует время для отображения пользователю.
+     *
+     * @param time время для форматирования
+     * @return отформатированное время (например, "09:00")
+     */
+    public String formatForDisplay(LocalDateTime time) {
+        return time.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"));
+    }
+
+    /**
+     * Проверяет здоровье NLP сервиса через gRPC health check.
+     */
     public void checkHealth() {
         try {
             HealthResponse response = blockingStub
-                    .withDeadlineAfter(5, TimeUnit.SECONDS)
+                    .withDeadlineAfter(grpcConfig.getHealthCheckDeadlineSec(), TimeUnit.SECONDS)
                     .healthCheck(HealthRequest.newBuilder().build());
 
             grpcAvailable = response.getHealthy();
@@ -178,13 +174,13 @@ public class GRPCService implements AutoCloseable {
         }
     }
 
-    private void checkGRPCAvailability() {
-        long now = System.currentTimeMillis();
-        if (now - lastHealthCheck > HEALTH_CHECK_INTERVAL_MS) {
-            checkHealth();
-        }
-    }
-
+    /**
+     * Проверяет доступность gRPC сервиса.
+     * <p>
+     * Если прошло больше интервала health check, выполняет проверку.
+     *
+     * @return true если сервис доступен
+     */
     private boolean isGRPCAvailable() {
         if (!grpcAvailable) {
             checkGRPCAvailability();
@@ -192,27 +188,22 @@ public class GRPCService implements AutoCloseable {
         return grpcAvailable;
     }
 
-    private void markGRPCUnavailable() {
-        grpcAvailable = false;
-        lastHealthCheck = System.currentTimeMillis();
-    }
-
-    public List<String> getSupportedLanguages() {
-        try {
-            HealthResponse response = blockingStub
-                    .withDeadlineAfter(3, TimeUnit.SECONDS)
-                    .healthCheck(HealthRequest.newBuilder().build());
-
-            return response.getSupportedLanguagesList();
-
-        } catch (Exception e) {
-            log.warn("Failed to get supported languages", e);
-            return List.of("ru", "en");
+    /**
+     * Проверяет доступность gRPC сервиса если прошло достаточно времени.
+     */
+    private void checkGRPCAvailability() {
+        long now = System.currentTimeMillis();
+        if (now - lastHealthCheck > grpcConfig.getHealthCheckIntervalMs()) {
+            checkHealth();
         }
     }
 
-    public String formatForDisplay(LocalDateTime time) {
-        return time.format(DateTimeFormatter.ofPattern("HH:mm"));
+    /**
+     * Помечает gRPC сервис как недоступный.
+     */
+    private void markGRPCUnavailable() {
+        grpcAvailable = false;
+        lastHealthCheck = System.currentTimeMillis();
     }
 
     @Override

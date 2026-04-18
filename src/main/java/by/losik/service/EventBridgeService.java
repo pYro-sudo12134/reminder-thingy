@@ -1,9 +1,11 @@
 package by.losik.service;
 
+import by.losik.config.EventBridgeConfig;
 import by.losik.config.LocalStackConfig;
 import by.losik.dto.CreateRuleRequest;
 import by.losik.dto.EventBridgeRuleRecord;
 import by.losik.dto.SendEventRequest;
+import by.losik.util.CronExpressionBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
@@ -27,20 +29,35 @@ public class EventBridgeService {
 
     private final EventBridgeAsyncClient eventBridgeAsyncClient;
     private final LambdaAsyncClient lambdaAsyncClient;
+    private final EventBridgeConfig config;
     private final String defaultEventBusName = "default";
 
     @Inject
-    public EventBridgeService(LocalStackConfig config, LambdaAsyncClient lambdaAsyncClient) {
-        this.eventBridgeAsyncClient = config.getEventBridgeAsyncClient();
+    public EventBridgeService(LocalStackConfig localStackConfig,
+                              EventBridgeConfig eventBridgeConfig,
+                              LambdaAsyncClient lambdaAsyncClient) {
+        this.eventBridgeAsyncClient = localStackConfig.getEventBridgeAsyncClient();
+        this.config = eventBridgeConfig;
         this.lambdaAsyncClient = lambdaAsyncClient;
     }
 
-    public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(CreateRuleRequest request) {       
-        String scheduleExpression = createCronExpression(request.scheduleTime());
+    public CompletableFuture<EventBridgeRuleRecord> createEmailRule(CreateRuleRequest request) {
+        return createScheduleRule(request, config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<EventBridgeRuleRecord> createTelegramRule(CreateRuleRequest request) {
+        return createScheduleRule(request, config.getTelegramEventBusName());
+    }
+
+    public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(
+            CreateRuleRequest request, String eventBusName) {
+        String scheduleExpression = CronExpressionBuilder.fromLocalDateTime(request.scheduleTime());
         String ruleName = request.ruleName() != null ?
                 request.ruleName() :
                 "reminder-rule-" + System.currentTimeMillis();
 
+        log.info("Creating rule with schedule expression: '{}' for time: {}",
+                scheduleExpression, request.scheduleTime());
         PutRuleRequest ruleRequest = PutRuleRequest.builder()
                 .name(ruleName)
                 .scheduleExpression(scheduleExpression)
@@ -48,7 +65,7 @@ public class EventBridgeService {
                 .description(request.description() != null ?
                         request.description() :
                         "Reminder for: " + request.scheduleTime())
-                .eventBusName(defaultEventBusName)
+                .eventBusName(eventBusName)
                 .build();
 
         return eventBridgeAsyncClient.putRule(ruleRequest)
@@ -70,29 +87,39 @@ public class EventBridgeService {
 
                     PutTargetsRequest targetsRequest = PutTargetsRequest.builder()
                             .rule(ruleName)
-                            .eventBusName(defaultEventBusName)
+                            .eventBusName(eventBusName)
                             .targets(target)
                             .build();
 
                     String finalInputJson = inputJson;
                     return eventBridgeAsyncClient.putTargets(targetsRequest)
                             .thenCompose(targetsResponse -> {
-                                log.info("Created EventBridge rule: {} with target: {}",
-                                        ruleName, request.targetArn());
+                                log.info("Created EventBridge rule: {} with target: {} in bus: {}",
+                                        ruleName, request.targetArn(), eventBusName);
 
-                                return addPermissionForEventBridge(ruleName, request.targetArn())
-                                        .thenApply(permissionResponse -> {
-                                            log.info("Added permission for EventBridge to invoke Lambda");
-
-                                            return new EventBridgeRuleRecord(
-                                                    ruleName,
-                                                    scheduleExpression,
-                                                    request.targetArn(),
-                                                    true,
-                                                    request.description(),
-                                                    finalInputJson
-                                            );
-                                        });
+                                if (request.targetArn() != null && request.targetArn().contains("lambda")) {
+                                    return addPermissionForEventBridge(ruleName, request.targetArn())
+                                            .thenApply(permissionResponse -> {
+                                                log.info("Added permission for EventBridge to invoke Lambda");
+                                                return new EventBridgeRuleRecord(
+                                                        ruleName,
+                                                        scheduleExpression,
+                                                        request.targetArn(),
+                                                        true,
+                                                        request.description(),
+                                                        finalInputJson
+                                                );
+                                            });
+                                } else {
+                                    return CompletableFuture.completedFuture(new EventBridgeRuleRecord(
+                                            ruleName,
+                                            scheduleExpression,
+                                            request.targetArn(),
+                                            true,
+                                            request.description(),
+                                            finalInputJson
+                                    ));
+                                }
                             });
                 })
                 .exceptionally(ex -> {
@@ -103,13 +130,18 @@ public class EventBridgeService {
 
     public CompletableFuture<EventBridgeRuleRecord> createRateRule(
             String ruleName, String rateExpression, String targetArn, String inputJson) {
+        return createRateRule(ruleName, rateExpression, targetArn, inputJson, config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<EventBridgeRuleRecord> createRateRule(
+            String ruleName, String rateExpression, String targetArn, String inputJson, String eventBusName) {
 
         PutRuleRequest ruleRequest = PutRuleRequest.builder()
                 .name(ruleName)
                 .scheduleExpression("rate(" + rateExpression + ")")
                 .state(RuleState.ENABLED)
                 .description("Rate rule: " + rateExpression)
-                .eventBusName(defaultEventBusName)
+                .eventBusName(eventBusName)
                 .build();
 
         return eventBridgeAsyncClient.putRule(ruleRequest)
@@ -122,7 +154,7 @@ public class EventBridgeService {
 
                     PutTargetsRequest targetsRequest = PutTargetsRequest.builder()
                             .rule(ruleName)
-                            .eventBusName(defaultEventBusName)
+                            .eventBusName(eventBusName)
                             .targets(target)
                             .build();
 
@@ -139,7 +171,11 @@ public class EventBridgeService {
     }
 
     public CompletableFuture<Boolean> deleteRule(String ruleName) {
-        return listTargets(ruleName)
+        return deleteRule(ruleName, config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<Boolean> deleteRule(String ruleName, String eventBusName) {
+        return listTargets(ruleName, eventBusName)
                 .thenCompose(targets -> {
                     CompletableFuture<Void> deleteTargetsFuture = CompletableFuture.completedFuture(null);
 
@@ -150,7 +186,7 @@ public class EventBridgeService {
 
                         RemoveTargetsRequest removeRequest = RemoveTargetsRequest.builder()
                                 .rule(ruleName)
-                                .eventBusName(defaultEventBusName)
+                                .eventBusName(eventBusName)
                                 .ids(targetIds)
                                 .build();
 
@@ -158,7 +194,7 @@ public class EventBridgeService {
                                 .thenApply(response -> null);
                     }
 
-                    return deleteTargetsFuture.thenCompose(v -> deleteRuleInternal(ruleName));
+                    return deleteTargetsFuture.thenCompose(v -> deleteRuleInternal(ruleName, eventBusName));
                 })
                 .thenApply(response -> {
                     log.info("Successfully deleted rule: {}", ruleName);
@@ -171,14 +207,18 @@ public class EventBridgeService {
     }
 
     public CompletableFuture<String> sendEvent(SendEventRequest request) {
-        String eventBusName = request.eventBusName() != null ?
-                request.eventBusName() : defaultEventBusName;
+        return sendEvent(request, config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<String> sendEvent(SendEventRequest request, String eventBusName) {
+        String actualEventBusName = request.eventBusName() != null ?
+                request.eventBusName() : eventBusName;
 
         PutEventsRequestEntry event = PutEventsRequestEntry.builder()
                 .source(request.source())
                 .detailType(request.detailType())
                 .detail(request.detailJson())
-                .eventBusName(eventBusName)
+                .eventBusName(actualEventBusName)
                 .build();
 
         PutEventsRequest eventsRequest = PutEventsRequest.builder()
@@ -196,7 +236,7 @@ public class EventBridgeService {
                         throw new RuntimeException("Failed to send event");
                     }
 
-                    log.info("Event sent successfully: {} - {}", request.source(), request.detailType()); 
+                    log.info("Event sent successfully: {} - {}", request.source(), request.detailType());
                     return eventId;
                 })
                 .exceptionally(ex -> {
@@ -206,8 +246,12 @@ public class EventBridgeService {
     }
 
     public CompletableFuture<List<EventBridgeRuleRecord>> getAllRules() {
+        return getAllRules(config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<List<EventBridgeRuleRecord>> getAllRules(String eventBusName) {
         ListRulesRequest request = ListRulesRequest.builder()
-                .eventBusName(defaultEventBusName)
+                .eventBusName(eventBusName)
                 .limit(100)
                 .build();
 
@@ -215,7 +259,7 @@ public class EventBridgeService {
                 .thenCompose(rulesResponse -> {
                     List<CompletableFuture<EventBridgeRuleRecord>> ruleFutures =
                             rulesResponse.rules().stream()
-                                    .map(rule -> getRuleDetails(rule.name())).toList();
+                                    .map(rule -> getRuleDetails(rule.name(), eventBusName)).toList();
 
                     return CompletableFuture.allOf(ruleFutures.toArray(new CompletableFuture[0]))
                             .thenApply(v -> ruleFutures.stream()
@@ -229,9 +273,13 @@ public class EventBridgeService {
     }
 
     public CompletableFuture<EventBridgeRuleRecord> getRuleDetails(String ruleName) {
+        return getRuleDetails(ruleName, config.getEmailEventBusName());
+    }
+
+    public CompletableFuture<EventBridgeRuleRecord> getRuleDetails(String ruleName, String eventBusName) {
         return eventBridgeAsyncClient.listRules(
                 ListRulesRequest.builder()
-                        .eventBusName(defaultEventBusName)
+                        .eventBusName(eventBusName)
                         .namePrefix(ruleName)
                         .build()
         ).thenCompose(rulesResponse -> {
@@ -240,9 +288,7 @@ public class EventBridgeService {
                     .findFirst()
                     .orElseThrow(() -> new RuntimeException("Rule not found: " + ruleName));
 
-            CompletableFuture<List<Target>> targetsFuture = listTargets(ruleName);
-
-            return targetsFuture.thenApply(targets -> {
+            return listTargets(ruleName, eventBusName).thenApply(targets -> {
                 String targetArn = null;
                 String targetInput = null;
 
@@ -265,9 +311,13 @@ public class EventBridgeService {
     }
 
     private CompletableFuture<List<Target>> listTargets(String ruleName) {
+        return listTargets(ruleName, config.getEmailEventBusName());
+    }
+
+    private CompletableFuture<List<Target>> listTargets(String ruleName, String eventBusName) {
         ListTargetsByRuleRequest request = ListTargetsByRuleRequest.builder()
                 .rule(ruleName)
-                .eventBusName(defaultEventBusName)
+                .eventBusName(eventBusName)
                 .build();
 
         return eventBridgeAsyncClient.listTargetsByRule(request)
@@ -279,9 +329,13 @@ public class EventBridgeService {
     }
 
     private CompletableFuture<Void> deleteRuleInternal(String ruleName) {
+        return deleteRuleInternal(ruleName, config.getEmailEventBusName());
+    }
+
+    private CompletableFuture<Void> deleteRuleInternal(String ruleName, String eventBusName) {
         DeleteRuleRequest request = DeleteRuleRequest.builder()
                 .name(ruleName)
-                .eventBusName(defaultEventBusName)
+                .eventBusName(eventBusName)
                 .force(true)
                 .build();
 
@@ -289,23 +343,13 @@ public class EventBridgeService {
                 .thenApply(response -> null);
     }
 
-    private String createCronExpression(LocalDateTime dateTime) {
-        return String.format("cron(%d %d %d %d ? %d)",
-                dateTime.getMinute(),
-                dateTime.getHour(),
-                dateTime.getDayOfMonth(),
-                dateTime.getMonthValue(),
-                dateTime.getYear()
-        );
-    }
-
     private CompletableFuture<AddPermissionResponse> addPermissionForEventBridge(
-            String ruleName, 
+            String ruleName,
             String targetArn) {
-        
+
         String functionName = extractFunctionNameFromArn(targetArn);
         String statementId = "eventbridge-" + ruleName;
-        
+
         return eventBridgeAsyncClient.describeRule(
                     DescribeRuleRequest.builder()
                             .name(ruleName)
@@ -313,7 +357,7 @@ public class EventBridgeService {
                             .build())
                 .thenCompose(ruleResponse -> {
                     String ruleArn = ruleResponse.arn();
-                    
+
                     AddPermissionRequest permissionRequest = AddPermissionRequest.builder()
                             .functionName(functionName)
                             .action("lambda:InvokeFunction")
@@ -321,10 +365,10 @@ public class EventBridgeService {
                             .sourceArn(ruleArn)
                             .statementId(statementId)
                             .build();
-                    
-                    log.info("Adding permission for EventBridge rule '{}' to invoke Lambda '{}'", 
+
+                    log.info("Adding permission for EventBridge rule '{}' to invoke Lambda '{}'",
                             ruleName, functionName);
-                    
+
                     return lambdaAsyncClient.addPermission(permissionRequest);
                 })
                 .exceptionally(ex -> {

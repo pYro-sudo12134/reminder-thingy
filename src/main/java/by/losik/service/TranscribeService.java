@@ -1,6 +1,7 @@
 package by.losik.service;
 
 import by.losik.config.LocalStackConfig;
+import by.losik.config.TranscribeConfig;
 import by.losik.dto.TranscriptionJobResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,8 +28,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Сервис для транскрибации аудио через AWS Transcribe.
+ * <p>
+ * Предоставляет методы для:
+ * <ul>
+ *     <li>Запуска задачи транскрибации</li>
+ *     <li>Polling статуса выполнения</li>
+ *     <li>Скачивания и парсинга результата</li>
+ * </ul>
+ * <p>
+ * Использует асинхронный TranscribeAsyncClient и ScheduledExecutorService для polling.
+ *
+ * @see TranscribeConfig
+ */
 @Singleton
-public class TranscribeService {
+public class TranscribeService implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(TranscribeService.class);
 
@@ -36,16 +51,32 @@ public class TranscribeService {
     private final S3Service s3Service;
     private final ObjectMapper objectMapper;
     private final ScheduledExecutorService scheduler;
+    private final TranscribeConfig config;
 
+    /**
+     * Создаёт транскрибация сервис с конфигурацией.
+     *
+     * @param localStackConfig конфигурация LocalStack для клиента
+     * @param s3Service сервис для работы с S3
+     * @param config конфигурация транскрибации
+     */
     @Inject
-    public TranscribeService(LocalStackConfig config, S3Service s3Service) {
-        this.transcribeAsyncClient = config.getTranscribeAsyncClient();
+    public TranscribeService(LocalStackConfig localStackConfig, S3Service s3Service, TranscribeConfig config) {
+        this.transcribeAsyncClient = localStackConfig.getTranscribeAsyncClient();
         this.s3Service = s3Service;
         this.objectMapper = new ObjectMapper();
         this.objectMapper.findAndRegisterModules();
         this.scheduler = Executors.newScheduledThreadPool(2);
+        this.config = config;
     }
 
+    /**
+     * Запускает задачу транскрибации аудиофайла.
+     *
+     * @param audioKey ключ аудиофайла в S3
+     * @param bucketName имя бакета S3
+     * @return информация о запущенной задаче транскрибации
+     */
     public CompletableFuture<TranscriptionJobResponse> startTranscriptionAsync(
             String audioKey, String bucketName) {
 
@@ -57,8 +88,8 @@ public class TranscribeService {
 
         StartTranscriptionJobRequest request = StartTranscriptionJobRequest.builder()
                 .transcriptionJobName(jobName)
-                .languageCode("ru-RU")
-                .mediaFormat("wav")
+                .languageCode(config.getLanguageCode())
+                .mediaFormat(config.getMediaFormat())
                 .media(media)
                 .build();
 
@@ -81,6 +112,16 @@ public class TranscribeService {
                 });
     }
 
+    /**
+     * Ожидает завершения задачи транскрибации и возвращает текст.
+     * <p>
+     * Использует polling для проверки статуса задачи.
+     *
+     * @param jobId ID задачи транскрибации
+     * @param maxAttempts максимальное количество попыток polling
+     * @param pollIntervalMs интервал между попытками в миллисекундах
+     * @return текст транскрипции
+     */
     public CompletableFuture<String> waitAndGetTranscriptionResultAsync(
             String jobId, int maxAttempts, long pollIntervalMs) {
 
@@ -141,15 +182,33 @@ public class TranscribeService {
         return resultFuture;
     }
 
+    /**
+     * Транскрибирует аудиофайл из S3.
+     * <p>
+     * Запускает задачу транскрибации и ожидает результат.
+     *
+     * @param audioKey ключ аудиофайла в S3
+     * @return текст транскрипции
+     */
     public CompletableFuture<String> transcribeAudioFileAsync(String audioKey) {
         String bucketName = s3Service.getBucketName();
 
         return startTranscriptionAsync(audioKey, bucketName)
                 .thenCompose(response ->
-                        waitAndGetTranscriptionResultAsync(response.jobId(), 180, 2000)
+                        waitAndGetTranscriptionResultAsync(
+                                response.jobId(),
+                                config.getMaxPollAttempts(),
+                                config.getPollIntervalMs()
+                        )
                 );
     }
 
+    /**
+     * Получает информацию о задаче транскрибации.
+     *
+     * @param jobId ID задачи
+     * @return информация о задаче
+     */
     private CompletableFuture<TranscriptionJob> getTranscriptionJobAsync(String jobId) {
         GetTranscriptionJobRequest request = GetTranscriptionJobRequest.builder()
                 .transcriptionJobName(jobId)
@@ -159,6 +218,12 @@ public class TranscribeService {
                 .thenApply(GetTranscriptionJobResponse::transcriptionJob);
     }
 
+    /**
+     * Скачивает текст транскрипции из S3.
+     *
+     * @param transcriptUri URI файла с транскрипцией
+     * @return текст транскрипции
+     */
     private CompletableFuture<String> downloadTranscriptionText(String transcriptUri) {
         return CompletableFuture.supplyAsync(() -> {
             Path tempFile = null;
@@ -166,35 +231,19 @@ public class TranscribeService {
                 log.info("Attempting to download transcription from: {}", transcriptUri);
 
                 URI uri = URI.create(transcriptUri);
-                String path = uri.getPath();
+                String path = parseS3PathFromUri(uri);
 
-                if (path.startsWith("/")) {
-                    path = path.substring(1);
-                }
-
-                int questionMarkIndex = path.indexOf('?');
-                if (questionMarkIndex != -1) {
-                    path = path.substring(0, questionMarkIndex);
-                }
-
-                int firstSlash = path.indexOf('/');
-                if (firstSlash == -1) {
-                    throw new RuntimeException("Invalid S3 path: " + path);
-                }
-
-                String bucketName = path.substring(0, firstSlash);
-                String key = path.substring(firstSlash + 1);
-
-                key = java.net.URLDecoder.decode(key, StandardCharsets.UTF_8);
-
-                log.info("Downloading from bucket: {}, key: {}", bucketName, key);
+                log.info("Downloading transcription from bucket: {}, key: {}", 
+                        extractBucketFromS3Path(path), extractKeyFromS3Path(path));
 
                 tempFile = Files.createTempFile("transcription", ".json");
-
                 tempFile.toFile().deleteOnExit();
 
-                s3Service.downloadFileAsync(key, tempFile, bucketName)
-                        .get(30, TimeUnit.SECONDS);
+                s3Service.downloadFileAsync(
+                        extractKeyFromS3Path(path),
+                        tempFile,
+                        extractBucketFromS3Path(path)
+                ).get(config.getTranscriptionTimeoutSec(), TimeUnit.SECONDS);
 
                 String jsonContent = Files.readString(tempFile);
                 log.info("Downloaded transcription JSON, size: {} bytes", jsonContent.length());
@@ -216,6 +265,60 @@ public class TranscribeService {
         });
     }
 
+    /**
+     * Парсит S3 путь из URI.
+     *
+     * @param uri URI транскрипции
+     * @return S3 путь (bucket/key)
+     */
+    private String parseS3PathFromUri(URI uri) {
+        String path = uri.getPath();
+        if (path.startsWith("/")) {
+            path = path.substring(1);
+        }
+        int questionMarkIndex = path.indexOf('?');
+        if (questionMarkIndex != -1) {
+            path = path.substring(0, questionMarkIndex);
+        }
+        return path;
+    }
+
+    /**
+     * Извлекает имя бакета из S3 пути.
+     *
+     * @param s3Path S3 путь (bucket/key)
+     * @return имя бакета
+     */
+    private String extractBucketFromS3Path(String s3Path) {
+        int firstSlash = s3Path.indexOf('/');
+        if (firstSlash == -1) {
+            throw new RuntimeException("Invalid S3 path: " + s3Path);
+        }
+        return s3Path.substring(0, firstSlash);
+    }
+
+    /**
+     * Извлекает ключ файла из S3 пути.
+     *
+     * @param s3Path S3 путь (bucket/key)
+     * @return ключ файла
+     */
+    private String extractKeyFromS3Path(String s3Path) {
+        int firstSlash = s3Path.indexOf('/');
+        if (firstSlash == -1) {
+            throw new RuntimeException("Invalid S3 path: " + s3Path);
+        }
+        String key = s3Path.substring(firstSlash + 1);
+        return java.net.URLDecoder.decode(key, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Парсит текст транскрипции из JSON ответа AWS Transcribe.
+     *
+     * @param jsonContent JSON контент транскрипции
+     * @return текст транскрипции
+     * @throws Exception если не удалось распарсить JSON
+     */
     private String parseTranscriptionJson(String jsonContent) throws Exception {
         JsonNode root = objectMapper.readTree(jsonContent);
         String transcript = null;
@@ -242,5 +345,27 @@ public class TranscribeService {
 
         log.info("Parsed transcription: {}", transcript);
         return transcript;
+    }
+
+    /**
+     * Закрывает сервис и освобождает ресурсы.
+     * <p>
+     * Останавливает ScheduledExecutorService.
+     */
+    @Override
+    public void close() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+                log.info("TranscribeService scheduler shutdown successfully");
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+                log.error("Scheduler shutdown interrupted", e);
+            }
+        }
     }
 }

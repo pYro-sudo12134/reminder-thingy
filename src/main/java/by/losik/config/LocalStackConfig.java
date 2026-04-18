@@ -14,6 +14,8 @@ import org.opensearch.client.Response;
 import org.opensearch.client.RestClient;
 import org.opensearch.client.RestClientBuilder;
 import org.opensearch.client.RestHighLevelClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.http.async.SdkAsyncHttpClient;
@@ -35,8 +37,27 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.Optional;
 
+/**
+ * Конфигурация LocalStack для эмуляции AWS сервисов.
+ * <p>
+ * Предоставляет клиенты для:
+ * <ul>
+ *     <li>S3 — объектное хранилище для аудиофайлов</li>
+ *     <li>Transcribe — распознавание речи</li>
+ *     <li>EventBridge — планирование событий</li>
+ *     <li>Lambda — serverless функции для отправки уведомлений</li>
+ *     <li>OpenSearch — поисковый движок для напоминаний</li>
+ *     <li>CloudWatch — мониторинг метрик</li>
+ * </ul>
+ * <p>
+ * В production среде клиенты переключаются на реальные AWS сервисы
+ * через изменение {@code AWS_ENDPOINT_URL}.
+ *
+ * @see by.losik.composition.root.AWSModule
+ */
 @Singleton
 public class LocalStackConfig implements AutoCloseable {
+    private static final Logger log = LoggerFactory.getLogger(LocalStackConfig.class);
     private final String TRUSTSTORE_PATH;
     private final String TRUSTSTORE_PASSWORD;
     private final String LOCALSTACK_ENDPOINT;
@@ -203,8 +224,8 @@ public class LocalStackConfig implements AutoCloseable {
             String protocol = useSsl ? "https" : "http";
             String endpoint = protocol + "://" + this.OPENSEARCH_HOST + ":" + this.OPENSEARCH_PORT;
 
-            System.out.println("Creating OpenSearch client for endpoint: " + endpoint);
-            System.out.println("Using truststore: " + TRUSTSTORE_PATH);
+            log.info("Creating OpenSearch client for endpoint: {}", endpoint);
+            log.info("Using truststore: {}", TRUSTSTORE_PATH);
 
             CredentialsProvider credentialsProvider = new BasicCredentialsProvider();
             credentialsProvider.setCredentials(
@@ -247,7 +268,7 @@ public class LocalStackConfig implements AutoCloseable {
                                         .setDefaultCredentialsProvider(credentialsProvider)
                         );
                     } else {
-                        System.err.println("WARNING: Truststore not found at: " + TRUSTSTORE_PATH);
+                        log.warn("Truststore not found at: {}", TRUSTSTORE_PATH);
                         sslContext = SSLContext.getDefault();
                         builder.setHttpClientConfigCallback(httpClientBuilder ->
                                 httpClientBuilder
@@ -267,18 +288,17 @@ public class LocalStackConfig implements AutoCloseable {
             try {
                 Request request = new Request("GET", "/");
                 Response response = client.getLowLevelClient().performRequest(request);
-                System.out.println("OpenSearch connection successful, endpoint: " + endpoint);
-                System.out.println("Response: " + response.getStatusLine());
+                log.info("OpenSearch connection successful, endpoint: {}", endpoint);
+                log.debug("Response: {}", response.getStatusLine());
             } catch (Exception e) {
-                System.err.println("OpenSearch connection test failed: " + e.getMessage());
-                System.err.println("But continuing with client creation anyway");
+                log.warn("OpenSearch connection test failed: {}", e.getMessage());
+                log.debug("Continuing with client creation anyway");
             }
 
             return client;
 
         } catch (Exception e) {
-            System.err.println("Failed to create OpenSearch client: " + e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to create OpenSearch client", e);
             throw new RuntimeException("OpenSearch client creation failed", e);
         }
     }
@@ -337,7 +357,7 @@ public class LocalStackConfig implements AutoCloseable {
             try {
                 openSearchClient.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                log.warn("Error closing OpenSearch client", e);
             }
         }
         if (openSearchAsyncClient != null) {

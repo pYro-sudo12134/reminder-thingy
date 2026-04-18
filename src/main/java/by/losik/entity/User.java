@@ -11,12 +11,31 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.eclipse.persistence.annotations.Cache;
 import org.eclipse.persistence.annotations.CacheCoordinationType;
 import org.eclipse.persistence.annotations.CacheType;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.time.LocalDateTime;
+import java.util.Objects;
 
+/**
+ * Сущность пользователя системы Voice Reminder.
+ * <p>
+ * Представляет пользователя в базе данных PostgreSQL с партиционированием по кварталам.
+ * Пароли хранятся в хэшированном виде (BCrypt).
+ * <p>
+ * Кэшируется в EclipseLink с настройками:
+ * <ul>
+ *     <li>Тип: SOFT (мягкие ссылки)</li>
+ *     <li>Размер: 1000 записей</li>
+ *     <li>Время жизни: 30 минут</li>
+ * </ul>
+ *
+ * @see by.losik.repository.UserRepository
+ */
 @Entity
 @Table(name = "users", schema = "voice_schema")
 @NamedQueries({
@@ -41,15 +60,20 @@ public class User {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @NotBlank(message = "Username is required")
+    @Size(min = 3, max = 50, message = "Username must be between 3 and 50 characters")
     @Column(nullable = false, unique = true, length = 50)
-    @Email
     private String username;
 
-    @Column(name = "password_hash", nullable = false, length = 255)
-    private String passwordHash;
-
+    @Email(message = "Invalid email format")
+    @NotBlank(message = "Email is required")
+    @Size(max = 255, message = "Email must not exceed 255 characters")
     @Column(name = "email", nullable = false, length = 255)
     private String email;
+
+    @NotBlank(message = "Password hash is required")
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
@@ -58,63 +82,153 @@ public class User {
     private LocalDateTime updatedAt;
 
     @Column(name = "is_active")
-    private Boolean isActive = true;
+    private boolean isActive = true;
 
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
 
+    /**
+     * Конструктор по умолчанию для JPA.
+     */
     public User() {}
 
-    public User(String username, String email, String passwordHash) {
+    /**
+     * Приватный конструктор для использования factory method.
+     * @param username Имя пользователя
+     * @param email Email
+     * @param passwordHash Хэш пароля (BCrypt)
+     */
+    private User(String username, String email, String passwordHash) {
         this.username = username;
         this.email = email;
         this.passwordHash = passwordHash;
-        this.createdAt = LocalDateTime.now();
-        this.updatedAt = LocalDateTime.now();
     }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+    /**
+     * Создаёт нового пользователя с хэшированием пароля.
+     * @param username Имя пользователя (3-50 символов)
+     * @param email Email пользователя
+     * @param rawPassword Пароль в открытом виде
+     * @return Новый пользователь с захэшированным паролем
+     */
+    public static User create(String username, String email, String rawPassword) {
+        String passwordHash = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+        User user = new User(username, email, passwordHash);
+        user.prePersist();
+        return user;
+    }
 
+    /**
+     * Получает ID пользователя.
+     * @return ID пользователя
+     */
+    public Long getId() { return id; }
+
+    /**
+     * Получает имя пользователя.
+     * @return имя пользователя
+     */
     public String getUsername() { return username; }
+
+    /**
+     * Получает email пользователя.
+     * @return email
+     */
+    public String getEmail() { return email; }
+
+    /**
+     * Получает хэш пароля.
+     * @return хэш пароля (BCrypt)
+     */
+    public String getPasswordHash() { return passwordHash; }
+
+    /**
+     * Получает время создания записи.
+     * @return время создания
+     */
+    public LocalDateTime getCreatedAt() { return createdAt; }
+
+    /**
+     * Получает время последнего обновления.
+     * @return время обновления
+     */
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+
+    /**
+     * Проверяет, активен ли пользователь.
+     * @return true если активен
+     */
+    public boolean getIsActive() { return isActive; }
+
+    /**
+     * Получает время последнего входа.
+     * @return время последнего входа или null
+     */
+    public LocalDateTime getLastLogin() { return lastLogin; }
+
+    /**
+     * Устанавливает имя пользователя.
+     * @param username имя пользователя
+     */
     public void setUsername(String username) {
         this.username = username;
-        this.updatedAt = LocalDateTime.now();
     }
 
-    public String getPasswordHash() { return passwordHash; }
-    public void setPasswordHash(String passwordHash) {
-        this.passwordHash = passwordHash;
-        this.updatedAt = LocalDateTime.now();
-    }
+    /**
+     * Устанавливает email пользователя.
+     * @param email email
+     */
     public void setEmail(String email) {
         this.email = email;
-        this.updatedAt = LocalDateTime.now();
     }
 
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    /**
+     * Устанавливает хэш пароля.
+     * @param passwordHash хэш пароля
+     */
+    public void setPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+    }
+
+    /**
+     * Устанавливает время создания.
+     * @param createdAt время создания
+     */
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 
-    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    /**
+     * Устанавливает время обновления.
+     * @param updatedAt время обновления
+     */
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
-    public Boolean getIsActive() { return isActive; }
-    public void setIsActive(Boolean isActive) {
+    /**
+     * Устанавливает статус активности.
+     * @param isActive true если активен
+     */
+    public void setIsActive(boolean isActive) {
         this.isActive = isActive;
-        this.updatedAt = LocalDateTime.now();
     }
 
-    public LocalDateTime getLastLogin() { return lastLogin; }
+    /**
+     * Устанавливает время последнего входа.
+     * @param lastLogin время последнего входа
+     */
     public void setLastLogin(LocalDateTime lastLogin) {
         this.lastLogin = lastLogin;
-        this.updatedAt = LocalDateTime.now();
     }
 
+    /**
+     * JPA callback: обновляет updatedAt перед обновлением сущности.
+     */
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = LocalDateTime.now();
     }
 
+    /**
+     * JPA callback: устанавливает createdAt и updatedAt перед созданием сущности.
+     */
     @PrePersist
     public void prePersist() {
         LocalDateTime now = LocalDateTime.now();
@@ -122,7 +236,57 @@ public class User {
         this.updatedAt = now;
     }
 
-    public String getEmail() {
-        return email;
+    /**
+     * Возвращает строковое представление пользователя.
+     * <p>
+     * Пароль не включается в вывод из соображений безопасности.
+     *
+     * @return строка с id, username, email и isActive
+     */
+    @Override
+    public String toString() {
+        return "User{id=%d, username='%s', email='%s', isActive=%s}"
+                .formatted(id, username, email, isActive);
+    }
+
+    /**
+     * Сравнивает пользователей по username (business key).
+     *
+     * @param o объект для сравнения
+     * @return true если username совпадают
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        User user = (User) o;
+        return Objects.equals(username, user.username);
+    }
+
+    /**
+     * Вычисляет хэш на основе username.
+     *
+     * @return хэш username
+     */
+    @Override
+    public int hashCode() {
+        return Objects.hash(username);
+    }
+
+    /**
+     * Проверяет соответствие пароля хэшу.
+     * @param rawPassword Пароль в открытом виде
+     * @return true если пароль совпадает
+     */
+    public boolean checkPassword(String rawPassword) {
+        return BCrypt.checkpw(rawPassword, passwordHash);
+    }
+
+    /**
+     * Обновляет пароль пользователя с хэшированием.
+     * @param rawPassword Новый пароль в открытом виде
+     */
+    public void updatePassword(String rawPassword) {
+        this.passwordHash = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
     }
 }
