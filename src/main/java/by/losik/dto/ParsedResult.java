@@ -25,4 +25,8 @@ public record ParsedResult(
         List<Entity> entities,
         String rawText,
         String normalizedText
-) {}
+) {
+    public String ruleName() {
+        return "reminder-" + (reminderId != null ? reminderId : "");
+    }
+}

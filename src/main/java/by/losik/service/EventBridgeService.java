@@ -23,6 +23,8 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
+import software.amazon.awssdk.core.SdkBytes;
+
 @Singleton
 public class EventBridgeService {
     private static final Logger log = LoggerFactory.getLogger(EventBridgeService.class);
@@ -65,7 +67,7 @@ public class EventBridgeService {
                 .description(request.description() != null ?
                         request.description() :
                         "Reminder for: " + request.scheduleTime())
-                .eventBusName(eventBusName)
+                .eventBusName("default")
                 .build();
 
         return eventBridgeAsyncClient.putRule(ruleRequest)
@@ -87,15 +89,15 @@ public class EventBridgeService {
 
                     PutTargetsRequest targetsRequest = PutTargetsRequest.builder()
                             .rule(ruleName)
-                            .eventBusName(eventBusName)
+                            .eventBusName("default")
                             .targets(target)
                             .build();
 
                     String finalInputJson = inputJson;
                     return eventBridgeAsyncClient.putTargets(targetsRequest)
                             .thenCompose(targetsResponse -> {
-                                log.info("Created EventBridge rule: {} with target: {} in bus: {}",
-                                        ruleName, request.targetArn(), eventBusName);
+                                log.info("Created EventBridge rule: {} with target: {} in bus: default",
+                                        ruleName, request.targetArn());
 
                                 if (request.targetArn() != null && request.targetArn().contains("lambda")) {
                                     return addPermissionForEventBridge(ruleName, request.targetArn())
@@ -387,5 +389,27 @@ public class EventBridgeService {
             return parts[parts.length - 1];
         }
         return arn;
+    }
+
+    public CompletableFuture<byte[]> invokeLambda(String functionArn, String payload) {
+        String functionName = extractFunctionNameFromArn(functionArn);
+
+        log.info("Invoking Lambda: {} with payload: {}", functionName, payload);
+
+        software.amazon.awssdk.services.lambda.model.InvokeRequest invokeRequest =
+                software.amazon.awssdk.services.lambda.model.InvokeRequest.builder()
+                        .functionName(functionName)
+                        .payload(SdkBytes.fromUtf8String(payload))
+                        .build();
+
+        return lambdaAsyncClient.invoke(invokeRequest)
+                .thenApply(response -> {
+                    log.info("Lambda invocation completed, status: {}", response.statusCode());
+                    return response.payload().asByteArray();
+                })
+                .exceptionally(ex -> {
+                    log.error("Failed to invoke Lambda: {}", functionName, ex);
+                    throw new RuntimeException("Lambda invocation failed", ex);
+                });
     }
 }

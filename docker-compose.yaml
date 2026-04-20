@@ -84,6 +84,8 @@ services:
       - "4510:4510"
       - "4510-4559:4510-4559"
       - "9200:9200"
+    env_file:
+      - .env
     environment:
       - SERVICES=lambda,s3,events,opensearch,ses,transcribe,sns,sqs,iam,cloudformation,cloudwatch,logs,eventbridge,secretsmanager,secretsmanager_v2,acm,apigateway,route53
       - DEBUG=1
@@ -198,7 +200,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pyrodocker1/reminder-backend:1.1-2
+    #image: pyrodocker1/reminder-backend:1.1-2
     container_name: reminder-app
     ports:
       - "8090:8090"

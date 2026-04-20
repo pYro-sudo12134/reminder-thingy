@@ -4,16 +4,21 @@ import by.losik.config.EventBridgeConfig;
 import by.losik.dto.CreateRuleRequest;
 import by.losik.dto.ParsedResult;
 import by.losik.dto.ReminderRecord;
+import by.losik.dto.SendEventRequest;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Сервис для обработки голосовых напоминаний.
@@ -51,6 +56,8 @@ public class VoiceReminderService {
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
     private final EventBridgeConfig eventBridgeConfig;
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+    private final Map<String, java.util.concurrent.ScheduledFuture<?>> scheduledTasks = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Создаёт сервис голосовых напоминаний с внедрёнными зависимостями.
@@ -116,6 +123,13 @@ public class VoiceReminderService {
                     ParsedResult parsed =
                             reminderParser.parse(transcribedText, null, userId);
 
+                    log.info("Parsed result: reminderId={}, action={}, scheduledTime={}, intent={}, ruleName={}",
+                            parsed.reminderId(),
+                            parsed.action(),
+                            parsed.scheduledTime(),
+                            parsed.intent(),
+                            parsed.ruleName());
+
                     String reminderId = parsed.reminderId() != null ?
                             parsed.reminderId() : UUID.randomUUID().toString();
 
@@ -135,40 +149,37 @@ public class VoiceReminderService {
 
                     Map<String, Object> inputData = createEventInput(reminder, userEmail, parsed);
 
-                    CreateRuleRequest ruleRequest = new CreateRuleRequest(
-                            "reminder-" + reminderId,
+                    log.info("Scheduling reminder: reminderId={}, scheduledTime={}, delayMillis={}",
+                            reminderId,
                             parsed.scheduledTime(),
-                            eventBridgeConfig.getDefaultLambdaArn(),
-                            inputData,
-                            "Напоминание: " + parsed.action(),
-                            parsed.intent()
+                            java.time.Duration.between(LocalDateTime.now(), parsed.scheduledTime()).toMillis());
+
+                    ReminderRecord reminderWithScheduler = new ReminderRecord(
+                            reminderId,
+                            userId,
+                            userEmail,
+                            transcribedText,
+                            parsed.action(),
+                            parsed.scheduledTime(),
+                            LocalDateTime.now(),
+                            ReminderRecord.ReminderStatus.SCHEDULED,
+                            false,
+                            parsed.intent(),
+                            "scheduled-" + reminderId
                     );
 
-                    return eventBridgeService.createEmailRule(ruleRequest)
-                            .thenCompose(rule -> {
-                                ReminderRecord reminderWithRule = new ReminderRecord(
-                                        reminderId,
-                                        userId,
-                                        userEmail,
-                                        transcribedText,
-                                        parsed.action(),
-                                        parsed.scheduledTime(),
-                                        LocalDateTime.now(),
-                                        ReminderRecord.ReminderStatus.SCHEDULED,
-                                        false,
-                                        parsed.intent(),
-                                        rule.ruleName()
-                                );
+                    return openSearchService.indexReminder(reminderWithScheduler)
+                            .thenCompose(indexedId -> {
+                                log.info("Reminder saved to OpenSearch: {}", reminderId);
 
-                                return openSearchService.indexReminder(reminderWithRule)
-                                        .thenApply(indexedId -> {
-                                            log.info("Reminder saved to OpenSearch with rule: {}", rule.ruleName());
-                                            return reminderId;
-                                        });
+                                scheduleReminder(reminderId, userEmail, inputData, parsed.scheduledTime());
+
+                                return CompletableFuture.completedFuture(reminderId);
                             });
                 })
                 .exceptionally(ex -> {
                     log.error("Failed to process voice reminder", ex);
+                    log.error("Exception stack trace:", ex);
                     throw new RuntimeException("Processing failed", ex);
                 });
     }
@@ -271,6 +282,61 @@ public class VoiceReminderService {
                 "confidence", parsed.confidence(),
                 "language", parsed.language()
         );
+    }
+
+    private void scheduleReminder(String reminderId, String userEmail, Map<String, Object> inputData, LocalDateTime scheduledTime) {
+        LocalDateTime now = LocalDateTime.now();
+        long delayMillis = ChronoUnit.MILLIS.between(now, scheduledTime);
+
+        if (delayMillis <= 0) {
+            log.warn("Scheduled time is in the past for reminder: {}, processing immediately", reminderId);
+            triggerReminder(reminderId, userEmail, inputData);
+            return;
+        }
+
+        log.info("Scheduling reminder {} for {} (delay: {} ms)", reminderId, scheduledTime, delayMillis);
+
+        java.util.concurrent.ScheduledFuture<?> future = scheduler.schedule(
+                () -> triggerReminder(reminderId, userEmail, inputData),
+                delayMillis,
+                TimeUnit.MILLISECONDS
+        );
+
+        scheduledTasks.put(reminderId, future);
+    }
+
+    private void triggerReminder(String reminderId, String userEmail, Map<String, Object> inputData) {
+        log.info("Triggering reminder directly (bypassing EventBridge): {}", reminderId);
+
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            String payloadJson = mapper.writeValueAsString(inputData);
+
+            eventBridgeService.invokeLambda(
+                            eventBridgeConfig.getDefaultLambdaArn(),
+                            payloadJson
+                    )
+                    .thenAccept(invokeResponse -> {
+                        log.info("Lambda invoked successfully for reminder: {}", reminderId);
+                    })
+                    .exceptionally(ex -> {
+                        log.error("Failed to invoke Lambda for reminder: {}", reminderId, ex);
+                        return null;
+                    });
+        } catch (Exception e) {
+            log.error("Failed to trigger reminder: {}", reminderId, e);
+        }
+    }
+
+    public CompletableFuture<Boolean> cancelScheduledReminder(String reminderId) {
+        java.util.concurrent.ScheduledFuture<?> future = scheduledTasks.remove(reminderId);
+        if (future != null) {
+            future.cancel(true);
+            log.info("Cancelled scheduled reminder: {}", reminderId);
+            return CompletableFuture.completedFuture(true);
+        }
+        log.warn("No scheduled task found for reminder: {}", reminderId);
+        return CompletableFuture.completedFuture(false);
     }
 
     /**
@@ -397,14 +463,7 @@ public class VoiceReminderService {
                             reminder.notificationSent()
                     );
 
-                    if (reminder.eventBridgeRuleName() != null && !reminder.eventBridgeRuleName().isEmpty()) {
-                        return eventBridgeService.deleteRule(reminder.eventBridgeRuleName())
-                                .thenCompose(success -> {
-                                    log.info("EventBridge rule deleted for cancelled reminder: {}",
-                                            reminder.eventBridgeRuleName());
-                                    return updateFuture;
-                                });
-                    }
+                    cancelScheduledReminder(reminderId);
 
                     return updateFuture;
                 });

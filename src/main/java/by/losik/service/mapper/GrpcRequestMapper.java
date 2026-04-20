@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -109,11 +111,45 @@ public class GrpcRequestMapper {
      * @param timeExpr protobuf выражение времени
      * @return LocalDateTime или null если не удалось извлечь
      */
+    private static final DateTimeFormatter[] DATETIME_FORMATS = {
+            DateTimeFormatter.ISO_LOCAL_DATE_TIME,
+            DateTimeFormatter.ISO_DATE_TIME,
+            DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm"),
+            DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss"),
+            DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+    };
+
     public LocalDateTime extractDateTime(TemporalExpression timeExpr) {
         try {
             if (timeExpr.hasAbsolute()) {
                 AbsoluteTime absolute = timeExpr.getAbsolute();
-                return LocalDateTime.parse(absolute.getIsoDatetime());
+                String isoDatetime = absolute.getIsoDatetime();
+
+                log.warn("NLP returned isoDatetime: '{}'", isoDatetime);
+
+                if (isoDatetime == null || isoDatetime.isBlank()) {
+                    log.warn("NLP returned empty datetime, using default: now + 1 hour");
+                    return LocalDateTime.now().plusHours(1);
+                }
+
+                isoDatetime = isoDatetime.replace("{today}", java.time.LocalDate.now().toString());
+
+                for (DateTimeFormatter formatter : DATETIME_FORMATS) {
+                    try {
+                        return LocalDateTime.parse(isoDatetime, formatter);
+                    } catch (DateTimeParseException e) {
+                        // пробуем следующий формат
+                    }
+                }
+
+                log.warn("Could not parse datetime '{}' with any known format, using default: now + 1 hour", isoDatetime);
+                return LocalDateTime.now().plusHours(1);
 
             } else if (timeExpr.hasRelative()) {
                 RelativeTime relative = timeExpr.getRelative();
@@ -130,11 +166,13 @@ public class GrpcRequestMapper {
 
             } else if (timeExpr.hasRecurring()) {
                 return LocalDateTime.now().plusDays(1);
+            } else {
+                log.warn("NLP returned empty TemporalExpression, using default: now + 1 hour");
+                return LocalDateTime.now().plusHours(1);
             }
         } catch (Exception e) {
             log.warn("Failed to parse date from gRPC response", e);
+            return LocalDateTime.now().plusHours(1);
         }
-
-        return null;
     }
 }

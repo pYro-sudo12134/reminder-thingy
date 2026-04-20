@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+# Environment variables are now passed via docker-compose environment section
+
 echo "Starting LocalStack initialization"
 echo "Waiting for LocalStack to be ready"
 
@@ -273,6 +275,19 @@ aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
 
 wait_for_stack "voice-reminder-stack"
 
+# Явное создание очередей на случай если CloudFormation не сработал
+echo "Ensuring SQS queues exist..."
+
+aws --endpoint-url=http://localhost:4566 sqs create-queue \
+    --queue-name dev-reminder-dlq \
+    --attributes '{"MessageRetentionSeconds": 1209600}' \
+    --region us-east-1 2>/dev/null || echo "DLQ queue already exists"
+
+aws --endpoint-url=http://localhost:4566 sqs create-queue \
+    --queue-name dev-reminder-queue \
+    --attributes '{"VisibilityTimeout": 300}' \
+    --region us-east-1 2>/dev/null || echo "Processing queue already exists"
+
 deploy_lambda_code() {
     echo "=== Deploying Lambda SendReminderEmail from host folder ==="
 
@@ -323,13 +338,18 @@ deploy_lambda_code() {
             --s3-bucket "$BUCKET_NAME" \
             --s3-key "$S3_KEY" \
             --region us-east-1
-        
+
+        echo "Updating Lambda environment variables..."
+        aws --endpoint-url=http://localhost:4566 lambda update-function-configuration \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --environment "Variables={ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
+            --region us-east-1
+
         echo "Lambda function code successfully updated!"
     else
         echo "Creating Lambda function $LAMBDA_FUNCTION_NAME..."
-        # Роль создаётся CloudFormation стеком
         LAMBDA_ROLE_ARN="arn:aws:iam::000000000000:role/lambda-role"
-        
+
         aws --endpoint-url=http://localhost:4566 lambda create-function \
             --function-name "$LAMBDA_FUNCTION_NAME" \
             --runtime python3.11 \
@@ -338,9 +358,9 @@ deploy_lambda_code() {
             --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
             --timeout 30 \
             --memory-size 512 \
-            --environment Variables="{ENVIRONMENT_NAME=dev,S3_BUCKET=$BUCKET_NAME}" \
+            --environment Variables="{ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
             --region us-east-1
-        
+
         echo "Lambda function created successfully!"
     fi
 

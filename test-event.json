@@ -1,0 +1,1 @@
+[{"Source": "by.losik.reminder", "DetailType": "Scheduled Event", "Detail": "{\"scheduledTime\":\"2026-04-19T20:00\",\"reminderId\":\"manual-test\",\"userEmail\":\"hentaimen3000@gmail.com\",\"action\":\"test\",\"intent\":\"reminder\"}", "Resources": ["arn:aws:events:us-east-1:000000000000:rule/reminder-1_1776612145"]}]

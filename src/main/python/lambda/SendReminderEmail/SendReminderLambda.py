@@ -10,16 +10,29 @@ from ReminderEmailService import ReminderEmailService
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+def get_env_or_default(key, default):
+    value = os.environ.get(key, '')
+    return default if value == '' else value
+
+def parse_bool(value):
+    if value is None:
+        return False
+    return str(value).lower() in ('true', '1', 'yes')
+
+smtp_tls_raw = os.environ.get('SMTP_TLS', '')
+smtp_ssl_raw = os.environ.get('SMTP_SSL', '')
+smtp_port_raw = os.environ.get('SMTP_PORT', '')
+
 SMTP_CONFIG = {
-    'host': os.environ.get('SMTP_HOST', 'smtp.gmail.com'),
-    'port': int(os.environ.get('SMTP_PORT', 587)),
-    'use_tls': os.environ.get('SMTP_TLS', 'true').lower() == 'true',
-    'use_ssl': os.environ.get('SMTP_SSL', 'false').lower() == 'true',
-    'username': os.environ.get('SMTP_USERNAME', 'losik2006@gmail.com'),
+    'host': os.environ.get('SMTP_HOST', '') or 'smtp.gmail.com',
+    'port': int(smtp_port_raw) if smtp_port_raw else 587,
+    'use_tls': parse_bool(smtp_tls_raw),
+    'use_ssl': parse_bool(smtp_ssl_raw),
+    'username': os.environ.get('SMTP_USERNAME', '') or 'losik2006@gmail.com',
     'password': os.environ.get('SMTP_PASSWORD', '')
 }
 
-FROM_EMAIL = os.environ.get('FROM_EMAIL', 'losik2006@gmail.com')
+FROM_EMAIL = os.environ.get('FROM_EMAIL', '') or 'losik2006@gmail.com'
 
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT_URL = os.environ.get('AWS_ENDPOINT_URL', '')
@@ -29,6 +42,8 @@ smtp_adapter = SMTPAdapter(SMTP_CONFIG)
 reminder_service = ReminderEmailService(smtp_adapter, FROM_EMAIL)
 
 sqs_client = boto3.client('sqs', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('sqs', region_name=AWS_REGION)
+events_client = boto3.client('events', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('events', region_name=AWS_REGION)
+EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME', 'email-events')
 
 
 def send_to_dlq(detail: dict, error_message: str) -> None:
@@ -65,14 +80,13 @@ def lambda_handler(event, context):
         
         detail = event.get('detail', {})
         if not detail:
-            logger.error("Event detail пуст")
-            return {"statusCode": 400, "body": "No detail in event"}
+            detail = event
         
         reminder_id = detail.get('reminderId', '')
         user_email = detail.get('userEmail', '')
-        
+
         if not reminder_id or not user_email:
-            logger.error("Отсутствуют reminderId или userEmail")
+            logger.error(f"Отсутствуют reminderId или userEmail: reminderId={reminder_id}, userEmail={user_email}")
             return {"statusCode": 400, "body": "Missing required fields"}
         
         logger.info(f"Обработка напоминания {reminder_id} для {user_email}")
@@ -100,7 +114,20 @@ def lambda_handler(event, context):
             }
         
         logger.info(f"Напоминание {reminder_id} отправлено успешно")
-        
+
+        try:
+            events_client.put_events(
+                Entries=[{
+                    'Source': 'by.losik.reminder',
+                    'DetailType': 'ReminderSent',
+                    'Detail': json.dumps(detail),
+                    'EventBusName': EVENT_BUS_NAME
+                }]
+            )
+            logger.info(f"Событие опубликовано в {EVENT_BUS_NAME}")
+        except Exception as e:
+            logger.warning(f"Не удалось опубликовать событие в {EVENT_BUS_NAME}: {e}")
+
         return {
             "statusCode": 200,
             "body": json.dumps({

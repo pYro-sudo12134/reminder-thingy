@@ -1,5 +1,6 @@
 import logging
 import smtplib
+from contextlib import contextmanager
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import formatdate, make_msgid
@@ -13,14 +14,30 @@ class SMTPAdapter:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.host = config['host']
-        self.port = config['port']
+        self.port = config.get('port', 587)
         self.use_tls = config.get('use_tls', False)
         self.use_ssl = config.get('use_ssl', False)
         self.username = config.get('username')
         self.password = config.get('password')
 
+    @contextmanager
+    def _get_connection(self):
+        if self.use_ssl:
+            conn = smtplib.SMTP_SSL(self.host, self.port, timeout=10)
+        else:
+            conn = smtplib.SMTP(self.host, self.port, timeout=10)
+            if self.use_tls:
+                conn.starttls()
+        try:
+            yield conn
+        finally:
+            try:
+                conn.quit()
+            except Exception:
+                pass
+
     def send(self, from_addr: str, to_addrs: list, subject: str,
-            text_content: str, html_content: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str]]:
+             text_content: str, html_content: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str]]:
         try:
             msg = MIMEMultipart('alternative')
             msg['From'] = from_addr
@@ -30,28 +47,14 @@ class SMTPAdapter:
             msg['Message-ID'] = make_msgid(domain=self.host.split('.')[-1] if '.' in self.host else 'localhost')
 
             msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
-            if html_content:
-                msg.attach(MIMEText(html_content, 'html', 'utf-8'))
-
-            if self.use_ssl:
-                server = smtplib.SMTP_SSL(self.host, self.port)
-            else:
-                server = smtplib.SMTP(self.host, self.port)
-
-            if self.use_tls:
-                server.starttls()
-
-            if self.username and self.password:
-                server.login(self.username, self.password)
-
-            server.send_message(msg)
-            server.quit()
-
-            message_id = msg['Message-ID']
-            logger.info(f"Email sent successfully, Message-ID: {message_id}")
-            return True, message_id, None
-
+            with self._get_connection() as server:
+                if self.username and self.password:
+                    server.login(self.username, self.password)
+                server.send_message(msg)
+                return True, msg['Message-ID'], None
+        except smtplib.SMTPAuthenticationError:
+            return False, None, "Invalid credentials"
+        except smtplib.SMTPException as e:
+            return False, None, f"SMTP Error: {e}"
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"SMTP sending failed: {error_msg}")
-            return False, None, error_msg
+            return False, None, str(e)

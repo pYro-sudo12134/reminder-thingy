@@ -32,7 +32,7 @@ public class EventBridgeConfig {
     private static final String DEFAULT_TELEGRAM_BUS = "default";
 
     /** ARN Lambda функции для напоминаний по умолчанию */
-    private static final String DEFAULT_SEND_REMINDER_ARN = "arn:aws:lambda:us-east-1:000000000000:function:send-reminder";
+    private static final String DEFAULT_SEND_REMINDER_ARN = "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email";
 
     private final String emailEventBusName;
     private final String telegramEventBusName;
