@@ -5,6 +5,7 @@ import by.losik.composition.root.FilterModule;
 import by.losik.composition.root.JpaModule;
 import by.losik.composition.root.MailModule;
 import by.losik.composition.root.RateLimitModule;
+import by.losik.composition.root.TelegramModule;
 import by.losik.service.OpenSearchService;
 import by.losik.server.WebServer;
 import com.google.inject.Guice;
@@ -22,7 +23,8 @@ public class Main {
                     new JpaModule(),
                     new MailModule(),
                     new RateLimitModule(),
-                    new FilterModule());
+                    new FilterModule(),
+                    new TelegramModule());
             
             OpenSearchService openSearchService = injector.getInstance(OpenSearchService.class);
             openSearchService.initializeIndices().join();

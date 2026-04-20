@@ -60,9 +60,11 @@ shadowJar {
     exclude 'META-INF/*.DSA'
     exclude 'META-INF/*.RSA'
 
-    transform(com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer.class) {
+transform(com.github.jengelman.gradle.plugins.shadow.transformers.ServiceFileTransformer.class) {
         path = 'META-INF/services'
     }
 }
+
+tasks.build.dependsOn shadowJar
 
 tasks.build.dependsOn shadowJar

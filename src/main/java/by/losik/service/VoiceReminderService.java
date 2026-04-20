@@ -20,6 +20,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import by.losik.config.TelegramConfig;
+import by.losik.service.TelegramBotService;
+
 /**
  * Сервис для обработки голосовых напоминаний.
  * <p>
@@ -56,8 +59,9 @@ public class VoiceReminderService {
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
     private final EventBridgeConfig eventBridgeConfig;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, java.util.concurrent.ScheduledFuture<?>> scheduledTasks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final TelegramBotService telegramBotService;
 
     /**
      * Создаёт сервис голосовых напоминаний с внедрёнными зависимостями.
@@ -78,7 +82,8 @@ public class VoiceReminderService {
             EventBridgeService eventBridgeService,
             OpenSearchService openSearchService,
             EmailService emailService,
-            EventBridgeConfig eventBridgeConfig) {
+            EventBridgeConfig eventBridgeConfig,
+            TelegramBotService telegramBotService) {
         this.s3Service = s3Service;
         this.transcribeService = transcribeService;
         this.reminderParser = reminderParser;
@@ -86,6 +91,7 @@ public class VoiceReminderService {
         this.openSearchService = openSearchService;
         this.emailService = emailService;
         this.eventBridgeConfig = eventBridgeConfig;
+        this.telegramBotService = telegramBotService;
     }
 
     /**
@@ -211,24 +217,49 @@ public class VoiceReminderService {
 
                     ReminderRecord reminder = optionalReminder.get();
 
-                    return emailService.sendReminderNotification(
+                    CompletableFuture<String> emailFuture = emailService.sendReminderNotification(
                             userEmail,
                             reminderId,
                             reminder.extractedAction(),
                             String.valueOf(reminder.scheduledTime())
-                    ).thenCompose(emailId -> {
-                        log.info("Email sent: {}", emailId);
+                    );
 
-                        return openSearchService.updateReminderStatus(
-                                reminderId,
-                                ReminderRecord.ReminderStatus.COMPLETED,
-                                true
-                        ).thenAccept(success -> {
-                            if (success) {
-                                log.info("Reminder {} marked as completed", reminderId);
-                            }
-                        });
-                    });
+                    CompletableFuture<Boolean> telegramFuture = telegramBotService.getChatIdForUser(reminder.userId())
+                            .map(chatId -> {
+                                log.info("Sending Telegram notification to chat {} for reminder {}", chatId, reminderId);
+                                return telegramBotService.sendReminderNotification(
+                                        chatId,
+                                        reminderId,
+                                        reminder.extractedAction(),
+                                        String.valueOf(reminder.scheduledTime())
+                                );
+                            })
+                            .orElseGet(() -> {
+                                log.debug("User {} not connected to Telegram, skipping", reminder.userId());
+                                return CompletableFuture.completedFuture(false);
+                            });
+
+                    return CompletableFuture.allOf(emailFuture, telegramFuture)
+                            .thenCompose(v -> {
+                                return emailFuture.thenCompose(emailId -> {
+                                    log.info("Email sent: {}", emailId);
+                                    return telegramFuture.thenAccept(telegramSent -> {
+                                        if (telegramSent) {
+                                            log.info("Telegram notification sent for reminder {}", reminderId);
+                                        }
+                                    });
+                                });
+                            })
+                            .thenCompose(v -> openSearchService.updateReminderStatus(
+                                    reminderId,
+                                    ReminderRecord.ReminderStatus.COMPLETED,
+                                    true
+                            ))
+                            .thenAccept(success -> {
+                                if (success) {
+                                    log.info("Reminder {} marked as completed", reminderId);
+                                }
+                            });
                 });
     }
 
