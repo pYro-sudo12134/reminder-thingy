@@ -101,8 +101,8 @@ services:
       - OPENSEARCH_PORT_EXTERNAL=4510
       - OPENSEARCH_HTTPS_PORT=4510
       - OPENSEARCH_JAVA_OPTS=-Xms256m -Xmx256m -Des.path.data=/tmp/opensearch_data -Des.path.logs=/tmp/opensearch_logs
-      - OPENSEARCH_ENABLE_SECURITY=true
-      - OPENSEARCH_ENABLE_SSL=true
+      - OPENSEARCH_ENABLE_SECURITY=false
+      - OPENSEARCH_ENABLE_SSL=false
       - OPENSEARCH_INITIAL_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
       - OPENSEARCH_PLUGINS_LIST=opensearch-security
       - DISABLE_OPENSEARCH_SECURITY_PLUGIN=false
@@ -197,7 +197,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: pyrodocker1/reminder-backend:1.1-2
+    #image: pyrodocker1/reminder-backend:1.1-2
     container_name: reminder-app
     ports:
       - "8090:8090"
@@ -213,8 +213,8 @@ services:
       - OPENSEARCH_HOST=localstack
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_HTTPS_PORT=4510
-      - OPENSEARCH_USER=admin
-      - OPENSEARCH_ADMIN_PASSWORD=${OPENSEARCH_ADMIN_PASSWORD}
+      - OPENSEARCH_USER=
+      - OPENSEARCH_ADMIN_PASSWORD=
       - OPENSEARCH_USE_SSL=false
       - OPENSEARCH_SSL_VERIFICATION_MODE=none
       - OPENSEARCH_TRUSTSTORE_PATH=/app/certs/truststore.jks
@@ -222,6 +222,8 @@ services:
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
       - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
+      - TELEGRAM_BOT_TOKEN=8791705854:AAFRWOaGHT0n84Myu6R-nkh-C80cd4ivFpc
+      - TELEGRAM_BOT_USERNAME=voice_reminder_dev_bot
       - GRPC_USE_TLS=false
       - WS_PORT=8090
       - DB_ENABLED=true
