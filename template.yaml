@@ -107,6 +107,19 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "arn:aws:logs:*:*:*"
+        - PolicyName: lambda-sqs-events-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:GetQueueUrl
+                  - sqs:SendMessage
+                Resource: !Sub arn:aws:sqs:us-east-1:000000000000:dev-reminder-dlq
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: "*"
 
 
   AppExecutionRole:

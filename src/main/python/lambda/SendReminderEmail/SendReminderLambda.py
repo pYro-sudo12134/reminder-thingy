@@ -43,7 +43,7 @@ reminder_service = ReminderEmailService(smtp_adapter, FROM_EMAIL)
 
 sqs_client = boto3.client('sqs', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('sqs', region_name=AWS_REGION)
 events_client = boto3.client('events', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('events', region_name=AWS_REGION)
-EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME', 'email-events')
+EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME_EMAIL', 'email-events')
 
 
 def send_to_dlq(detail: dict, error_message: str) -> None:

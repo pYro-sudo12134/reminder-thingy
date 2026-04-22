@@ -342,7 +342,7 @@ deploy_lambda_code() {
         echo "Updating Lambda environment variables..."
         aws --endpoint-url=http://localhost:4566 lambda update-function-configuration \
             --function-name "$LAMBDA_FUNCTION_NAME" \
-            --environment "Variables={ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
+            --environment "Variables={ENVIRONMENT_NAME=$ENVIRONMENT_NAME,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,DLQ_QUEUE_NAME=dev-reminder-dlq,EVENT_BUS_NAME_EMAIL=default,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
             --region us-east-1
 
         echo "Lambda function code successfully updated!"
@@ -358,7 +358,7 @@ deploy_lambda_code() {
             --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
             --timeout 30 \
             --memory-size 512 \
-            --environment Variables="{ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
+            --environment Variables="{ENVIRONMENT_NAME=$ENVIRONMENT_NAME,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,DLQ_QUEUE_NAME=dev-reminder-dlq,EVENT_BUS_NAME_EMAIL=default,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
             --region us-east-1
 
         echo "Lambda function created successfully!"
