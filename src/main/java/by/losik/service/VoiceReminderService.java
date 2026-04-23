@@ -4,21 +4,18 @@ import by.losik.config.EventBridgeConfig;
 import by.losik.dto.CreateRuleRequest;
 import by.losik.dto.ParsedResult;
 import by.losik.dto.ReminderRecord;
-import by.losik.dto.SendEventRequest;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import by.losik.config.TelegramConfig;
 import by.losik.service.TelegramBotService;
@@ -59,7 +56,8 @@ public class VoiceReminderService {
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
     private final EventBridgeConfig eventBridgeConfig;
-private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
+
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, java.util.concurrent.ScheduledFuture<?>> scheduledTasks = new java.util.concurrent.ConcurrentHashMap<>();
     private final TelegramBotService telegramBotService;
 
@@ -174,13 +172,40 @@ private final ScheduledExecutorService scheduler = Executors.newScheduledThreadP
                             "scheduled-" + reminderId
                     );
 
-                    return openSearchService.indexReminder(reminderWithScheduler)
+                    return openSearchService.indexReminder(reminder)
                             .thenCompose(indexedId -> {
                                 log.info("Reminder saved to OpenSearch: {}", reminderId);
 
-                                scheduleReminder(reminderId, userEmail, inputData, parsed.scheduledTime());
+                                CreateRuleRequest ruleRequest = new CreateRuleRequest(
+                                        "reminder-" + reminderId,
+                                        parsed.scheduledTime(),
+                                        eventBridgeConfig.getDefaultLambdaArn(),
+                                        inputData,
+                                        "Напоминание: " + parsed.action(),
+                                        parsed.intent()
+                                );
 
-                                return CompletableFuture.completedFuture(reminderId);
+                                return eventBridgeService.createEmailRule(ruleRequest)
+                                        .thenCompose(rule -> {
+                                            log.info("EventBridge rule created: {}", rule.ruleName());
+
+                                            ReminderRecord reminderWithRule = new ReminderRecord(
+                                                    reminderId,
+                                                    userId,
+                                                    userEmail,
+                                                    transcribedText,
+                                                    parsed.action(),
+                                                    parsed.scheduledTime(),
+                                                    LocalDateTime.now(),
+                                                    ReminderRecord.ReminderStatus.SCHEDULED,
+                                                    false,
+                                                    parsed.intent(),
+                                                    rule.ruleName()
+                                            );
+
+                                            return openSearchService.updateReminder(reminderWithRule)
+                                                    .thenApply(success -> reminderId);
+                                        });
                             });
                 })
                 .exceptionally(ex -> {
@@ -312,62 +337,7 @@ private final ScheduledExecutorService scheduler = Executors.newScheduledThreadP
                 "intent", parsed.intent() != null ? parsed.intent() : "reminder",
                 "confidence", parsed.confidence(),
                 "language", parsed.language()
-        );
-    }
-
-    private void scheduleReminder(String reminderId, String userEmail, Map<String, Object> inputData, LocalDateTime scheduledTime) {
-        LocalDateTime now = LocalDateTime.now();
-        long delayMillis = ChronoUnit.MILLIS.between(now, scheduledTime);
-
-        if (delayMillis <= 0) {
-            log.warn("Scheduled time is in the past for reminder: {}, processing immediately", reminderId);
-            triggerReminder(reminderId, userEmail, inputData);
-            return;
-        }
-
-        log.info("Scheduling reminder {} for {} (delay: {} ms)", reminderId, scheduledTime, delayMillis);
-
-        java.util.concurrent.ScheduledFuture<?> future = scheduler.schedule(
-                () -> triggerReminder(reminderId, userEmail, inputData),
-                delayMillis,
-                TimeUnit.MILLISECONDS
-        );
-
-        scheduledTasks.put(reminderId, future);
-    }
-
-    private void triggerReminder(String reminderId, String userEmail, Map<String, Object> inputData) {
-        log.info("Triggering reminder directly (bypassing EventBridge): {}", reminderId);
-
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            String payloadJson = mapper.writeValueAsString(inputData);
-
-            eventBridgeService.invokeLambda(
-                            eventBridgeConfig.getDefaultLambdaArn(),
-                            payloadJson
-                    )
-                    .thenAccept(invokeResponse -> {
-                        log.info("Lambda invoked successfully for reminder: {}", reminderId);
-                    })
-                    .exceptionally(ex -> {
-                        log.error("Failed to invoke Lambda for reminder: {}", reminderId, ex);
-                        return null;
-                    });
-        } catch (Exception e) {
-            log.error("Failed to trigger reminder: {}", reminderId, e);
-        }
-    }
-
-    public CompletableFuture<Boolean> cancelScheduledReminder(String reminderId) {
-        java.util.concurrent.ScheduledFuture<?> future = scheduledTasks.remove(reminderId);
-        if (future != null) {
-            future.cancel(true);
-            log.info("Cancelled scheduled reminder: {}", reminderId);
-            return CompletableFuture.completedFuture(true);
-        }
-        log.warn("No scheduled task found for reminder: {}", reminderId);
-        return CompletableFuture.completedFuture(false);
+);
     }
 
     /**
@@ -493,8 +463,6 @@ private final ScheduledExecutorService scheduler = Executors.newScheduledThreadP
                             ReminderRecord.ReminderStatus.CANCELLED,
                             reminder.notificationSent()
                     );
-
-                    cancelScheduledReminder(reminderId);
 
                     return updateFuture;
                 });

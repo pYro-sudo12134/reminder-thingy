@@ -87,6 +87,15 @@ public class User {
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
 
+    @Column(name = "telegram_chat_id")
+    private Long telegramChatId;
+
+    @Column(name = "telegram_binding_code", length = 10)
+    private String telegramBindingCode;
+
+    @Column(name = "telegram_code_expiry")
+    private LocalDateTime telegramCodeExpiry;
+
     /**
      * Конструктор по умолчанию для JPA.
      */
@@ -288,5 +297,29 @@ public class User {
      */
     public void updatePassword(String rawPassword) {
         this.passwordHash = BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+    }
+
+    public Long getTelegramChatId() {
+        return telegramChatId;
+    }
+
+    public void setTelegramChatId(Long telegramChatId) {
+        this.telegramChatId = telegramChatId;
+    }
+
+    public String getTelegramBindingCode() {
+        return telegramBindingCode;
+    }
+
+    public void setTelegramBindingCode(String telegramBindingCode) {
+        this.telegramBindingCode = telegramBindingCode;
+    }
+
+    public LocalDateTime getTelegramCodeExpiry() {
+        return telegramCodeExpiry;
+    }
+
+    public void setTelegramCodeExpiry(LocalDateTime telegramCodeExpiry) {
+        this.telegramCodeExpiry = telegramCodeExpiry;
     }
 }

@@ -342,7 +342,7 @@ deploy_lambda_code() {
         echo "Updating Lambda environment variables..."
         aws --endpoint-url=http://localhost:4566 lambda update-function-configuration \
             --function-name "$LAMBDA_FUNCTION_NAME" \
-            --environment "Variables={ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
+            --environment "Variables={ENVIRONMENT_NAME=$ENVIRONMENT_NAME,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,DLQ_QUEUE_NAME=dev-reminder-dlq,EVENT_BUS_NAME_EMAIL=default,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
             --region us-east-1
 
         echo "Lambda function code successfully updated!"
@@ -358,7 +358,7 @@ deploy_lambda_code() {
             --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
             --timeout 30 \
             --memory-size 512 \
-            --environment Variables="{ENVIRONMENT_NAME=$ENVIRONMENT_NAME,S3_BUCKET=$BUCKET_NAME,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
+            --environment Variables="{ENVIRONMENT_NAME=$ENVIRONMENT_NAME,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,DLQ_QUEUE_NAME=dev-reminder-dlq,EVENT_BUS_NAME_EMAIL=default,SMTP_HOST=$SMTP_HOST,SMTP_PORT=$SMTP_PORT,SMTP_USERNAME=$SMTP_USERNAME,SMTP_PASSWORD=$SMTP_PASSWORD,FROM_EMAIL=$FROM_EMAIL,SMTP_TLS=$SMTP_STARTTLS,SMTP_SSL=false}" \
             --region us-east-1
 
         echo "Lambda function created successfully!"
@@ -367,9 +367,84 @@ deploy_lambda_code() {
     rm -f "$ZIP_FILE"
 }
 
+deploy_telegram_lambda_code() {
+    echo "=== Deploying Telegram Lambda ==="
+
+    PROJECT_PATH="/project"
+    LAMBDA_SOURCE_DIR="${PROJECT_PATH}/src/main/python/lambda/SendTelegramReminder"
+    ZIP_FILE="/tmp/send-telegram-reminder.zip"
+    BUCKET_NAME="voice-reminder-audio-bucket"
+    S3_KEY="lambda/send-telegram-reminder.zip"
+    LAMBDA_FUNCTION_NAME="send-reminder-telegram"
+
+    if [ ! -d "$LAMBDA_SOURCE_DIR" ]; then
+        echo "WARNING: Telegram lambda source not found at $LAMBDA_SOURCE_DIR"
+        return 0
+    fi
+
+    if ! command -v zip >/dev/null 2>&1; then
+        echo "Installing zip utility..."
+        apt-get update -qq && apt-get install -y zip
+    fi
+
+    echo "Creating ZIP archive from $LAMBDA_SOURCE_DIR"
+    rm -f "$ZIP_FILE"
+    cd "$LAMBDA_SOURCE_DIR" || { echo "Cannot cd into $LAMBDA_SOURCE_DIR"; return 1; }
+    zip -r "$ZIP_FILE" ./*
+    cd - >/dev/null
+
+    if [ ! -f "$ZIP_FILE" ]; then
+        echo "ERROR: Failed to create ZIP file"
+        return 1
+    fi
+
+    echo "Uploading ZIP to S3: s3://$BUCKET_NAME/$S3_KEY"
+    aws --endpoint-url=http://localhost:4566 s3 cp "$ZIP_FILE" "s3://$BUCKET_NAME/$S3_KEY" \
+        --region us-east-1 || { echo "S3 upload failed"; return 1; }
+
+    if aws --endpoint-url=http://localhost:4566 lambda get-function \
+        --function-name "$LAMBDA_FUNCTION_NAME" \
+        --region us-east-1 >/dev/null 2>&1; then
+        
+        echo "Updating Telegram Lambda function code from S3..."
+        aws --endpoint-url=http://localhost:4566 lambda update-function-code \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --s3-bucket "$BUCKET_NAME" \
+            --s3-key "$S3_KEY" \
+            --region us-east-1
+
+        echo "Updating Telegram Lambda environment variables..."
+        aws --endpoint-url=http://localhost:4566 lambda update-function-configuration \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --environment "Variables={TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events}" \
+            --region us-east-1
+
+        echo "Telegram Lambda function code successfully updated!"
+    else
+        echo "Creating Telegram Lambda function $LAMBDA_FUNCTION_NAME..."
+        LAMBDA_ROLE_ARN="arn:aws:iam::000000000000:role/lambda-role"
+
+        aws --endpoint-url=http://localhost:4566 lambda create-function \
+            --function-name "$LAMBDA_FUNCTION_NAME" \
+            --runtime python3.11 \
+            --role "$LAMBDA_ROLE_ARN" \
+            --handler SendTelegramReminderLambda.lambda_handler \
+            --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
+            --timeout 30 \
+            --memory-size 256 \
+            --environment Variables="{TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events}" \
+            --region us-east-1
+
+        echo "Telegram Lambda function created successfully!"
+    fi
+
+    rm -f "$ZIP_FILE"
+}
+
 
 # Вызов функции сразу после создания основного стека
 deploy_lambda_code
+deploy_telegram_lambda_code
 
 if [ -f "/etc/localstack/init/ready.d/metrics-config.yaml" ]; then
     echo "Deploying metrics CloudFormation stack"
