@@ -87,6 +87,13 @@ public class AuthResource {
             boolean isValid = userRepository.validateCredentials(username, password);
             log.info("validateCredentials returned: {}", isValid);
 
+            if (!isValid) {
+                log.warn("Invalid credentials for user: {}", username);
+                return Response.status(Response.Status.UNAUTHORIZED)
+                        .entity(Map.of("error", "Invalid username or password"))
+                        .build();
+            }
+
             HttpSession session = request.getSession(true);
             log.debug("Session created: {}", session.getId());
             session.setAttribute("username", username);
