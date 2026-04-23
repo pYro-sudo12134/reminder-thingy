@@ -1,0 +1,275 @@
+Мы подготовим полное резюме: какие файлы использовать и полная структура проекта для отправки Telegram-уведомлений (аналогично email-сервису). Учтем все имеющиеся файлы и добавим недостающие.
+
+1. Существующие файлы (уже есть)
+TelegramAdapter.py – отправка сообщений в Telegram API.
+
+ReminderTelegramService.py – сервис для отправки напоминаний через TelegramAdapter.
+
+bot.py – Telegram-бот для привязки аккаунтов (команды /start, /status, /unbind, обработка кода).
+
+TelegramBotService.py – клиент для вызова Java API (проверка статуса, валидация кода).
+
+TelegramBindingService.java – логика генерации кода, привязки chatId к пользователю (Java).
+
+TelegramController.java – REST endpoints для работы с привязкой.
+
+UserRepository.java – JPA репозиторий пользователей, методы поиска по chatId, коду и т.д.
+
+EventBridgeService.java – умеет создавать правила для Telegram (createTelegramRule).
+
+template.yaml – CloudFormation (только для email, требует доработки для Telegram).
+
+aws-init.sh – инициализация LocalStack (создание очередей, S3, Lambda для email, метрик и т.д.).
+
+SendReminderLambda.py – Lambda для email.
+
+ReminderEmailService.py, SMTPAdapter.py – email.
+
+2. Недостающие компоненты для Telegram
+Lambda-функция для отправки Telegram-уведомлений (аналог SendReminderLambda.py).
+
+Событие/правило EventBridge, которое будет вызывать эту Lambda.
+
+Переменная окружения TELEGRAM_BOT_TOKEN для Lambda.
+
+В CloudFormation – ресурсы для новой Lambda и правила EventBridge.
+
+В aws-init.sh – функция деплоя Telegram Lambda.
+
+(Опционально) Endpoint в Java API: получение telegramChatId по email (если нет, добавить).
+
+3. Полная структура проекта (файлы и папки)
+text
+reminder-thingy/
+├── docker-compose.yml                # поднимает LocalStack, PostgreSQL, Java-бэкенд, бота, ...
+├── src/
+│   ├── main/
+│   │   ├── java/                     # Java-бэкенд
+│   │   │   ├── by/losik/
+│   │   │   │   ├── entity/
+│   │   │   │   │   └── User.java     # с полями telegramChatId, bindingCode, expiry
+│   │   │   │   ├── repository/
+│   │   │   │   │   └── UserRepository.java  # уже есть: findByTelegramChatId, findByTelegramBindingCode, update
+│   │   │   │   ├── service/
+│   │   │   │   │   ├── TelegramBindingService.java  # уже есть
+│   │   │   │   │   └── EventBridgeService.java      # уже есть (createTelegramRule)
+│   │   │   │   └── resource/
+│   │   │   │       └── TelegramController.java      # уже есть (+ возможно UserController для /email/{email})
+│   │   │   └── ...
+│   │   └── python/                   # Python код
+│   │       ├── lambda/
+│   │       │   ├── SendReminderEmail/
+│   │       │   │   ├── SendReminderLambda.py        # уже есть
+│   │       │   │   ├── ReminderEmailService.py      # уже есть
+│   │       │   │   └── SMTPAdapter.py               # уже есть
+│   │       │   └── SendTelegramReminder/
+│   │       │       ├── SendTelegramReminderLambda.py  # НОВЫЙ файл
+│   │       │       ├── ReminderTelegramService.py   # уже есть (копируем или ссылаемся)
+│   │       │       └── TelegramAdapter.py           # уже есть
+│   │       ├── telegram_bot/
+│   │       │   ├── bot.py            # уже есть
+│   │       │   └── TelegramBotService.py  # уже есть
+│   │       └── ...
+├── infrastructure/                   # AWS инфраструктура
+│   ├── template.yaml                 # CloudFormation – добавить ресурсы для Telegram Lambda и правила
+│   ├── aws-init.sh                   # инициализация LocalStack – добавить deploy_telegram_lambda_code()
+│   └── ...
+└── ...
+4. Содержание новых/изменённых файлов
+4.1. Новый файл: SendTelegramReminderLambda.py
+python
+import json, logging, os, boto3
+from datetime import datetime
+import requests   # для HTTP-запроса к Java API
+from TelegramAdapter import TelegramAdapter
+from ReminderTelegramService import ReminderTelegramService
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+JAVA_API_URL = os.environ.get('JAVA_API_URL', 'http://reminder-app:8090')
+AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+AWS_ENDPOINT_URL = os.environ.get('AWS_ENDPOINT_URL', '')
+DLQ_QUEUE_NAME = os.environ.get('DLQ_QUEUE_NAME', 'dev-reminder-dlq')
+
+sqs_client = boto3.client('sqs', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('sqs', region_name=AWS_REGION)
+
+telegram_adapter = TelegramAdapter(TELEGRAM_BOT_TOKEN)
+reminder_service = ReminderTelegramService(telegram_adapter)
+
+def send_to_dlq(detail, error_msg):
+    # аналогично email-версии
+    ...
+
+def lambda_handler(event, context):
+    detail = event.get('detail', event)
+    reminder_id = detail.get('reminderId')
+    user_email = detail.get('userEmail')
+    action = detail.get('action', 'Reminder')
+    scheduled_time = detail.get('scheduledTime', '')
+
+    # Получаем chatId по email
+    try:
+        resp = requests.get(f"{JAVA_API_URL}/api/user/email/{user_email}", timeout=5)
+        if resp.status_code != 200:
+            logger.error(f"User not found or no chatId: {resp.status_code}")
+            send_to_dlq(detail, f"User lookup failed: {resp.text}")
+            return {'statusCode': 404}
+        data = resp.json()
+        chat_id = data.get('telegramChatId')
+        if not chat_id:
+            logger.warning(f"Telegram not linked for {user_email}")
+            return {'statusCode': 200, 'body': 'Telegram not linked'}  # не ошибка, просто игнорируем
+    except Exception as e:
+        logger.exception("Failed to call user API")
+        send_to_dlq(detail, str(e))
+        return {'statusCode': 500}
+
+    result = reminder_service.send_reminder(reminder_id, chat_id, action, scheduled_time)
+    if result['status'] == 'failed':
+        send_to_dlq(detail, result.get('error'))
+        return {'statusCode': 500}
+    logger.info(f"Telegram reminder {reminder_id} sent to {chat_id}")
+    return {'statusCode': 200}
+4.2. Изменённый template.yaml – добавить:
+yaml
+Parameters:
+  TelegramBotToken:
+    Type: String
+    Description: Telegram bot token
+    NoEcho: true
+
+Resources:
+  # ... существующие ресурсы ...
+  
+  SendTelegramReminderFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: send-reminder-telegram
+      Runtime: python3.11
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Handler: SendTelegramReminderLambda.lambda_handler
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: lambda/send-telegram-reminder.zip
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
+          JAVA_API_URL: http://reminder-app:8090
+          DLQ_QUEUE_NAME: !GetAtt ReminderDeadLetterQueue.QueueName
+          AWS_REGION: !Ref AWS::Region
+
+  TelegramReminderRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${EnvironmentName}-telegram-reminder-rule
+      Description: "Trigger Telegram reminder Lambda"
+      EventPattern:
+        source:
+          - "by.losik.reminder"
+        detail-type:
+          - "ReminderScheduled"    # или другое, которое генерирует Java-бэкенд
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt SendTelegramReminderFunction.Arn
+          Id: telegram-target
+    DependsOn: SendTelegramReminderFunction
+
+  TelegramLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SendTelegramReminderFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TelegramReminderRule.Arn
+4.3. Изменённый aws-init.sh – добавить функцию deploy_telegram_lambda_code и вызвать её:
+bash
+deploy_telegram_lambda_code() {
+    echo "=== Deploying Telegram Lambda ==="
+    LAMBDA_SOURCE_DIR="/project/src/main/python/lambda/SendTelegramReminder"
+    ZIP_FILE="/tmp/send-telegram-reminder.zip"
+    S3_KEY="lambda/send-telegram-reminder.zip"
+    LAMBDA_FUNCTION_NAME="send-reminder-telegram"
+
+    if [ ! -d "$LAMBDA_SOURCE_DIR" ]; then
+        echo "WARNING: Telegram lambda source not found"
+        return 0
+    fi
+
+    cd "$LAMBDA_SOURCE_DIR"
+    zip -r "$ZIP_FILE" .
+    cd - >/dev/null
+
+    aws --endpoint-url=http://localhost:4566 s3 cp "$ZIP_FILE" "s3://$S3BucketName/$S3_KEY"
+
+    # Проверяем существование Lambda
+    if aws --endpoint-url=http://localhost:4566 lambda get-function --function-name $LAMBDA_FUNCTION_NAME >/dev/null 2>&1; then
+        aws --endpoint-url=http://localhost:4566 lambda update-function-code --function-name $LAMBDA_FUNCTION_NAME --s3-bucket $S3BucketName --s3-key $S3_KEY
+    else
+        aws --endpoint-url=http://localhost:4566 lambda create-function \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --runtime python3.11 \
+            --role arn:aws:iam::000000000000:role/lambda-role \
+            --handler SendTelegramReminderLambda.lambda_handler \
+            --code S3Bucket=$S3BucketName,S3Key=$S3_KEY \
+            --environment Variables="{TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq}" \
+            --timeout 30
+    fi
+    rm -f "$ZIP_FILE"
+}
+
+# В основном теле вызвать после deploy_lambda_code:
+deploy_telegram_lambda_code
+4.4. Дополнительно: добавить REST endpoint в Java для получения пользователя по email.
+В UserController.java (или новом контроллере):
+
+java
+@GET
+@Path("/email/{email}")
+public Response getUserByEmail(@PathParam("email") String email) {
+    Optional<User> userOpt = userRepository.findByEmail(email);
+    if (userOpt.isPresent()) {
+        User user = userOpt.get();
+        return Response.ok(Map.of(
+            "username", user.getUsername(),
+            "telegramChatId", user.getTelegramChatId()
+        )).build();
+    }
+    return Response.status(404).build();
+}
+5. Как всё это запустить и протестировать
+Убедитесь, что все файлы созданы в правильных директориях.
+
+Запустите docker-compose up (или вашу среду разработки).
+
+Дождитесь инициализации LocalStack (скрипт aws-init.sh выполнится автоматически).
+
+Запустите Telegram-бота: python src/main/python/telegram_bot/bot.py.
+
+Зайдите в веб-интерфейс, залогиньтесь, получите код привязки.
+
+Отправьте код боту в Telegram -> привязка.
+
+Создайте напоминание (через голосовое сообщение или API). Это должно привести к публикации события ReminderScheduled в EventBridge.
+
+Правило TelegramReminderRule сработает и вызовет send-reminder-telegram Lambda.
+
+Lambda получит событие, найдёт chatId через Java API и отправит сообщение через TelegramAdapter.
+
+Вы получите уведомление в Telegram.
+
+6. Ключевые моменты
+Токен бота должен быть передан во все места: bot.py (для привязки), TelegramAdapter (в Lambda), и в SendTelegramReminderLambda.py через переменную окружения.
+
+Java API должен быть доступен из Lambda (по внутреннему DNS reminder-app:8090). В LocalStack это работает, если контейнеры в одной сети.
+
+Событие EventBridge должно генерироваться при создании напоминания. В EventBridgeService.java есть метод sendEvent – используйте его для публикации ReminderScheduled события.
+
+DLQ – если отправка в Telegram не удалась (например, пользователь не привязал аккаунт), сообщение уходит в очередь dead-letter для последующего анализа.
+
+Если вы не хотите создавать отдельную Lambda, можно расширить существующую SendReminderLambda.py, добавив туда вызов TelegramAdapter и используя тот же EventBridge триггер. В этом случае структура упрощается, но смешивается логика. Я бы рекомендовал разделить, чтобы легче отлаживать.
+
+Теперь у вас есть полная карта. Если нужны уточнения по содержимому любого файла – спрашивайте.

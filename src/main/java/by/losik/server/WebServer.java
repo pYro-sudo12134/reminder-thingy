@@ -57,6 +57,7 @@ public class WebServer implements AutoCloseable {
     private final AuthResource authResource;
     private final MetricsResource metricsResource;
     private final PasswordResetResource passwordResetResource;
+    private final UserResource userResource;
 
     /**
      * Создаёт веб-сервер с конфигурацией.
@@ -76,6 +77,7 @@ public class WebServer implements AutoCloseable {
                      AuthResource authResource,
                      MetricsResource metricsResource,
                      PasswordResetResource passwordResetResource,
+                     UserResource userResource,
                      RateLimiterFilter rateLimiterFilter,
                      SessionAuthFilter sessionAuthFilter,
                      CorsConfig corsConfig) {
@@ -87,6 +89,7 @@ public class WebServer implements AutoCloseable {
         this.corsConfig = corsConfig;
         this.passwordResetResource = passwordResetResource;
         this.authResource = authResource;
+        this.userResource = userResource;
     }
 
     public void start() throws Exception {
@@ -148,6 +151,7 @@ public class WebServer implements AutoCloseable {
         apiConfig.register(authResource);
         apiConfig.register(metricsResource);
         apiConfig.register(passwordResetResource);
+        apiConfig.register(userResource);
         apiConfig.register(sessionAuthFilter);  // Готовый инстанс из Guice
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);
