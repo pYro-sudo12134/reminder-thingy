@@ -510,7 +510,7 @@
 
             debug(`Отправляю FormData: userId=${userId}, userEmail=${userEmail}, размер файла=${audioBlob.size}`);
 
-            const response = await fetch('/api/reminder/record', {
+            const response = await fetch('/api/reminders/reminder/record', {
                 method: 'POST',
                 body: formData
             });

@@ -8,7 +8,7 @@ import java.util.List;
  * @param scheduledTime Запланированное время выполнения
  * @param action Извлечённое действие
  * @param confidence Уверенность распознавания (0.0-1.0)
- * @param язык Распознанный язык
+ * @param language Распознанный язык
  * @param reminderId ID напоминания
  * @param intent Намерение (reminder, alert, etc.)
  * @param entities Список извлечённых сущностей

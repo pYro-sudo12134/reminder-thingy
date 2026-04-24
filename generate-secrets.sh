@@ -261,6 +261,9 @@ CREATE TABLE users (
     email VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    telegram_binding_code VARCHAR(10),
+    telegram_chat_id bigint,
+    telegram_code_expiry timestamp,
     is_active BOOLEAN DEFAULT true,
     last_login TIMESTAMP,
 

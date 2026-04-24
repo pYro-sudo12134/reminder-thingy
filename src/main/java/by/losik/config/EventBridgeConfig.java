@@ -32,11 +32,12 @@ public class EventBridgeConfig {
     private static final String DEFAULT_TELEGRAM_BUS = "default";
 
     /** ARN Lambda функции для напоминаний по умолчанию */
-    private static final String DEFAULT_SEND_REMINDER_ARN = "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email";
-
+    private static final String DEFAULT_SEND_REMINDER_ARN = "arn:aws:lambda:us-east-1:000000000000:function:send-reminder";
     private final String emailEventBusName;
     private final String telegramEventBusName;
     private final String defaultLambdaArn;
+    private final String emailLambdaArn;
+    private final String telegramLambdaArn;
 
     /**
      * Создаёт конфигурацию EventBridge с загрузкой настроек из переменных окружения.
@@ -48,6 +49,10 @@ public class EventBridgeConfig {
                 "EVENTBRIDGE_TELEGRAM_BUS", DEFAULT_TELEGRAM_BUS);
         this.defaultLambdaArn = ConfigUtils.getEnvOrDefault(
                 "LAMBDA_SEND_REMINDER_ARN", DEFAULT_SEND_REMINDER_ARN);
+        this.emailLambdaArn = ConfigUtils.getEnvOrDefault(
+                "EMAIL_LAMBDA_SEND_REMINDER_ARN", "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email");
+        this.telegramLambdaArn = ConfigUtils.getEnvOrDefault(
+                "TELEGRAM_LAMBDA_SEND_REMINDER_ARN", "arn:aws:lambda:us-east-1:000000000000:function:send-reminder-telegram");
     }
 
     /**
@@ -75,5 +80,13 @@ public class EventBridgeConfig {
      */
     public String getDefaultLambdaArn() {
         return defaultLambdaArn;
+    }
+
+    public String getEmailLambdaArn() {
+        return emailLambdaArn;
+    }
+
+    public String getTelegramLambdaArn() {
+        return telegramLambdaArn;
     }
 }

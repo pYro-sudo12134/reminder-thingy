@@ -535,55 +535,6 @@ Resources:
       LogGroupName: !Sub /aws/lambda/${LambdaFunctionName}
       RetentionInDays: 30
 
-  TelegramLambdaLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub /aws/lambda/send-reminder-telegram
-      RetentionInDays: 30
-
-  SendTelegramReminderFunction:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: send-reminder-telegram
-      Runtime: python3.11
-      Role: !GetAtt LambdaExecutionRole.Arn
-      Handler: SendTelegramReminderLambda.lambda_handler
-      Code:
-        S3Bucket: !Ref S3BucketName
-        S3Key: lambda/send-telegram-reminder.zip
-      Timeout: 30
-      MemorySize: 256
-      Environment:
-        Variables:
-          TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
-          JAVA_API_URL: http://reminder-app:8090
-          DLQ_QUEUE_NAME: !GetAtt ReminderDeadLetterQueue.QueueName
-          AWS_REGION: !Ref AWS::Region
-
-  TelegramReminderRule:
-    Type: AWS::Events::Rule
-    Properties:
-      Name: !Sub ${EnvironmentName}-telegram-reminder-rule
-      Description: "Trigger Telegram reminder Lambda"
-      EventPattern:
-        source:
-          - "by.losik.reminder"
-        detail-type:
-          - "ReminderScheduled"
-      State: ENABLED
-      Targets:
-        - Arn: !GetAtt SendTelegramReminderFunction.Arn
-          Id: telegram-target
-    DependsOn: SendTelegramReminderFunction
-
-  TelegramLambdaPermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref SendTelegramReminderFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt TelegramReminderRule.Arn
-
   AppLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:

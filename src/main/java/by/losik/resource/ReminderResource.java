@@ -51,7 +51,7 @@ import java.util.stream.Collectors;
  *     <li>Получения статистики</li>
  * </ul>
  */
-@Path("/")
+@Path("/reminders")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @Singleton

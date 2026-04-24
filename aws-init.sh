@@ -270,6 +270,7 @@ aws --endpoint-url=http://localhost:4566 cloudformation create-stack \
     ParameterKey=OpenSearchDomainName,ParameterValue=reminder-domain \
     ParameterKey=S3BucketName,ParameterValue=voice-reminder-audio-bucket \
     ParameterKey=LambdaFunctionName,ParameterValue=send-reminder-email \
+    ParameterKey=TelegramBotToken,ParameterValue=8791705854:AAFRWOaGHT0n84Myu6R-nkh-C80cd4ivFpc \
   --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
   --region us-east-1 || true
 
@@ -416,7 +417,7 @@ deploy_telegram_lambda_code() {
         echo "Updating Telegram Lambda environment variables..."
         aws --endpoint-url=http://localhost:4566 lambda update-function-configuration \
             --function-name "$LAMBDA_FUNCTION_NAME" \
-            --environment "Variables={TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events}" \
+            --environment "Variables={TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localstack:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events,INTERNAL_API_KEY=$LAMBDA_API_KEY}" \
             --region us-east-1
 
         echo "Telegram Lambda function code successfully updated!"
@@ -432,7 +433,7 @@ deploy_telegram_lambda_code() {
             --code S3Bucket="$BUCKET_NAME",S3Key="$S3_KEY" \
             --timeout 30 \
             --memory-size 256 \
-            --environment Variables="{TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localhost:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events}" \
+            --environment "Variables={TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN,JAVA_API_URL=http://reminder-app:8090,DLQ_QUEUE_NAME=dev-reminder-dlq,AWS_REGION=us-east-1,AWS_ENDPOINT_URL=http://localstack:4566,EVENT_BUS_NAME_TELEGRAM=telegram-events,INTERNAL_API_KEY=$LAMBDA_API_KEY}" \
             --region us-east-1
 
         echo "Telegram Lambda function created successfully!"

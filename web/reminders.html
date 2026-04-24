@@ -433,8 +433,8 @@
         const statusFilter = new URLSearchParams(window.location.search).get('status') || '';
 
         Promise.all([
-            fetch(`/api/stats/${userId}`).then(r => r.ok ? r.json() : null),
-            fetch(`/api/user/${userId}/reminders?limit=20${statusFilter ? `&status=${statusFilter}` : ''}`).then(r => r.json())
+            fetch(`/api/reminders/stats/${userId}`).then(r => r.ok ? r.json() : null),
+            fetch(`/api/reminders/user/${userId}/reminders?limit=20${statusFilter ? `&status=${statusFilter}` : ''}`).then(r => r.json())
         ]).then(([stats, reminders]) => {
             displayStats(stats);
             displayReminders(reminders);
@@ -447,12 +447,11 @@
         });
     }
 
-    // Функция загрузки статистики - определяем ДО deleteReminder
     function loadStats(userId) {
         console.log('loadStats called with userId:', userId);
         if (!userId) return;
 
-        fetch(`/api/stats/${userId}`)
+        fetch(`/api/reminders/stats/${userId}`)
             .then(r => {
                 console.log('Stats response status:', r.status);
                 return r.ok ? r.json() : null;
@@ -547,7 +546,7 @@
         if (!confirm('Удалить это напоминание? Это действие нельзя отменить.')) return;
 
         showLoading(true);
-        fetch(`/api/reminder/${reminderId}`, { method: 'DELETE' })
+        fetch(`/api/reminders/reminder/${reminderId}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
                 console.log('Delete response:', data);
@@ -588,7 +587,7 @@
     function editReminder(reminderId) {
         console.log('editReminder called with:', reminderId);
         showLoading(true);
-        fetch(`/api/reminder/${reminderId}`)
+        fetch(`/api/reminders/reminder/${reminderId}`)
             .then(r => r.json())
             .then(reminder => {
                 console.log('Edit reminder data:', reminder);
@@ -640,7 +639,7 @@
         console.log('Save data:', data);
 
         showLoading(true);
-        fetch(`/api/reminder/${reminderId}`, {
+        fetch(`/api/reminders/reminder/${reminderId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -669,7 +668,7 @@
         if (!confirm('Отменить это напоминание? Статус изменится на "Отменено".')) return;
 
         showLoading(true);
-        fetch(`/api/reminder/${reminderId}/cancel`, { method: 'POST' })
+        fetch(`/api/reminders/reminder/${reminderId}/cancel`, { method: 'POST' })
             .then(r => r.json())
             .then(data => {
                 console.log('Cancel response:', data);
@@ -690,7 +689,7 @@
 
     function viewDetails(reminderId) {
         console.log('viewDetails called with:', reminderId);
-        fetch(`/api/reminder/${reminderId}`)
+        fetch(`/api/reminders/reminder/${reminderId}`)
             .then(r => r.json())
             .then(data => {
                 console.log('Details data:', data);
@@ -781,7 +780,7 @@
                 dropdown.innerHTML = '<div class="autocomplete-item">Ищу...</div>';
                 dropdown.classList.remove('hidden');
 
-                fetch(`/api/autocomplete?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=5`)
+                fetch(`/api/reminders/autocomplete?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent(query)}&limit=5`)
                     .then(r => r.ok ? r.json() : { suggestions: [] })
                     .then(data => {
                         cache.set(cacheKey, data);

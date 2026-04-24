@@ -96,7 +96,9 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
       - AWS_DEFAULT_REGION=us-east-1
       - EDGE_PORT=4566
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_TOKEN}
       - LOCALSTACK_API_KEY=${LOCALSTACK_API_KEY:-}
+      - LAMBDA_API_KEY=${LAMBDA_API_KEY}
       - OPENSEARCH_ENDPOINT_STRATEGY=port
       - OPENSEARCH_PORT=4510
       - OPENSEARCH_HOST=0.0.0.0
@@ -225,8 +227,11 @@ services:
       - NLP_SERVICE_HOST=nlp-service
       - NLP_SERVICE_PORT=50051
       - NLP_GRPC_API_KEY=${NLP_GRPC_API_KEY}
-      - TELEGRAM_BOT_TOKEN=8791705854:AAFRWOaGHT0n84Myu6R-nkh-C80cd4ivFpc
+      - LAMBDA_API_KEY=${LAMBDA_API_KEY}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_TOKEN}
       - TELEGRAM_BOT_USERNAME=voice_reminder_dev_bot
+      - EMAIL_LAMBDA_SEND_REMINDER_ARN=arn:aws:lambda:us-east-1:000000000000:function:send-reminder-email
+      - TELEGRAM_LAMBDA_SEND_REMINDER_ARN=arn:aws:lambda:us-east-1:000000000000:function:send-reminder-telegram
       - GRPC_USE_TLS=false
       - WS_PORT=8090
       - DB_ENABLED=true
@@ -344,6 +349,26 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    container_name: reminder-telegram-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+      - API_BASE_URL=http://reminder-app:8090
+    networks:
+      - reminder-network
+    depends_on:
+      - reminder-app
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import os; exit(0)" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
 networks:
   reminder-network:

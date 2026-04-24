@@ -4,10 +4,13 @@ import by.losik.config.CorsConfig;
 import by.losik.filter.CorsFilter;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.filter.SessionAuthFilter;
+import by.losik.resource.ExternalResource;
 import by.losik.resource.MetricsResource;
 import by.losik.resource.PasswordResetResource;
 import by.losik.resource.ReminderResource;
 import by.losik.resource.AuthResource;
+import by.losik.resource.TelegramResource;
+import by.losik.resource.UserResource;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import jakarta.servlet.DispatcherType;
@@ -56,8 +59,10 @@ public class WebServer implements AutoCloseable {
     private final CorsConfig corsConfig;
     private final AuthResource authResource;
     private final MetricsResource metricsResource;
+    private final TelegramResource telegramResource;
     private final PasswordResetResource passwordResetResource;
     private final UserResource userResource;
+    private final ExternalResource externalResource;
 
     /**
      * Создаёт веб-сервер с конфигурацией.
@@ -78,15 +83,19 @@ public class WebServer implements AutoCloseable {
                      MetricsResource metricsResource,
                      PasswordResetResource passwordResetResource,
                      UserResource userResource,
+                     TelegramResource telegramResource,
                      RateLimiterFilter rateLimiterFilter,
                      SessionAuthFilter sessionAuthFilter,
-                     CorsConfig corsConfig) {
+                     CorsConfig corsConfig,
+                     ExternalResource externalResource) {
         this.port = port;
         this.metricsResource = metricsResource;
         this.reminderResource = reminderResource;
         this.rateLimiterFilter = rateLimiterFilter;
         this.sessionAuthFilter = sessionAuthFilter;
+        this.telegramResource = telegramResource;
         this.corsConfig = corsConfig;
+        this.externalResource = externalResource;
         this.passwordResetResource = passwordResetResource;
         this.authResource = authResource;
         this.userResource = userResource;
@@ -151,8 +160,10 @@ public class WebServer implements AutoCloseable {
         apiConfig.register(authResource);
         apiConfig.register(metricsResource);
         apiConfig.register(passwordResetResource);
+        apiConfig.register(telegramResource);
         apiConfig.register(userResource);
-        apiConfig.register(sessionAuthFilter);  // Готовый инстанс из Guice
+        apiConfig.register(sessionAuthFilter);
+        apiConfig.register(externalResource);
         apiConfig.register(JacksonFeature.class);
         apiConfig.register(MultiPartFeature.class);
 

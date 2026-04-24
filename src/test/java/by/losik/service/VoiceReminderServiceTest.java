@@ -46,6 +46,9 @@ class VoiceReminderServiceTest {
     private EventBridgeConfig eventBridgeConfig;
 
     @Mock
+    private TelegramBotService telegramBotService;
+
+    @Mock
     private File audioFile;
 
     private VoiceReminderService voiceReminderService;
@@ -59,7 +62,8 @@ class VoiceReminderServiceTest {
                 eventBridgeService,
                 openSearchService,
                 emailService,
-                eventBridgeConfig
+                eventBridgeConfig,
+                telegramBotService
         );
     }
 

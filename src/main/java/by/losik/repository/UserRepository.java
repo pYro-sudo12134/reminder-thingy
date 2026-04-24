@@ -72,7 +72,7 @@ public class UserRepository {
             log.error("USER NOT FOUND: {}", username);
             return Optional.empty();
         } catch (Exception e) {
-            log.error("ERROR in findByUsername: ", e);
+            log.error("ERROR in findByUsername: {}", e.getMessage(), e);
             return Optional.empty();
         }
     }
@@ -86,7 +86,6 @@ public class UserRepository {
      * @param password пароль в открытом виде
      * @return true если учётные данные верны
      */
-    @Transactional
     public boolean validateCredentials(String username, String password) {
         EntityManager em = getEntityManager();
         try {
@@ -110,10 +109,6 @@ public class UserRepository {
                 user.setLastLogin(LocalDateTime.now());
                 em.merge(user);
                 log.info("User logged in: {}", username);
-                em.getTransaction().commit();
-            } else {
-                log.info("Invalid password for user: {}", username);
-                em.getTransaction().rollback();
             }
 
             return isValid;
@@ -174,7 +169,6 @@ public class UserRepository {
      * @param email email для поиска
      * @return {@link Optional} с найденным пользователем или пустой, если не найден
      */
-    @Transactional
     public Optional<User> findByEmail(String email) {
         try (EntityManager em = getEntityManager()) {
             log.info("FINDING USER BY EMAIL: {}", email);
@@ -248,79 +242,51 @@ public class UserRepository {
         return findByUsername(username).isPresent();
     }
 
-    public Optional<User> findByTelegramChatId(Long chatId) {
+    public Optional<User> findById(Long id) {
         try (EntityManager em = getEntityManager()) {
-            return em.createQuery(
-                    "SELECT u FROM User u WHERE u.telegramChatId = :chatId", User.class)
-                    .setParameter("chatId", chatId)
-                    .getResultStream()
-                    .findFirst();
+            return Optional.ofNullable(em.find(User.class, id));
         } catch (Exception e) {
-            log.error("ERROR in findByTelegramChatId: {}", e.getMessage(), e);
+            log.error("Error in findById: ", e);
             return Optional.empty();
         }
     }
 
+    @Transactional
     public Optional<User> findByTelegramBindingCode(String code) {
         try (EntityManager em = getEntityManager()) {
-            return em.createQuery(
-                    "SELECT u FROM User u WHERE u.telegramBindingCode = :code", User.class)
-                    .setParameter("code", code)
-                    .getResultStream()
-                    .findFirst();
+            var query = em.createNamedQuery(
+                    "User.findByTelegramBindingCode", User.class);
+            query.setParameter("code", code);
+            return query.getResultList().stream().findFirst();
         } catch (Exception e) {
-            log.error("ERROR in findByTelegramBindingCode: {}", e.getMessage(), e);
+            log.error("Error in findByTelegramBindingCode: ", e);
             return Optional.empty();
         }
     }
 
     @Transactional
-    public boolean bindTelegramChatId(Long userId, Long chatId) {
-        EntityManager em = getEntityManager();
-        try {
-            em.getTransaction().begin();
-            Optional<User> userOpt = findById(userId);
-            if (userOpt.isEmpty()) {
-                em.getTransaction().rollback();
-                return false;
-            }
-            User user = userOpt.get();
-            user.setTelegramChatId(chatId);
-            user.setTelegramBindingCode(null);
-            user.setTelegramCodeExpiry(null);
-            em.merge(user);
-            em.getTransaction().commit();
-            log.info("Telegram chat {} bound to user {}", chatId, userId);
-            return true;
+    public Optional<User> findByTelegramChatId(Long chatId) {
+        try (EntityManager em = getEntityManager()) {
+            var query = em.createNamedQuery(
+                    "User.findByTelegramChatId", User.class);
+            query.setParameter("chatId", chatId);
+            return query.getResultList().stream().findFirst();
         } catch (Exception e) {
-            log.error("ERROR in bindTelegramChatId: {}", e.getMessage(), e);
-            if (em.getTransaction().isActive()) {
-                em.getTransaction().rollback();
-            }
-            return false;
-        } finally {
-            em.close();
+            log.error("Error in findByTelegramChatId: ", e);
+            return Optional.empty();
         }
     }
 
     @Transactional
-    public boolean unbindTelegram(Long userId) {
+    public boolean update(User user) {
         EntityManager em = getEntityManager();
         try {
             em.getTransaction().begin();
-            Optional<User> userOpt = findById(userId);
-            if (userOpt.isEmpty()) {
-                em.getTransaction().rollback();
-                return false;
-            }
-            User user = userOpt.get();
-            user.setTelegramChatId(null);
             em.merge(user);
             em.getTransaction().commit();
-            log.info("Telegram unbound for user {}", userId);
             return true;
         } catch (Exception e) {
-            log.error("ERROR in unbindTelegram: {}", e.getMessage(), e);
+            log.error("Error in update: ", e);
             if (em.getTransaction().isActive()) {
                 em.getTransaction().rollback();
             }

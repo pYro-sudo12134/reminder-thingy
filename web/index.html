@@ -114,7 +114,7 @@
 
     async function testApi() {
         try {
-            const response = await fetch('/api/test');
+            const response = await fetch('/api/reminders/test');
             if (response.ok) {
                 const text = await response.text();
                 document.getElementById('api-result').textContent = 'API Status: ' + text;
@@ -136,7 +136,7 @@
             const authData = await authResponse.json();
             const userId = authData.userId;
 
-            const response = await fetch(`/api/user/${userId}/telegram/code`, {
+            const response = await fetch(`/api/user/${userId}/telegram/generate-code`, {
                 method: 'POST'
             });
 

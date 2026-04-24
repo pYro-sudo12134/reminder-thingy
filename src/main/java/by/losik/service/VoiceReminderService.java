@@ -1,24 +1,21 @@
 package by.losik.service;
 
 import by.losik.config.EventBridgeConfig;
-import by.losik.dto.CreateRuleRequest;
 import by.losik.dto.ParsedResult;
 import by.losik.dto.ReminderRecord;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.eventbridge.model.Target;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-
-import by.losik.config.TelegramConfig;
-import by.losik.service.TelegramBotService;
 
 /**
  * Сервис для обработки голосовых напоминаний.
@@ -56,9 +53,6 @@ public class VoiceReminderService {
     private final OpenSearchService openSearchService;
     private final EmailService emailService;
     private final EventBridgeConfig eventBridgeConfig;
-
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
-    private final Map<String, java.util.concurrent.ScheduledFuture<?>> scheduledTasks = new java.util.concurrent.ConcurrentHashMap<>();
     private final TelegramBotService telegramBotService;
 
     /**
@@ -124,95 +118,79 @@ public class VoiceReminderService {
                 .thenCompose(transcribedText -> {
                     log.info("Transcribed text: {}", transcribedText);
 
-                    ParsedResult parsed =
-                            reminderParser.parse(transcribedText, null, userId);
+                    ParsedResult parsed = reminderParser.parse(transcribedText, null, userId);
 
-                    log.info("Parsed result: reminderId={}, action={}, scheduledTime={}, intent={}, ruleName={}",
-                            parsed.reminderId(),
-                            parsed.action(),
-                            parsed.scheduledTime(),
-                            parsed.intent(),
-                            parsed.ruleName());
+                    log.info("Parsed result: reminderId={}, action={}, scheduledTime={}, intent={}",
+                            parsed.reminderId(), parsed.action(), parsed.scheduledTime(), parsed.intent());
 
                     String reminderId = parsed.reminderId() != null ?
                             parsed.reminderId() : UUID.randomUUID().toString();
 
                     ReminderRecord reminder = new ReminderRecord(
-                            reminderId,
-                            userId,
-                            userEmail,
-                            transcribedText,
-                            parsed.action(),
-                            parsed.scheduledTime(),
-                            LocalDateTime.now(),
-                            ReminderRecord.ReminderStatus.SCHEDULED,
-                            false,
-                            parsed.intent(),
-                            null
+                            reminderId, userId, userEmail, transcribedText,
+                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(),
+                            ReminderRecord.ReminderStatus.SCHEDULED, false,
+                            parsed.intent(), null
                     );
 
                     Map<String, Object> inputData = createEventInput(reminder, userEmail, parsed);
+                    String inputJson = toJson(inputData);
 
-                    log.info("Scheduling reminder: reminderId={}, scheduledTime={}, delayMillis={}",
-                            reminderId,
-                            parsed.scheduledTime(),
-                            java.time.Duration.between(LocalDateTime.now(), parsed.scheduledTime()).toMillis());
-
-                    ReminderRecord reminderWithScheduler = new ReminderRecord(
-                            reminderId,
-                            userId,
-                            userEmail,
-                            transcribedText,
-                            parsed.action(),
-                            parsed.scheduledTime(),
-                            LocalDateTime.now(),
-                            ReminderRecord.ReminderStatus.SCHEDULED,
-                            false,
-                            parsed.intent(),
-                            "scheduled-" + reminderId
+                    List<Target> targets = List.of(
+                            Target.builder()
+                                    .id("email-" + reminderId.substring(0, 8))
+                                    .arn(eventBridgeConfig.getEmailLambdaArn())
+                                    .input(inputJson)
+                                    .build(),
+                            Target.builder()
+                                    .id("telegram-" + reminderId.substring(0, 8))
+                                    .arn(eventBridgeConfig.getTelegramLambdaArn())
+                                    .input(inputJson)
+                                    .build()
                     );
+
+                    String ruleName = "reminder-" + reminderId;
 
                     return openSearchService.indexReminder(reminder)
                             .thenCompose(indexedId -> {
                                 log.info("Reminder saved to OpenSearch: {}", reminderId);
 
-                                CreateRuleRequest ruleRequest = new CreateRuleRequest(
-                                        "reminder-" + reminderId,
+                                return eventBridgeService.createRuleWithMultipleTargets(
+                                        ruleName,
                                         parsed.scheduledTime(),
-                                        eventBridgeConfig.getDefaultLambdaArn(),
-                                        inputData,
-                                        "Напоминание: " + parsed.action(),
-                                        parsed.intent()
-                                );
+                                        eventBridgeConfig.getEmailEventBusName(),
+                                        targets,
+                                        "Reminder: " + parsed.action()
+                                ).thenCompose(rule -> {
+                                    log.info("EventBridge rule created: {} with email and telegram targets", rule.ruleName());
 
-                                return eventBridgeService.createEmailRule(ruleRequest)
-                                        .thenCompose(rule -> {
-                                            log.info("EventBridge rule created: {}", rule.ruleName());
+                                    ReminderRecord reminderWithRule = new ReminderRecord(
+                                            reminderId, userId, userEmail, transcribedText,
+                                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(),
+                                            ReminderRecord.ReminderStatus.SCHEDULED, false,
+                                            parsed.intent(),
+                                            rule.ruleName()
+                                    );
 
-                                            ReminderRecord reminderWithRule = new ReminderRecord(
-                                                    reminderId,
-                                                    userId,
-                                                    userEmail,
-                                                    transcribedText,
-                                                    parsed.action(),
-                                                    parsed.scheduledTime(),
-                                                    LocalDateTime.now(),
-                                                    ReminderRecord.ReminderStatus.SCHEDULED,
-                                                    false,
-                                                    parsed.intent(),
-                                                    rule.ruleName()
-                                            );
-
-                                            return openSearchService.updateReminder(reminderWithRule)
-                                                    .thenApply(success -> reminderId);
-                                        });
+                                    return openSearchService.updateReminder(reminderWithRule)
+                                            .thenApply(success -> reminderId);
+                                });
                             });
                 })
                 .exceptionally(ex -> {
                     log.error("Failed to process voice reminder", ex);
-                    log.error("Exception stack trace:", ex);
                     throw new RuntimeException("Processing failed", ex);
                 });
+    }
+
+    private String toJson(Map<String, Object> data) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            return mapper.writeValueAsString(data);
+        } catch (Exception e) {
+            log.error("Failed to serialize to JSON", e);
+            return "{}";
+        }
     }
 
     /**
@@ -265,16 +243,14 @@ public class VoiceReminderService {
                             });
 
                     return CompletableFuture.allOf(emailFuture, telegramFuture)
-                            .thenCompose(v -> {
-                                return emailFuture.thenCompose(emailId -> {
-                                    log.info("Email sent: {}", emailId);
-                                    return telegramFuture.thenAccept(telegramSent -> {
-                                        if (telegramSent) {
-                                            log.info("Telegram notification sent for reminder {}", reminderId);
-                                        }
-                                    });
+                            .thenCompose(v -> emailFuture.thenCompose(emailId -> {
+                                log.info("Email sent: {}", emailId);
+                                return telegramFuture.thenAccept(telegramSent -> {
+                                    if (telegramSent) {
+                                        log.info("Telegram notification sent for reminder {}", reminderId);
+                                    }
                                 });
-                            })
+                            }))
                             .thenCompose(v -> openSearchService.updateReminderStatus(
                                     reminderId,
                                     ReminderRecord.ReminderStatus.COMPLETED,
@@ -315,6 +291,8 @@ public class VoiceReminderService {
                                 .thenCompose(success -> {
                                     if (success) {
                                         log.info("EventBridge rule deleted: {}", reminder.eventBridgeRuleName());
+                                    } else {
+                                        log.warn("Failed to delete rule: {}", reminder.eventBridgeRuleName());
                                     }
                                     return openSearchService.deleteReminder(reminderId);
                                 });
@@ -380,9 +358,9 @@ public class VoiceReminderService {
                     ReminderRecord existing = optionalReminder.get();
 
                     String finalUserEmail = userEmail != null ? userEmail : existing.userEmail();
-
                     String oldRuleName = existing.eventBridgeRuleName();
-                    CompletableFuture<Boolean> deleteFuture = oldRuleName != null && !oldRuleName.isEmpty()
+
+                    CompletableFuture<Boolean> deleteFuture = (oldRuleName != null && !oldRuleName.isEmpty())
                             ? eventBridgeService.deleteRule(oldRuleName)
                             .exceptionally(ex -> {
                                 log.warn("Failed to delete old rule: {}", ex.getMessage());
@@ -391,6 +369,8 @@ public class VoiceReminderService {
                             : CompletableFuture.completedFuture(true);
 
                     return deleteFuture.thenCompose(deleted -> {
+                        String newRuleName = "reminder-" + reminderId + "-" + System.currentTimeMillis();
+
                         Map<String, Object> inputData = new HashMap<>();
                         inputData.put("reminderId", reminderId);
                         inputData.put("userEmail", finalUserEmail);
@@ -398,38 +378,48 @@ public class VoiceReminderService {
                         inputData.put("scheduledTime", scheduledTime.toString());
                         inputData.put("intent", existing.intent() != null ? existing.intent() : "reminder");
 
-                        CreateRuleRequest ruleRequest = new CreateRuleRequest(
-                                "reminder-" + reminderId + "-" + System.currentTimeMillis(),
-                                scheduledTime,
-                                eventBridgeConfig.getDefaultLambdaArn(),
-                                inputData,
-                                "Напоминание: " + (extractedAction != null ? extractedAction : existing.extractedAction()),
-                                existing.intent()
+                        String inputJson = toJson(inputData);
+
+                        List<Target> targets = List.of(
+                                Target.builder()
+                                        .id("email-" + reminderId.substring(0, 8))
+                                        .arn(eventBridgeConfig.getEmailLambdaArn())
+                                        .input(inputJson)
+                                        .build(),
+                                Target.builder()
+                                        .id("telegram-" + reminderId.substring(0, 8))
+                                        .arn(eventBridgeConfig.getTelegramLambdaArn())
+                                        .input(inputJson)
+                                        .build()
                         );
 
-                        return eventBridgeService.createEmailRule(ruleRequest)
-                                .thenCompose(rule -> {
-                                    ReminderRecord updated = new ReminderRecord(
-                                            existing.reminderId(),
-                                            existing.userId(),
-                                            finalUserEmail,
-                                            existing.originalText(),
-                                            extractedAction != null ? extractedAction : existing.extractedAction(),
-                                            scheduledTime,
-                                            existing.createdAt(),
-                                            status != null ? status : existing.status(),
-                                            existing.notificationSent(),
-                                            existing.intent(),
-                                            rule.ruleName()
-                                    );
+                        return eventBridgeService.createRuleWithMultipleTargets(
+                                newRuleName,
+                                scheduledTime,
+                                eventBridgeConfig.getEmailEventBusName(),
+                                targets,
+                                "Reminder: " + (extractedAction != null ? extractedAction : existing.extractedAction())
+                        ).thenCompose(rule -> {
+                            ReminderRecord updated = new ReminderRecord(
+                                    existing.reminderId(),
+                                    existing.userId(),
+                                    finalUserEmail,
+                                    existing.originalText(),
+                                    extractedAction != null ? extractedAction : existing.extractedAction(),
+                                    scheduledTime,
+                                    existing.createdAt(),
+                                    status != null ? status : existing.status(),
+                                    existing.notificationSent(),
+                                    existing.intent(),
+                                    rule.ruleName()
+                            );
 
-                                    return openSearchService.updateReminder(updated)
-                                            .thenApply(success -> {
-                                                log.info("Reminder {} updated with new rule: {}",
-                                                        reminderId, rule.ruleName());
-                                                return success;
-                                            });
-                                });
+                            return openSearchService.updateReminder(updated)
+                                    .thenApply(success -> {
+                                        log.info("Reminder {} updated with new rule: {}", reminderId, rule.ruleName());
+                                        return success;
+                                    });
+                        });
                     });
                 });
     }
@@ -458,13 +448,11 @@ public class VoiceReminderService {
 
                     ReminderRecord reminder = optionalReminder.get();
 
-                    CompletableFuture<Boolean> updateFuture = openSearchService.updateReminderStatus(
+                    return openSearchService.updateReminderStatus(
                             reminderId,
                             ReminderRecord.ReminderStatus.CANCELLED,
                             reminder.notificationSent()
                     );
-
-                    return updateFuture;
                 });
     }
 }

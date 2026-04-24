@@ -9,9 +9,12 @@ import by.losik.config.SecretsManagerConfig;
 import by.losik.filter.RateLimiterFilter;
 import by.losik.filter.SessionAuthFilter;
 import by.losik.resource.AuthResource;
+import by.losik.resource.ExternalResource;
 import by.losik.resource.MetricsResource;
 import by.losik.resource.PasswordResetResource;
 import by.losik.resource.ReminderResource;
+import by.losik.resource.TelegramResource;
+import by.losik.resource.UserResource;
 import by.losik.server.WebServer;
 import com.google.inject.AbstractModule;
 import com.google.inject.Provides;
@@ -215,9 +218,12 @@ public class AWSModule extends AbstractModule {
             AuthResource authResource,
             MetricsResource metricsResource,
             PasswordResetResource passwordResetResource,
+            TelegramResource telegramResource,
             RateLimiterFilter rateLimiterFilter,
             SessionAuthFilter sessionAuthFilter,
             CorsConfig corsConfig,
+            UserResource userResource,
+            ExternalResource externalResource,
             @Named("ws.port") String portStr) {
 
         int webServerPort;
@@ -228,7 +234,7 @@ public class AWSModule extends AbstractModule {
         }
 
         return new WebServer(webServerPort, reminderResource, authResource,
-                metricsResource, passwordResetResource, rateLimiterFilter, sessionAuthFilter, corsConfig);
+                metricsResource, passwordResetResource, userResource, telegramResource, rateLimiterFilter, sessionAuthFilter, corsConfig, externalResource);
     }
 
     /**

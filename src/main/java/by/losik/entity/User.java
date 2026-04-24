@@ -44,7 +44,11 @@ import java.util.Objects;
         @NamedQuery(name = "User.findAllActive",
                 query = "SELECT u FROM User u WHERE u.isActive = true"),
         @NamedQuery(name = "User.findByEmail",
-            query = "SELECT u FROM User u WHERE u.email = :email")
+            query = "SELECT u FROM User u WHERE u.email = :email"),
+        @NamedQuery(name = "User.findByTelegramBindingCode",
+            query = "SELECT u FROM User u WHERE u.telegramBindingCode = :code"),
+        @NamedQuery(name = "User.findByTelegramChatId",
+                query = "SELECT u FROM User u WHERE u.telegramChatId = :chatId")
 })
 @Cache(
     type = CacheType.SOFT,

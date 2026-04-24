@@ -41,7 +41,9 @@ public class AuthFilterConfig {
                 "auth/password/forgot",
                 "auth/password/reset",
                 "auth/password/validate",
-                "auth/password/reset-form"
+                "auth/password/reset-form",
+                "telegram/bot",
+                "external"
         );
     }
 

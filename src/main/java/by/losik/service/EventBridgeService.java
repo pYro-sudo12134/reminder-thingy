@@ -11,8 +11,21 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
-import software.amazon.awssdk.services.eventbridge.model.*;
+import software.amazon.awssdk.services.eventbridge.model.DeleteRuleRequest;
+import software.amazon.awssdk.services.eventbridge.model.DescribeRuleRequest;
+import software.amazon.awssdk.services.eventbridge.model.ListRulesRequest;
+import software.amazon.awssdk.services.eventbridge.model.ListTargetsByRuleRequest;
+import software.amazon.awssdk.services.eventbridge.model.ListTargetsByRuleResponse;
+import software.amazon.awssdk.services.eventbridge.model.PutEventsRequest;
+import software.amazon.awssdk.services.eventbridge.model.PutEventsRequestEntry;
+import software.amazon.awssdk.services.eventbridge.model.PutRuleRequest;
+import software.amazon.awssdk.services.eventbridge.model.PutTargetsRequest;
+import software.amazon.awssdk.services.eventbridge.model.RemoveTargetsRequest;
+import software.amazon.awssdk.services.eventbridge.model.Rule;
+import software.amazon.awssdk.services.eventbridge.model.RuleState;
+import software.amazon.awssdk.services.eventbridge.model.Target;
 import software.amazon.awssdk.services.lambda.LambdaAsyncClient;
 import software.amazon.awssdk.services.lambda.model.AddPermissionRequest;
 import software.amazon.awssdk.services.lambda.model.AddPermissionResponse;
@@ -23,8 +36,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
-import software.amazon.awssdk.core.SdkBytes;
-
 @Singleton
 public class EventBridgeService {
     private static final Logger log = LoggerFactory.getLogger(EventBridgeService.class);
@@ -32,23 +43,20 @@ public class EventBridgeService {
     private final EventBridgeAsyncClient eventBridgeAsyncClient;
     private final LambdaAsyncClient lambdaAsyncClient;
     private final EventBridgeConfig config;
-    private final String defaultEventBusName = "default";
+    private final String defaultEventBusName;
 
     @Inject
     public EventBridgeService(LocalStackConfig localStackConfig,
                               EventBridgeConfig eventBridgeConfig,
                               LambdaAsyncClient lambdaAsyncClient) {
         this.eventBridgeAsyncClient = localStackConfig.getEventBridgeAsyncClient();
+        this.defaultEventBusName = eventBridgeConfig.getEmailEventBusName();
         this.config = eventBridgeConfig;
         this.lambdaAsyncClient = lambdaAsyncClient;
     }
 
     public CompletableFuture<EventBridgeRuleRecord> createEmailRule(CreateRuleRequest request) {
         return createScheduleRule(request, config.getEmailEventBusName());
-    }
-
-    public CompletableFuture<EventBridgeRuleRecord> createTelegramRule(CreateRuleRequest request) {
-        return createScheduleRule(request, config.getTelegramEventBusName());
     }
 
     public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(
@@ -67,7 +75,7 @@ public class EventBridgeService {
                 .description(request.description() != null ?
                         request.description() :
                         "Reminder for: " + request.scheduleTime())
-                .eventBusName("default")
+                .eventBusName(eventBusName)
                 .build();
 
         return eventBridgeAsyncClient.putRule(ruleRequest)
@@ -89,7 +97,7 @@ public class EventBridgeService {
 
                     PutTargetsRequest targetsRequest = PutTargetsRequest.builder()
                             .rule(ruleName)
-                            .eventBusName("default")
+                            .eventBusName(eventBusName)
                             .targets(target)
                             .build();
 
@@ -130,6 +138,7 @@ public class EventBridgeService {
                 });
     }
 
+    @Deprecated
     public CompletableFuture<EventBridgeRuleRecord> createRateRule(
             String ruleName, String rateExpression, String targetArn, String inputJson) {
         return createRateRule(ruleName, rateExpression, targetArn, inputJson, config.getEmailEventBusName());
@@ -208,6 +217,7 @@ public class EventBridgeService {
                 });
     }
 
+    @Deprecated
     public CompletableFuture<String> sendEvent(SendEventRequest request) {
         return sendEvent(request, config.getEmailEventBusName());
     }
@@ -247,6 +257,7 @@ public class EventBridgeService {
                 });
     }
 
+    @Deprecated
     public CompletableFuture<List<EventBridgeRuleRecord>> getAllRules() {
         return getAllRules(config.getEmailEventBusName());
     }
@@ -274,6 +285,7 @@ public class EventBridgeService {
                 });
     }
 
+    @Deprecated
     public CompletableFuture<EventBridgeRuleRecord> getRuleDetails(String ruleName) {
         return getRuleDetails(ruleName, config.getEmailEventBusName());
     }
@@ -312,10 +324,6 @@ public class EventBridgeService {
         });
     }
 
-    private CompletableFuture<List<Target>> listTargets(String ruleName) {
-        return listTargets(ruleName, config.getEmailEventBusName());
-    }
-
     private CompletableFuture<List<Target>> listTargets(String ruleName, String eventBusName) {
         ListTargetsByRuleRequest request = ListTargetsByRuleRequest.builder()
                 .rule(ruleName)
@@ -328,10 +336,6 @@ public class EventBridgeService {
                     log.warn("Failed to list targets for rule: {}", ruleName, ex);
                     return List.of();
                 });
-    }
-
-    private CompletableFuture<Void> deleteRuleInternal(String ruleName) {
-        return deleteRuleInternal(ruleName, config.getEmailEventBusName());
     }
 
     private CompletableFuture<Void> deleteRuleInternal(String ruleName, String eventBusName) {
@@ -391,6 +395,7 @@ public class EventBridgeService {
         return arn;
     }
 
+    @Deprecated
     public CompletableFuture<byte[]> invokeLambda(String functionArn, String payload) {
         String functionName = extractFunctionNameFromArn(functionArn);
 
@@ -410,6 +415,79 @@ public class EventBridgeService {
                 .exceptionally(ex -> {
                     log.error("Failed to invoke Lambda: {}", functionName, ex);
                     throw new RuntimeException("Lambda invocation failed", ex);
+                });
+    }
+
+    /**
+     * Создает правило EventBridge с несколькими targets
+     * @param ruleName имя правила
+     * @param scheduleTime время выполнения
+     * @param eventBusName имя Event Bus
+     * @param targets список targets (Lambda, SQS, и т.д.)
+     * @param description описание правила
+     * @return информацию о созданном правиле
+     */
+    public CompletableFuture<EventBridgeRuleRecord> createRuleWithMultipleTargets(
+            String ruleName,
+            LocalDateTime scheduleTime,
+            String eventBusName,
+            List<Target> targets,
+            String description) {
+
+        String scheduleExpression = CronExpressionBuilder.fromLocalDateTime(scheduleTime);
+
+        log.info("Creating rule '{}' with schedule: '{}' and {} targets",
+                ruleName, scheduleExpression, targets.size());
+
+        PutRuleRequest ruleRequest = PutRuleRequest.builder()
+                .name(ruleName)
+                .scheduleExpression(scheduleExpression)
+                .state(RuleState.ENABLED)
+                .description(description != null ? description : "Rule for: " + scheduleTime)
+                .eventBusName(eventBusName)
+                .build();
+
+        return eventBridgeAsyncClient.putRule(ruleRequest)
+                .thenCompose(ruleResponse -> {
+                    log.info("Rule created: {}, ARN: {}", ruleName, ruleResponse.ruleArn());
+
+                    PutTargetsRequest targetsRequest = PutTargetsRequest.builder()
+                            .rule(ruleName)
+                            .eventBusName(eventBusName)
+                            .targets(targets)
+                            .build();
+
+                    return eventBridgeAsyncClient.putTargets(targetsRequest)
+                            .thenCompose(targetsResponse -> {
+                                if (!targetsResponse.failedEntryCount().equals(0)) {
+                                    log.error("Failed to add some targets: {}", targetsResponse.failedEntries());
+                                    return CompletableFuture.failedFuture(
+                                            new RuntimeException("Failed to add targets to rule: " + ruleName));
+                                }
+
+                                log.info("Added {} targets to rule: {}", targets.size(), ruleName);
+
+                                List<CompletableFuture<AddPermissionResponse>> permissionFutures = targets.stream()
+                                        .filter(target -> target.arn() != null && target.arn().contains("lambda"))
+                                        .map(target -> addPermissionForEventBridge(ruleName, target.arn())).toList();
+
+                                if (permissionFutures.isEmpty()) {
+                                    return CompletableFuture.completedFuture(new EventBridgeRuleRecord(
+                                            ruleName, scheduleExpression,
+                                            targets.stream().map(Target::arn).collect(Collectors.joining(",")),
+                                            true, description, null));
+                                }
+
+                                return CompletableFuture.allOf(permissionFutures.toArray(new CompletableFuture[0]))
+                                        .thenApply(v -> new EventBridgeRuleRecord(
+                                                ruleName, scheduleExpression,
+                                                targets.stream().map(Target::arn).collect(Collectors.joining(",")),
+                                                true, description, null));
+                            });
+                })
+                .exceptionally(ex -> {
+                    log.error("Failed to create rule: {}", ruleName, ex);
+                    throw new RuntimeException("Failed to create EventBridge rule", ex);
                 });
     }
 }

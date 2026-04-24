@@ -5,7 +5,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 'python'))
-from telegram_bot.TelegramBotService import TelegramBotService
+from TelegramBotService import TelegramBotService
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -13,7 +13,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8791705854:AAFRWOaGHT0n84Myu6R-nkh-C80cd4ivFpc')
+TELEGRAM_TOKEN = os.environ.get('TELEGRAM_TOKEN', 'token')
 API_BASE_URL = os.environ.get('API_BASE_URL', 'http://localhost:8090')
 
 bot_service = TelegramBotService(API_BASE_URL)
