@@ -44,9 +44,12 @@ function LoginForm() {
     const handleRegister = async (userRequest: UserRegisterRequest) => {
         try {
             await RegisterUser(userRequest);
+            await LoginUser(userRequest);
         } catch (error: any) {
             throw error;
         }
+
+        router.push("/reminders");
         setUser(defaultValues);
     }
 
