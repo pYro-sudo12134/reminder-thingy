@@ -191,7 +191,8 @@ public class AuthResource {
         var user = userOpt.get();
         return Response.ok(Map.of(
                 "username", username,
-                "userId", String.valueOf(user.getId())
+                "userId", String.valueOf(user.getId()),
+                "email", user.getEmail()
         )).build();
     }
 

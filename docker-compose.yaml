@@ -257,6 +257,11 @@ services:
       - SMTP_USERNAME=${SMTP_USERNAME:-losik2006@gmail.com}
       - SMTP_PASSWORD=${SMTP_PASSWORD}
       - FROM_EMAIL=${FROM_EMAIL:-losik2006@gmail.com}
+      - CORS_ALLOWED_ORIGINS=http://localhost:3015
+      - CORS_ALLOWED_METHODS=GET, POST, PUT, DELETE, OPTIONS
+      - CORS_ALLOWED_HEADERS=Origin, X-Requested-With, Content-Type, Accept, Authorization
+      - CORS_MAX_AGE=3600
+      - CORS_ALLOW_CREDENTIALS=true
       - SMTP_SSL=${SMTP_SSL:-false}
       - SMTP_TLS=${SMTP_TLS:-true}
       - SMTP_AUTH=${SMTP_AUTH:-true}
