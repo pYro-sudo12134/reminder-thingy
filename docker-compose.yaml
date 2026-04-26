@@ -375,6 +375,27 @@ services:
       retries: 3
       start_period: 30s
 
+
+  reminder-frontend:
+    build:
+      context: ./reminder-frontend
+      dockerfile: Dockerfile
+    image: reminder-frontend:1.0.0
+    container_name: reminder-frontend
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://reminder-app:8090
+    ports:
+      - "3015:3015"
+    depends_on:
+      - reminder-app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3015/"] 
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s 
+
+
 networks:
   reminder-network:
     driver: bridge
