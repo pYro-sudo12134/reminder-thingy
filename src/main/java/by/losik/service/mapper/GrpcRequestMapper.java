@@ -11,7 +11,9 @@ import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
@@ -58,7 +60,10 @@ public class GrpcRequestMapper {
      */
     public ParsedResult mapResponseToResult(ParseResponse response) {
         try {
-            LocalDateTime scheduledTime = extractDateTime(response.getParsed().getTimeExpression());
+            LocalDateTime scheduledTime = extractDateTime(response.getParsed().getTimeExpression())
+                    .atOffset(ZoneOffset.UTC)
+                    .withOffsetSameInstant(ZoneOffset.ofHours(3))
+                    .toLocalDateTime();
 
             List<Entity> entities = response.getParsed().getEntitiesList().stream()
                     .map(this::mapProtoEntity)
@@ -138,7 +143,7 @@ public class GrpcRequestMapper {
                     return LocalDateTime.now().plusHours(1);
                 }
 
-                isoDatetime = isoDatetime.replace("{today}", java.time.LocalDate.now().toString());
+                isoDatetime = isoDatetime.replace("{today}", LocalDate.now().toString());
 
                 for (DateTimeFormatter formatter : DATETIME_FORMATS) {
                     try {
