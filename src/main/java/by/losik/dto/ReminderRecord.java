@@ -45,6 +45,7 @@ public record ReminderRecord(
         @JsonProperty("status")
         ReminderStatus status,
 
+        @Deprecated
         @JsonProperty("notification_sent")
         boolean notificationSent,
 

@@ -201,7 +201,6 @@ public class ReminderResource {
                     response.put("scheduledTime", reminder.scheduledTime().toString());
                     response.put("status", reminder.status().toString());
                     response.put("createdAt", reminder.createdAt().toString());
-                    response.put("notificationSent", reminder.notificationSent());
                     response.put("intent", reminder.intent());
                     response.put("ruleName", reminder.eventBridgeRuleName());
 
@@ -267,7 +266,6 @@ public class ReminderResource {
                                 map.put("scheduledTime", reminder.scheduledTime().toString());
                                 map.put("status", reminder.status().toString());
                                 map.put("createdAt", reminder.createdAt().toString());
-                                map.put("notificationSent", reminder.notificationSent());
                                 map.put("intent", reminder.intent());
                                 map.put("ruleName", reminder.eventBridgeRuleName());
                                 return map;
