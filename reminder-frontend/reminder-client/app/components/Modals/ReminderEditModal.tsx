@@ -47,14 +47,14 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
         let isValid = true;
 
         if (extractedAction.trim().length === 0) {
-            setExtractedActionError("Извлечённое действие обязательно");
+            setExtractedActionError("Extracted action is required");
             isValid = false;
         } else {
             setExtractedActionError("");
         }
 
         if (!scheduledTime) {
-            setScheduledTimeError("Плановая дата обязательна");
+            setScheduledTimeError("Target date is required");
             isValid = false;
         } else {
             setScheduledTimeError("");
@@ -92,41 +92,41 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
     };
 
     return (
-        <Modal opened={isOpen} title="Редактирование напоминания" onClose={handleCancel}>
+        <Modal opened={isOpen} title="Edit Reminder" onClose={handleCancel}>
             <Stack>
                 <TextInput
-                    label="Оригинальная запись"
+                    label="Original record"
                     value={originalText}
                     onChange={(e) => setOriginalText(e.target.value)}
-                    placeholder="Введите оригинальный текст напоминания"
+                    placeholder="Enter original record"
                     disabled
                 />
                 <TextInput
-                    label="Извлечённое действие"
+                    label="Extracted action"
                     value={extractedAction}
                     onChange={(e) => setExtractedAction(e.target.value)}
-                    placeholder="Введите извлечённое действие"
+                    placeholder="Enter extracted action"
                     error={showErrors ? extractedActionError : false}
                 />
                 <TextInput
-                    label="Плановая дата и время"
+                    label="Target date and time"
                     type="datetime-local"
                     value={scheduledTime}
                     onChange={(e) => setScheduledTime(e.target.value)}
                     error={showErrors ? scheduledTimeError : false}
                 />
                 <Select
-                    label="Статус"
-                    placeholder="Выберите статус"
+                    label="Status"
+                    placeholder="Select status"
                     value={status}
                     onChange={(value) => value && setStatus(value)}
                     data={[
-                        { value: "scheduled", label: "Запланировано" },
-                        { value: "completed", label: "Выполнено" },
-                        { value: "cancelled", label: "Отменено" }
+                        { value: "scheduled", label: "Scheduled" },
+                        { value: "completed", label: "Completed" },
+                        { value: "cancelled", label: "Cancelled" }
                     ]}
                 />
-                <Button onClick={handleOnOk}>Обновить напоминание</Button>
+                <Button onClick={handleOnOk}>Update Reminder</Button>
             </Stack>
         </Modal>
     );

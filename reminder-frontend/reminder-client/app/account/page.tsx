@@ -47,7 +47,7 @@ const handleGenerateCode = async () => {
     
   } catch (error) {
     console.error('Failed to generate code:', error);
-    setErrorMessage("Не удалось сгенерировать код. Попробуйте позже.");
+    setErrorMessage("Failed to generate code. Try later.");
     setShowError(true);
   } finally {
     setIsGenerating(false);
@@ -103,8 +103,8 @@ const handleGenerateCode = async () => {
         />
         
         <TelegramBindCard
-          cardTitle="Привязка Telegram"
-          buttonText="Сгенерировать код"
+          cardTitle="Link your Telegram"
+          buttonText="Generate Code"
           onGenerateClick={handleGenerateCode}
           code={telegramCode}
           loading={isGenerating}

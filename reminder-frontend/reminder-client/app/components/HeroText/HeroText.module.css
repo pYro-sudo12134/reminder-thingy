@@ -45,7 +45,8 @@
   font-weight: 800;
   font-size: 40px;
   letter-spacing: -1px;
-  color: #ffffff;
+  /* color: #ffffff; */
+  color: var(--mantine-color-text); 
   margin-bottom: var(--mantine-spacing-xs);
   font-family: Outfit, var(--mantine-font-family);
 }
