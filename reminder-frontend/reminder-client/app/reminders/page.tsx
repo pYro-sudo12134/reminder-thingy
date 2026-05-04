@@ -268,8 +268,8 @@ export default function RemindersPage() {
             mediaRecorder.start(1000);
             setIsRecording(true);
         } catch (error) {
-            console.error('Ошибка доступа к микрофону:', error);
-            setErrorMessage('Ошибка доступа к микрофону')
+            console.error('Microphone access error:', error);
+            setErrorMessage('Microphone access error.')
             setShowError(true);
         }
     };
@@ -299,8 +299,8 @@ export default function RemindersPage() {
                     setReminders(mappedReminders);
                     setFilteredReminders(mappedReminders);
                 } catch (error) {
-                    console.error('Ошибка обработки аудио:', error);
-                    setErrorMessage('Ошибка обработки аудио')
+                    console.error('An error occured during audio processing:', error);
+                    setErrorMessage('An error occured during audio processing.')
                     setShowError(true);
                 } finally {
                     if (streamRef.current) {
@@ -391,7 +391,6 @@ export default function RemindersPage() {
                 />
             )}
             
-            {/* Кнопка записи в правом нижнем углу */}
             <div style={{
                 position: 'fixed',
                 bottom: '24px',

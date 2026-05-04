@@ -28,35 +28,36 @@ export function ReminderInfoModal({ isOpen, handleClose, values }: Props) {
                 <Modal.Body style={{ padding: '4%', paddingTop: '2%' }}>
                     <Stack gap="md">
                         <div>
-                            <Text fw={500} size="sm" c="dimmed">Оригинальная запись</Text>
+                            <Text fw={500} size="sm" c="dimmed">Original record</Text>
                             <Text style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                                 {values.originalText || "—"}
                             </Text>
                         </div>
                         <div>
-                            <Text fw={500} size="sm" c="dimmed">Плановая дата и время</Text>
+                            <Text fw={500} size="sm" c="dimmed">Scheduled date and time</Text>
                             <Text fw={600}>
                                 {formatDateTime(values.scheduledTime)}
                             </Text>
                         </div>
                         <div>
-                            <Text fw={500} size="sm" c="dimmed">Статус</Text>
+                            <Text fw={500} size="sm" c="dimmed">Status</Text>
                                 {translateStatus(values.status)}
                         </div>
                         <div>
-                            <Text fw={500} size="sm" c="dimmed">Дата создания</Text>
+                            <Text fw={500} size="sm" c="dimmed">Created at</Text>
                             <Text fw={600}>
                                 {formatDateTime(values.createdAt)}
                             </Text>
                         </div>
-                        <div>
-                            <Text fw={500} size="sm" c="dimmed">Уведомление отправлено</Text>
+                        {/* Всегда будет false, поэтому пока не используем */}
+                        {/* <div>
+                            <Text fw={500} size="sm" c="dimmed">Notification is sent</Text>
                             <Text fw={600} c={values.notificationSent ? "green" : "gray"}>
-                                {values.notificationSent ? "Да" : "Нет"}
+                                {values.notificationSent ? "Yes" : "No"}
                             </Text>
-                        </div>
+                        </div> */} 
                         <div>
-                            <Text fw={500} size="sm" c="dimmed">Email пользователя</Text>
+                            <Text fw={500} size="sm" c="dimmed">User's email</Text>
                             <Text fw={600}>
                                 {values.userEmail}
                             </Text>

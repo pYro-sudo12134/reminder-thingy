@@ -50,8 +50,8 @@ export function TelegramBindCard({
       </Text>
       <Stack gap="md" style={{ marginTop: 'auto' }}>
         <TextInput
-          label="Код для бота"
-          placeholder="Нажмите кнопку для генерации"
+          label="Binding Code"
+          placeholder="Press button below to generate"
           value={code || ''}
           readOnly
           rightSection={

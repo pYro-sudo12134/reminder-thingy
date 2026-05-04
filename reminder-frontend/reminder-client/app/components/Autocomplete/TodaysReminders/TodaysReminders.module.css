@@ -1,0 +1,16 @@
+.widget {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  border-radius: 12px;
+  padding: 20px;
+  background-color: var(--mantine-color-body);
+  border: 1px solid var(--mantine-color-gray-3);
+}
+
+[data-mantine-color-scheme="dark"] .widget {
+  border-color: var(--mantine-color-dark-4);
+}

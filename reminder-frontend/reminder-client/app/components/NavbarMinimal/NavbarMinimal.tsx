@@ -5,12 +5,14 @@ import {
   IconCalendar,
   IconUser,
   IconLogout,
+  IconSunMoon
 } from '@tabler/icons-react';
-import { Center, Stack, Tooltip, UnstyledButton } from '@mantine/core';
+import { Center, Stack, Tooltip, UnstyledButton, useMantineColorScheme } from '@mantine/core';
 import classes from './NavbarMinimal.module.css';
 import Link from 'next/link';
 import { MantineLogo } from '@mantinex/mantine-logo';
 import { LogoutUser } from '../../services/users/UserService';
+import { ReminderLogo } from './ReminderLogo';
 
 interface NavbarLinkProps {
   icon: typeof IconCalendar;
@@ -37,6 +39,7 @@ function NavbarLink({ icon: Icon, label, href, active }: NavbarLinkProps) {
 
 export function NavbarMinimal() {
   const pathname = usePathname();
+  const { toggleColorScheme } = useMantineColorScheme();
 
   const handleLogout = async () => {
     try {
@@ -52,7 +55,7 @@ export function NavbarMinimal() {
       <Center className={classes.logo}>
         <Tooltip label="Home" position="right" transitionProps={{ duration: 0 }}>
           <UnstyledButton component={Link} href="/" className={classes.logoLink} aria-label="Home">
-            <MantineLogo type="mark" size={30} />
+            <ReminderLogo src="/ReminderLogo.png" size={40} />
           </UnstyledButton>
         </Tooltip>
       </Center>
@@ -76,6 +79,17 @@ export function NavbarMinimal() {
 
       <div>
         <Stack justify="center" gap={0}>
+
+          <Tooltip label="Change Theme" position="right" transitionProps={{ duration: 0 }}>
+            <UnstyledButton
+              className={classes.link}
+              onClick={toggleColorScheme}
+              aria-label="Toggle Theme"
+            >
+              <IconSunMoon size={20} stroke={1.5} />
+            </UnstyledButton>
+          </Tooltip>
+
           <Tooltip label="Logout" position="right" transitionProps={{ duration: 0 }}>
             <UnstyledButton
               className={classes.link}
