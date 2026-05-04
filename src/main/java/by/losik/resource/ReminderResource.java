@@ -205,6 +205,8 @@ public class ReminderResource {
                     response.put("intent", reminder.intent());
                     response.put("ruleName", reminder.eventBridgeRuleName());
 
+                    log.info("Sending to front: scheduledTime={}", reminder.scheduledTime());
+
                     return Response.ok(response).build();
                 })
                 .exceptionally(ex -> {
@@ -254,6 +256,8 @@ public class ReminderResource {
 
                     List<Map<String, Object>> reminderList = filteredReminders.parallelStream()
                             .map(reminder -> {
+                                log.info("Sending to front: scheduledTime={}", reminder.scheduledTime());
+
                                 Map<String, Object> map = new HashMap<>();
                                 map.put("reminderId", reminder.reminderId());
                                 map.put("userId", reminder.userId());

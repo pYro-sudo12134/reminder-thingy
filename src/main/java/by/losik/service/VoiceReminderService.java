@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.eventbridge.model.Target;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -128,7 +129,7 @@ public class VoiceReminderService {
 
                     ReminderRecord reminder = new ReminderRecord(
                             reminderId, userId, userEmail, transcribedText,
-                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(),
+                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(ZoneId.of("UTC+3")),
                             ReminderRecord.ReminderStatus.SCHEDULED, false,
                             parsed.intent(), null
                     );
@@ -166,7 +167,7 @@ public class VoiceReminderService {
 
                                     ReminderRecord reminderWithRule = new ReminderRecord(
                                             reminderId, userId, userEmail, transcribedText,
-                                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(),
+                                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(ZoneId.of("UTC+3")),
                                             ReminderRecord.ReminderStatus.SCHEDULED, false,
                                             parsed.intent(),
                                             rule.ruleName()

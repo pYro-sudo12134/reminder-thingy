@@ -15,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -108,7 +109,7 @@ public class GRPCService implements AutoCloseable {
      * @return ParsedResult с дефолтными значениями
      */
     private ParsedResult fallbackParse(String text, String language) {
-        LocalDateTime scheduledTime = LocalDateTime.now().plusHours(1);
+        LocalDateTime scheduledTime = LocalDateTime.now(ZoneId.of("UTC+3")).plusHours(1);
 
         return new ParsedResult(
                 scheduledTime,

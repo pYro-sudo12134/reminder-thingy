@@ -60,10 +60,7 @@ public class GrpcRequestMapper {
      */
     public ParsedResult mapResponseToResult(ParseResponse response) {
         try {
-            LocalDateTime scheduledTime = extractDateTime(response.getParsed().getTimeExpression())
-                    .atOffset(ZoneOffset.UTC)
-                    .withOffsetSameInstant(ZoneOffset.ofHours(3))
-                    .toLocalDateTime();
+            LocalDateTime scheduledTime = extractDateTime(response.getParsed().getTimeExpression());
 
             List<Entity> entities = response.getParsed().getEntitiesList().stream()
                     .map(this::mapProtoEntity)
