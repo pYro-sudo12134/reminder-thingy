@@ -77,7 +77,7 @@ export function ReminderCard({ item, onOpen, onEdit, onDelete }: ReminderCardPro
                     {item.actDescription}
                 </Text>
                 <Text c="dimmed" size="sm">
-                    Плановая дата: {formatDateTime(item.scheduledTime)}
+                    Scheduled date: {formatDateTime(item.scheduledTime)}
                 </Text>
             </div>
             <Group gap="xs">

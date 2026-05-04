@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { MantineProvider } from "@mantine/core";
+import "./globals.css";
 import "@mantine/core/styles.css";
 import { NavbarMinimal } from "./components/NavbarMinimal/NavbarMinimal";
 

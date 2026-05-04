@@ -95,7 +95,7 @@ export function AuthenticationForm(props: FormProps) {
     return (
         <Paper radius="md" p="lg" withBorder={true} style={{ width: "20%", minWidth: "370px" }}>
             <Text size="lg" fw={500}>
-                Welcome to Reminder, please log in or create an account.
+                Welcome to Reminder-Thingy, please log in or create an account.
             </Text>
 
             <Group grow mb="md" mt="md">

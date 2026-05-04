@@ -1,5 +1,9 @@
-@import "tailwindcss";
+/* @import "tailwindcss"; */
 
-body {
+/* body {
   font-family: Arial, Helvetica, sans-serif;
+} */
+
+[data-mantine-color-scheme="light"] body {
+  background-color: #eef1f5; 
 }

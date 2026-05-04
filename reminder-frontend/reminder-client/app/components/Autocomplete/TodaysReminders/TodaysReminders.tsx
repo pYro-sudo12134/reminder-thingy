@@ -3,6 +3,7 @@
 import formatDateTime from "@/app/utility/LocaleTimeTranslator";
 import { Box, List, ThemeIcon, Text } from "@mantine/core";
 import { IconCircleCheck, IconCircleDashed, IconCircleDashedX } from "@tabler/icons-react";
+import classes from './TodaysReminders.module.css';
 
 export interface TodayReminder {
   id: string;
@@ -48,19 +49,9 @@ function getIconForStatus(status: string) {
 export function TodaysReminders({ reminders }: TodaysRemindersProps) {
   return (
     <Box
-      style={{
-        position: "absolute",
-        bottom: "24px",
-        right: "24px",
-        width: "320px",
-        maxHeight: "400px",
-        overflowY: "auto",
-        borderRadius: "12px",
-        padding: "20px",
-        border: "1px solid rgba(255, 255, 255, 0.5)",
-      }}
+      className={classes.widget}
     >
-      <Text size="lg" fw={700} style={{ marginBottom: "16px", color: "#fff" }}>
+      <Text size="lg" fw={700} c="text" style={{ marginBottom: "16px", color: "#fff" }}>
         What's Happening Today
       </Text>
       {reminders.length === 0 ? (
@@ -76,7 +67,8 @@ export function TodaysReminders({ reminders }: TodaysRemindersProps) {
               paddingLeft: 0,
             },
             item: {
-              color: "#fff",
+              // color: "#fff",
+              color: "var(--mantine-color-text)",
               fontWeight: 500,
               maxWidth: "100%",
               display: "flex",
@@ -116,9 +108,9 @@ export function TodaysReminders({ reminders }: TodaysRemindersProps) {
                 </span>
                 <Text
                   component="span"
+                  c="dimmed"
                   size="xs"
                   style={{
-                    color: "rgba(255, 255, 255, 0.5)",
                     whiteSpace: "nowrap",
                     flexShrink: 0,
                   }}
