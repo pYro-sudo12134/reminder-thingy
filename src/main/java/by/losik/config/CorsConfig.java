@@ -23,7 +23,7 @@ import com.google.inject.Singleton;
 public class CorsConfig {
 
     /** Allowed origins по умолчанию */
-    private static final String DEFAULT_ALLOWED_ORIGINS = "*";
+    private static final String DEFAULT_ALLOWED_ORIGINS = "http://localhost:3015";
 
     /** Allowed methods по умолчанию */
     private static final String DEFAULT_ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";

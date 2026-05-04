@@ -349,6 +349,14 @@ public class EventBridgeService {
                 .thenApply(response -> null);
     }
 
+    private String extractFunctionNameFromArn(String arn) {
+        String[] parts = arn.split(":");
+        if (parts.length >= 7 && parts[5].startsWith("function")) {
+            return parts[parts.length - 1];
+        }
+        return arn;
+    }
+
     private CompletableFuture<AddPermissionResponse> addPermissionForEventBridge(
             String ruleName,
             String targetArn) {
@@ -387,36 +395,7 @@ public class EventBridgeService {
                 });
     }
 
-    private String extractFunctionNameFromArn(String arn) {
-        String[] parts = arn.split(":");
-        if (parts.length >= 7 && parts[5].startsWith("function")) {
-            return parts[parts.length - 1];
-        }
-        return arn;
-    }
-
-    @Deprecated
-    public CompletableFuture<byte[]> invokeLambda(String functionArn, String payload) {
-        String functionName = extractFunctionNameFromArn(functionArn);
-
-        log.info("Invoking Lambda: {} with payload: {}", functionName, payload);
-
-        software.amazon.awssdk.services.lambda.model.InvokeRequest invokeRequest =
-                software.amazon.awssdk.services.lambda.model.InvokeRequest.builder()
-                        .functionName(functionName)
-                        .payload(SdkBytes.fromUtf8String(payload))
-                        .build();
-
-        return lambdaAsyncClient.invoke(invokeRequest)
-                .thenApply(response -> {
-                    log.info("Lambda invocation completed, status: {}", response.statusCode());
-                    return response.payload().asByteArray();
-                })
-                .exceptionally(ex -> {
-                    log.error("Failed to invoke Lambda: {}", functionName, ex);
-                    throw new RuntimeException("Lambda invocation failed", ex);
-                });
-    }
+    
 
     /**
      * Создает правило EventBridge с несколькими targets

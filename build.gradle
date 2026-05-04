@@ -196,8 +196,4 @@ shadowJar {
     }
 }
 
-tasks.jar {
-    exclude 'by/losik/lambda/**'
-}
-
 tasks.build.dependsOn shadowJar

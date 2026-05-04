@@ -115,19 +115,6 @@ def lambda_handler(event, context):
         
         logger.info(f"Напоминание {reminder_id} отправлено успешно")
 
-        try:
-            events_client.put_events(
-                Entries=[{
-                    'Source': 'by.losik.reminder',
-                    'DetailType': 'ReminderSent',
-                    'Detail': json.dumps(detail),
-                    'EventBusName': EVENT_BUS_NAME
-                }]
-            )
-            logger.info(f"Событие опубликовано в {EVENT_BUS_NAME}")
-        except Exception as e:
-            logger.warning(f"Не удалось опубликовать событие в {EVENT_BUS_NAME}: {e}")
-
         return {
             "statusCode": 200,
             "body": json.dumps({

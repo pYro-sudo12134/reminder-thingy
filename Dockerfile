@@ -6,7 +6,6 @@ ENV JAVA_TOOL_OPTIONS="-Dfile.encoding=UTF8"
 WORKDIR /app
 
 COPY build.gradle .
-COPY lambda/build.gradle lambda/build.gradle
 
 COPY src/main/proto src/main/proto
 COPY db/migration db/migration
@@ -14,19 +13,10 @@ COPY src/main/resources src/main/resources
 COPY src src
 COPY src/main/python src/main/python
 COPY web web
-COPY lambda lambda
-
-RUN echo "include 'lambda'" >> settings.gradle
 
 RUN gradle generateProto --no-daemon
 
-RUN gradle :lambda:shadowJar --no-daemon
-
 RUN gradle build --no-daemon -x test
-
-RUN find /app/lambda/build -name "*.jar" -type f | xargs ls -la || true
-RUN mkdir -p /app/build/libs && cp /app/lambda/build/libs/*.jar /app/build/libs/ 2>/dev/null || true
-RUN cp /app/build/libs/*.jar /app/build/libs/reminder-app.jar 2>/dev/null || true
 
 RUN find /app/build -name "*.jar" -type f | xargs ls -la
 RUN jar tf /app/build/libs/*.jar 2>/dev/null | head -20 || true
