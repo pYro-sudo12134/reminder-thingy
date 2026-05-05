@@ -24,9 +24,11 @@ export function HeroText() {
         </Container>
 
         <div className={classes.controls}>
+          <Link href="/about" passHref>
           <Button className={classes.control} size="lg" variant="default" color="gray">
             About Us
           </Button>
+          </Link>
           <Link href="/reminders" passHref>
             <Button className={classes.control} size="lg" style={{ marginLeft: '15px' }}>
               Manage Reminders
