@@ -48,6 +48,9 @@ class SMTPAdapter:
             msg['Date'] = formatdate(localtime=True)
             msg['Message-ID'] = make_msgid(domain=self.host.split('.')[-1] if '.' in self.host else 'localhost')
 
+            if html_content:
+                msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+
             msg.attach(MIMEText(text_content, 'plain', 'utf-8'))
             with self._get_connection() as server:
                 if self.username and self.password:

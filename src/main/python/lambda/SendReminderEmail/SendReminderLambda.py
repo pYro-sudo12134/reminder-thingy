@@ -24,11 +24,11 @@ SMTP_CONFIG = {
     'port': int(smtp_port_raw) if smtp_port_raw else 587,
     'use_tls': parse_bool(smtp_tls_raw),
     'use_ssl': parse_bool(smtp_ssl_raw),
-    'username': os.environ.get('SMTP_USERNAME', '') or 'losik2006@gmail.com',
+    'username': os.environ.get('SMTP_USERNAME', ''),
     'password': os.environ.get('SMTP_PASSWORD', '')
 }
 
-FROM_EMAIL = os.environ.get('FROM_EMAIL', '') or 'losik2006@gmail.com'
+FROM_EMAIL = os.environ.get('FROM_EMAIL', '')
 
 AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
 AWS_ENDPOINT_URL = os.environ.get('AWS_ENDPOINT_URL', '')
@@ -38,9 +38,6 @@ smtp_adapter = SMTPAdapter(SMTP_CONFIG)
 reminder_service = ReminderEmailService(smtp_adapter, FROM_EMAIL)
 
 sqs_client = boto3.client('sqs', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('sqs', region_name=AWS_REGION)
-events_client = boto3.client('events', region_name=AWS_REGION, endpoint_url=AWS_ENDPOINT_URL) if AWS_ENDPOINT_URL else boto3.client('events', region_name=AWS_REGION)
-EVENT_BUS_NAME = os.environ.get('EVENT_BUS_NAME_EMAIL', 'email-events')
-
 
 def send_to_dlq(detail: dict, error_message: str) -> None:
     try:
