@@ -1,7 +1,5 @@
 FROM eclipse-temurin:17-jdk-alpine AS builder
 
-RUN apk add --no-cache gradle
-
 WORKDIR /app
 COPY gradlew .
 COPY gradlew.bat .
