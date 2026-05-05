@@ -1,8 +1,9 @@
 
 import { ReminderItem } from "../cards/ReminderCard";
 import { ReminderUpdateRequest } from "../../services/reminders/ReminderService";
-import { Button, Modal, Stack, TextInput, Select } from "@mantine/core";
+import { Button, Modal, Stack, TextInput, Select, Transition } from "@mantine/core";
 import { useEffect, useState } from "react";
+import ErrorNotification from "../Notifications/ErrorNotification";
 
 interface Props {
     isOpen: boolean;
@@ -19,6 +20,10 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
     const [showErrors, setShowErrors] = useState(false);
     const [extractedActionError, setExtractedActionError] = useState("");
     const [scheduledTimeError, setScheduledTimeError] = useState("");
+
+    const [showPopupError, setShowPopupError] = useState(false);
+    const [popupErrorMessage, setPopupErrorMessage] = useState("");
+
 
     useEffect(() => {
         setOriginalText(values.originalText);
@@ -58,6 +63,14 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
             isValid = false;
         } else {
             setScheduledTimeError("");
+
+            const selectedDate = new Date(scheduledTime);
+            const now = new Date();
+            if (selectedDate.getTime() < now.getTime()) {
+                setPopupErrorMessage("Date cannot be in the past.");
+                setShowPopupError(true);
+                isValid = false;
+            }
         }
 
         setShowErrors(true);
@@ -93,6 +106,26 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
 
     return (
         <Modal opened={isOpen} title="Edit Reminder" onClose={handleCancel}>
+         <Transition mounted={showPopupError} transition="slide-down" duration={300} timingFunction="ease">
+        {(styles) => (
+          <div style={{
+            position: 'fixed',
+            top: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10000,
+            width: '90%',
+            maxWidth: '500px',
+          }}>
+            <div style={styles}>
+              <ErrorNotification
+                message={popupErrorMessage}
+                onClose={() => setShowPopupError(false)}
+              />
+            </div>
+          </div>
+        )}
+      </Transition>
             <Stack>
                 <TextInput
                     label="Original record"
