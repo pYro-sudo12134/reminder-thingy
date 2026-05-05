@@ -1,17 +1,16 @@
 FROM eclipse-temurin:17-jdk-alpine AS builder
 
+RUN apk add --no-cache gradle
+
 WORKDIR /app
 
-COPY gradlew .
-COPY gradlew.bat .
-COPY gradle gradle
 COPY build.gradle .
 
-RUN ./gradlew dependencies --no-daemon
+RUN gradle dependencies --no-daemon
 
 COPY src src
 
-RUN ./gradlew clean shadowJar -x test --no-daemon
+RUN gradle clean shadowJar -x test --no-daemon
 
 FROM eclipse-temurin:17-jre-alpine
 

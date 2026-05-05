@@ -22,19 +22,21 @@ class SMTPAdapter:
 
     @contextmanager
     def _get_connection(self):
-        if self.use_ssl:
-            conn = smtplib.SMTP_SSL(self.host, self.port, timeout=10)
-        else:
-            conn = smtplib.SMTP(self.host, self.port, timeout=10)
-            if self.use_tls:
-                conn.starttls()
+        conn = None
         try:
+            if self.use_ssl:
+                conn = smtplib.SMTP_SSL(self.host, self.port, timeout=10)
+            else:
+                conn = smtplib.SMTP(self.host, self.port, timeout=10)
+                if self.use_tls:
+                    conn.starttls()
             yield conn
         finally:
-            try:
-                conn.quit()
-            except Exception:
-                pass
+            if conn:
+                try:
+                    conn.quit()
+                except Exception:
+                    pass
 
     def send(self, from_addr: str, to_addrs: list, subject: str,
              text_content: str, html_content: Optional[str] = None) -> Tuple[bool, Optional[str], Optional[str]]:

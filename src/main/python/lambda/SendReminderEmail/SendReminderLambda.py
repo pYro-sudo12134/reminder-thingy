@@ -10,10 +10,6 @@ from ReminderEmailService import ReminderEmailService
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-def get_env_or_default(key, default):
-    value = os.environ.get(key, '')
-    return default if value == '' else value
-
 def parse_bool(value):
     if value is None:
         return False
