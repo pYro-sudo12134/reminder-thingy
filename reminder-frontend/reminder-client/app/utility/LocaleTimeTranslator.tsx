@@ -2,7 +2,7 @@ export default function formatDateTime(date: Date | string): string {
     
     
     const dateStr = typeof date === 'string' ? date : date.toISOString();
-    const utcDate = new Date(dateStr.replace(' ', 'T') + 'Z');
+    const utcDate = new Date(dateStr.replace(' ', 'T'));
     return utcDate.toLocaleString("ru-RU", {
         day: "2-digit",
         month: "2-digit",
