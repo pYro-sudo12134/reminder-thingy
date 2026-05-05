@@ -12,6 +12,7 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ReminderAutocomplete } from "../components/ReminderAutocomplete";
 import ErrorNotification from "../components/Notifications/ErrorNotification";
+import SuccessNotification from "../components/Notifications/SuccessNotification";
 
 const defaultValues = {
     id: "",
@@ -57,6 +58,8 @@ export default function RemindersPage() {
     const [isSending, setIsSending] = useState(false);
     const [showError, setShowError] = useState(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
+    const [showSuccess, setShowSuccess] = useState(false); 
+    const [successMessage, setSuccessMessage] = useState<string | null>(null); 
     
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
@@ -291,7 +294,8 @@ export default function RemindersPage() {
                     const wavBlob = await convertToWav(audioBlob);
 
                     await recordVoiceReminder(currentUserId as string, currentUserEmail as string, wavBlob);
-
+                    setSuccessMessage("Reminder was successfully created!");
+                    setShowSuccess(true);
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                     const data = await getUserReminders(currentUserId as string, 50);
@@ -353,6 +357,26 @@ export default function RemindersPage() {
         )}
       </Transition>
         
+        <Transition mounted={showSuccess} transition="slide-down" duration={300} timingFunction="ease">
+        {(styles) => (
+          <div style={{
+            position: 'fixed',
+            top: '24px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 10000,
+            width: '90%',
+            maxWidth: '500px',
+          }}>
+            <div style={styles}>
+              <SuccessNotification
+                message={successMessage as string}
+                onClose={() => setShowSuccess(false)}
+              />
+            </div>
+          </div>
+        )}
+      </Transition>
 
         <div className="p-6">
             <h1 className="text-2xl font-bold mb-6">Reminders</h1>
