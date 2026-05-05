@@ -30,6 +30,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -549,7 +550,7 @@ public class ReminderResource {
         try {
             scheduledTime = LocalDateTime.parse(updateRequest.scheduledTime());
 
-            if (scheduledTime.isBefore(LocalDateTime.now())) {
+            if (scheduledTime.isBefore(LocalDateTime.now(ZoneId.of("UTC+3")))) {
                 asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("error", "scheduledTime must be in the future"))
                         .build());
@@ -584,7 +585,7 @@ public class ReminderResource {
             Map<String, Object> response = Map.of(
                     "reminderId", reminderId,
                     "updated", success,
-                    "timestamp", LocalDateTime.now().toString()
+                    "timestamp", LocalDateTime.now(ZoneId.of("UTC+3")).toString()
             );
 
             if (success) {
