@@ -11,7 +11,6 @@ import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.eventbridge.EventBridgeAsyncClient;
 import software.amazon.awssdk.services.eventbridge.model.DeleteRuleRequest;
 import software.amazon.awssdk.services.eventbridge.model.DescribeRuleRequest;
@@ -31,7 +30,7 @@ import software.amazon.awssdk.services.lambda.model.AddPermissionRequest;
 import software.amazon.awssdk.services.lambda.model.AddPermissionResponse;
 import software.amazon.awssdk.services.lambda.model.ResourceConflictException;
 
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
@@ -61,7 +60,7 @@ public class EventBridgeService {
 
     public CompletableFuture<EventBridgeRuleRecord> createScheduleRule(
             CreateRuleRequest request, String eventBusName) {
-        String scheduleExpression = CronExpressionBuilder.fromLocalDateTime(request.scheduleTime());
+        String scheduleExpression = CronExpressionBuilder.fromZonedDateTime(request.scheduleTime());
         String ruleName = request.ruleName() != null ?
                 request.ruleName() :
                 "reminder-rule-" + System.currentTimeMillis();
@@ -408,12 +407,12 @@ public class EventBridgeService {
      */
     public CompletableFuture<EventBridgeRuleRecord> createRuleWithMultipleTargets(
             String ruleName,
-            LocalDateTime scheduleTime,
+            ZonedDateTime scheduleTime,
             String eventBusName,
             List<Target> targets,
             String description) {
 
-        String scheduleExpression = CronExpressionBuilder.fromLocalDateTime(scheduleTime);
+        String scheduleExpression = CronExpressionBuilder.fromZonedDateTime(scheduleTime);
 
         log.info("Creating rule '{}' with schedule: '{}' and {} targets",
                 ruleName, scheduleExpression, targets.size());

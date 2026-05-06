@@ -8,7 +8,7 @@ import { GetUserLogin, IsAuthenticated } from "./services/users/UserService";
 import formatDateTime from "./utility/LocaleTimeTranslator";
 
 function isToday(dateString: string): boolean {
-  const date = new Date(dateString.replace(' ', 'T') + 'Z');
+  const date = new Date(dateString.replace(' ', 'T'));
   const today = new Date();
 
   return (

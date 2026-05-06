@@ -1,37 +1,28 @@
 package by.losik.util;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 
-/**
- * Утилитный класс для создания cron выражений AWS EventBridge.
- * <p>
- * Формат cron AWS EventBridge:
- * <pre>{@code cron(Minutes Hours Day-of-month Month Day-of-week Year)}</pre>
- * <p>
- * Важные правила:
- * <ul>
- *     <li>Если указан Day-of-month, Day-of-week должен быть ?</li>
- *     <li>Если указан Day-of-week, Day-of-month должен быть ?</li>
- *     <li>Нельзя одновременно указывать конкретные значения для обоих полей</li>
- *     <li>Поля не должны содержать ведущие нули</li>
- * </ul>
- */
 public final class CronExpressionBuilder {
 
-    /**
-     * Создаёт cron выражение для абсолютного времени.
-     * <p>
-     * Пример: {@code cron(0 12 15 3 ? 2026)} — 15 марта 2026 в 12:00
-     *
-     * @param dateTime дата и время запуска
-     * @return cron выражение в формате AWS EventBridge
-     */
     public static String fromLocalDateTime(LocalDateTime dateTime) {
         int minute = dateTime.getMinute();
         int hour = dateTime.getHour();
         int dayOfMonth = dateTime.getDayOfMonth();
         int month = dateTime.getMonthValue();
         int year = dateTime.getYear();
+
+        return String.format("cron(%d %d %d %d ? %d)", minute, hour, dayOfMonth, month, year);
+    }
+
+    public static String fromZonedDateTime(ZonedDateTime zonedDateTime) {
+        ZonedDateTime utc = zonedDateTime.withZoneSameInstant(ZoneOffset.UTC);
+        int minute = utc.getMinute();
+        int hour = utc.getHour();
+        int dayOfMonth = utc.getDayOfMonth();
+        int month = utc.getMonthValue();
+        int year = utc.getYear();
 
         return String.format("cron(%d %d %d %d ? %d)", minute, hour, dayOfMonth, month, year);
     }

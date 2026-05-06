@@ -30,14 +30,12 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
         setExtractedAction(values.actDescription);
         setStatus(values.status ? values.status.toLowerCase() : "");
         if (values.scheduledTime) {
-            
-            
-            const utcDate = new Date(values.scheduledTime + 'Z');
-            const year = utcDate.getFullYear();
-            const month = String(utcDate.getMonth() + 1).padStart(2, '0');
-            const day = String(utcDate.getDate()).padStart(2, '0');
-            const hours = String(utcDate.getHours()).padStart(2, '0');
-            const minutes = String(utcDate.getMinutes()).padStart(2, '0');
+            const date = new Date(values.scheduledTime);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
             setScheduledTime(`${year}-${month}-${day}T${hours}:${minutes}`);
         }
     }, [values]);
@@ -82,15 +80,7 @@ export function ReminderEditModal({ isOpen, values, handleUpdate, handleCancel }
             return;
         }
 
-        
-        
-        const localDate = new Date(scheduledTime);
-        const utcYear = localDate.getUTCFullYear();
-        const utcMonth = String(localDate.getUTCMonth() + 1).padStart(2, '0');
-        const utcDay = String(localDate.getUTCDate()).padStart(2, '0');
-        const utcHours = String(localDate.getUTCHours()).padStart(2, '0');
-        const utcMinutes = String(localDate.getUTCMinutes()).padStart(2, '0');
-        const scheduledTimeIso = `${utcYear}-${utcMonth}-${utcDay}T${utcHours}:${utcMinutes}:00`;
+        const scheduledTimeIso = `${scheduledTime}:00`;
 
         const updateRequest: ReminderUpdateRequest = {
             reminderId: values.id,

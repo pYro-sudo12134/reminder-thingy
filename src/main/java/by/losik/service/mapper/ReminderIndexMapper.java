@@ -10,53 +10,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Маппер для индекса напоминаний в OpenSearch.
- * <p>
- * Отвечает за:
- * <ul>
- *     <li>Создание маппинга индекса reminders</li>
- *     <li>Конвертацию ReminderRecord в Map для индексации</li>
- *     <li>Конвертацию SearchHit в ReminderRecord</li>
- * </ul>
- *
- * @see OpenSearchConfig
- */
 @Singleton
 public class ReminderIndexMapper {
 
     private static final Logger log = LoggerFactory.getLogger(ReminderIndexMapper.class);
 
+    private static final DateTimeFormatter ISO_FORMATTER = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
+
     private final OpenSearchConfig config;
 
-    /**
-     * Создаёт маппер с конфигурацией.
-     *
-     * @param config конфигурация OpenSearch
-     */
     @Inject
     public ReminderIndexMapper(OpenSearchConfig config) {
         this.config = config;
     }
 
-    /**
-     * Строит маппинг для индекса напоминаний.
-     * <p>
-     * Включает:
-     * <ul>
-     *     <li>autocomplete_analyzer с edge_ngram фильтром</li>
-     *     <li>Русский анализатор для original_text и extracted_action</li>
-     *     <li>Keyword поля для user_id, status, eventbridge_rule_name</li>
-     *     <li>Date поля для scheduled_time, created_at, updated_at</li>
-     * </ul>
-     *
-     * @return XContentBuilder с маппингом
-     * @throws IOException если не удалось создать маппинг
-     */
     public XContentBuilder buildReminderIndexMapping() throws IOException {
         return XContentFactory.jsonBuilder()
                 .startObject()
@@ -144,35 +116,22 @@ public class ReminderIndexMapper {
                 .endObject();
     }
 
-    /**
-     * Конвертирует ReminderRecord в Map для индексации в OpenSearch.
-     *
-     * @param reminder напоминание для конвертации
-     * @return Map с полями для индексации
-     */
     public Map<String, Object> toIndexSource(ReminderRecord reminder) {
         Map<String, Object> source = new HashMap<>();
         source.put("user_id", reminder.userId());
         source.put("user_email", reminder.userEmail());
         source.put("original_text", reminder.originalText());
         source.put("extracted_action", reminder.extractedAction());
-        source.put("scheduled_time", reminder.scheduledTime());
+        source.put("scheduled_time", reminder.scheduledTime() != null ? reminder.scheduledTime().format(ISO_FORMATTER) : null);
         source.put("status", reminder.status().toString());
         source.put("notification_sent", reminder.notificationSent());
-        source.put("created_at", reminder.createdAt());
-        source.put("updated_at", reminder.createdAt());
+        source.put("created_at", reminder.createdAt() != null ? reminder.createdAt().format(ISO_FORMATTER) : null);
+        source.put("updated_at", reminder.createdAt() != null ? reminder.createdAt().format(ISO_FORMATTER) : null);
         source.put("intent", reminder.intent());
         source.put("eventbridge_rule_name", reminder.eventBridgeRuleName());
         return source;
     }
 
-    /**
-     * Конвертирует Map из OpenSearch в ReminderRecord.
-     *
-     * @param source Map с данными из OpenSearch
-     * @param id ID напоминания
-     * @return ReminderRecord или null если конвертация не удалась
-     */
     public ReminderRecord mapToReminderRecord(Map<String, Object> source, String id) {
         try {
             return new ReminderRecord(
@@ -181,8 +140,8 @@ public class ReminderIndexMapper {
                     (String) source.get("user_email"),
                     (String) source.get("original_text"),
                     (String) source.get("extracted_action"),
-                    parseDateTime((String) source.get("scheduled_time")),
-                    parseDateTime((String) source.get("created_at")),
+                    parseZonedDateTime((String) source.get("scheduled_time")),
+                    parseZonedDateTime((String) source.get("created_at")),
                     ReminderRecord.ReminderStatus.valueOf((String) source.get("status")),
                     (Boolean) source.get("notification_sent"),
                     (String) source.get("intent"),
@@ -194,22 +153,16 @@ public class ReminderIndexMapper {
         }
     }
 
-    /**
-     * Парсит строку в LocalDateTime.
-     *
-     * @param dateTimeStr строка с датой и временем
-     * @return LocalDateTime или null если парсинг не удался
-     */
-    private LocalDateTime parseDateTime(String dateTimeStr) {
+    private ZonedDateTime parseZonedDateTime(String dateTimeStr) {
         if (dateTimeStr == null) {
             return null;
         }
 
         try {
-            return by.losik.util.DateTimeParser.parseLocalDateTime(dateTimeStr);
+            return by.losik.util.DateTimeParser.parseZonedDateTime(dateTimeStr, java.time.ZoneOffset.UTC);
         } catch (Exception e) {
             log.warn("Failed to parse date: {}, using current time", dateTimeStr);
-            return java.time.LocalDateTime.now();
+            return java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC);
         }
     }
 }

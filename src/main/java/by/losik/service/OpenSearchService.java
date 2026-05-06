@@ -38,7 +38,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -221,7 +222,7 @@ public class OpenSearchService {
      * @param time время для поиска
      * @return список напоминаний в диапазоне ±5 минут от времени
      */
-    public CompletableFuture<List<ReminderRecord>> findRemindersByTime(LocalDateTime time) {
+    public CompletableFuture<List<ReminderRecord>> findRemindersByTime(ZonedDateTime time) {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
@@ -231,8 +232,8 @@ public class OpenSearchService {
                         .must(QueryBuilders.termQuery("notification_sent", false));
 
                 RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("scheduled_time")
-                        .gte(time.minusMinutes(5))
-                        .lte(time.plusMinutes(5))
+                        .gte(time.minusMinutes(5).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                        .lte(time.plusMinutes(5).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
                         .format("strict_date_optional_time");
 
                 boolQuery.must(rangeQuery);
@@ -332,7 +333,7 @@ public class OpenSearchService {
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("status", status.toString());
                 updates.put("notification_sent", notificationSent);
-                updates.put("updated_at", LocalDateTime.now());
+                updates.put("updated_at", ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
 
                 UpdateRequest request = new UpdateRequest(config.getReminderIndexName(), reminderId)
                         .doc(updates, XContentType.JSON);
@@ -473,7 +474,7 @@ public class OpenSearchService {
             try {
                 Map<String, Object> updates = new HashMap<>();
                 updates.put("eventbridge_rule_name", ruleName);
-                updates.put("updated_at", LocalDateTime.now());
+                updates.put("updated_at", ZonedDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
 
                 UpdateRequest request = new UpdateRequest(config.getReminderIndexName(), reminderId)
                         .doc(updates, XContentType.JSON);
@@ -602,8 +603,8 @@ public class OpenSearchService {
      */
     public CompletableFuture<List<ReminderRecord>> findRemindersByTimeRange(
             String userId,
-            LocalDateTime startTime,
-            LocalDateTime endTime,
+            ZonedDateTime startTime,
+            ZonedDateTime endTime,
             int limit) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -616,8 +617,8 @@ public class OpenSearchService {
                 }
 
                 RangeQueryBuilder rangeQuery = QueryBuilders.rangeQuery("scheduled_time")
-                        .gte(startTime.format(DateTimeFormatter.ISO_DATE_TIME))
-                        .lte(endTime.format(DateTimeFormatter.ISO_DATE_TIME));
+                        .gte(startTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
+                        .lte(endTime.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME));
 
                 boolQuery.must(rangeQuery);
                 sourceBuilder.query(boolQuery);

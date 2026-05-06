@@ -10,8 +10,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.eventbridge.model.Target;
 
-import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -127,9 +128,12 @@ public class VoiceReminderService {
                     String reminderId = parsed.reminderId() != null ?
                             parsed.reminderId() : UUID.randomUUID().toString();
 
+                    ZonedDateTime scheduledTimeUtc = parsed.scheduledTime()
+                            .withZoneSameInstant(ZoneOffset.UTC);
+
                     ReminderRecord reminder = new ReminderRecord(
                             reminderId, userId, userEmail, transcribedText,
-                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(ZoneId.of("UTC+3")),
+                            parsed.action(), scheduledTimeUtc, ZonedDateTime.now(ZoneOffset.UTC),
                             ReminderRecord.ReminderStatus.SCHEDULED, false,
                             parsed.intent(), null
                     );
@@ -158,7 +162,7 @@ public class VoiceReminderService {
 
                                 return eventBridgeService.createRuleWithMultipleTargets(
                                         ruleName,
-                                        parsed.scheduledTime(),
+                                        scheduledTimeUtc,
                                         eventBridgeConfig.getEmailEventBusName(),
                                         targets,
                                         "Reminder: " + parsed.action()
@@ -167,7 +171,7 @@ public class VoiceReminderService {
 
                                     ReminderRecord reminderWithRule = new ReminderRecord(
                                             reminderId, userId, userEmail, transcribedText,
-                                            parsed.action(), parsed.scheduledTime(), LocalDateTime.now(ZoneId.of("UTC+3")),
+                                            parsed.action(), scheduledTimeUtc, ZonedDateTime.now(ZoneOffset.UTC),
                                             ReminderRecord.ReminderStatus.SCHEDULED, false,
                                             parsed.intent(),
                                             rule.ruleName()
@@ -339,7 +343,7 @@ public class VoiceReminderService {
      */
     public CompletableFuture<Boolean> updateReminder(String reminderId,
                                                      String extractedAction,
-                                                     LocalDateTime scheduledTime,
+                                                     ZonedDateTime scheduledTime,
                                                      ReminderRecord.ReminderStatus status,
                                                      String userEmail) {
 

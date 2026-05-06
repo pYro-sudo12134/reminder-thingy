@@ -29,8 +29,10 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.file.Files;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,6 +60,8 @@ import java.util.stream.Collectors;
 @Singleton
 public class ReminderResource {
     private static final Logger log = LoggerFactory.getLogger(ReminderResource.class);
+    private static final ZoneId USER_ZONE = ZoneId.of("UTC+3");
+    private static final DateTimeFormatter API_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssXXX");
     private final VoiceReminderService voiceReminderService;
     private final OpenSearchService openSearchService;
 
@@ -128,7 +132,7 @@ public class ReminderResource {
                                     "userEmail", userEmail,
                                     "status", "processing",
                                     "message", "Reminder is being processed",
-                                    "timestamp", LocalDateTime.now().toString()
+                                    "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                             );
 
                             asyncResponse.resume(Response.ok(response).build());
@@ -143,7 +147,7 @@ public class ReminderResource {
                         Map<String, Object> error = Map.of(
                                 "error", "Failed to process voice reminder",
                                 "message", ex.getMessage(),
-                                "timestamp", LocalDateTime.now().toString()
+                                "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                         );
 
                         asyncResponse.resume(Response.status(Response.Status.INTERNAL_SERVER_ERROR)
@@ -199,9 +203,9 @@ public class ReminderResource {
                     response.put("userEmail", reminder.userEmail());
                     response.put("originalText", reminder.originalText());
                     response.put("extractedAction", reminder.extractedAction());
-                    response.put("scheduledTime", reminder.scheduledTime().toString());
+                    response.put("scheduledTime", reminder.scheduledTime().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                     response.put("status", reminder.status().toString());
-                    response.put("createdAt", reminder.createdAt().toString());
+                    response.put("createdAt", reminder.createdAt().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                     response.put("intent", reminder.intent());
                     response.put("ruleName", reminder.eventBridgeRuleName());
 
@@ -264,9 +268,9 @@ public class ReminderResource {
                                 map.put("userEmail", reminder.userEmail());
                                 map.put("originalText", reminder.originalText());
                                 map.put("extractedAction", reminder.extractedAction());
-                                map.put("scheduledTime", reminder.scheduledTime().toString());
+                                map.put("scheduledTime", reminder.scheduledTime().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                                 map.put("status", reminder.status().toString());
-                                map.put("createdAt", reminder.createdAt().toString());
+                                map.put("createdAt", reminder.createdAt().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                                 map.put("intent", reminder.intent());
                                 map.put("ruleName", reminder.eventBridgeRuleName());
                                 return map;
@@ -278,7 +282,7 @@ public class ReminderResource {
                             "total", reminderList.size(),
                             "filtered", filteredReminders.size(),
                             "reminders", reminderList,
-                            "timestamp", LocalDateTime.now().toString()
+                            "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                     );
 
                     return Response.ok(response).build();
@@ -314,7 +318,7 @@ public class ReminderResource {
                     Map<String, Object> response = Map.of(
                             "reminderId", reminderId,
                             "deleted", success,
-                            "timestamp", LocalDateTime.now().toString()
+                            "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                     );
 
                     if (success) {
@@ -417,7 +421,7 @@ public class ReminderResource {
                 .thenApply(stats -> {
                     Map<String, Object> response = new java.util.HashMap<>(stats);
                     response.put("userId", userId);
-                    response.put("timestamp", LocalDateTime.now().toString());
+                    response.put("timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER));
 
                     return Response.ok(response).build();
                 })
@@ -487,7 +491,7 @@ public class ReminderResource {
                     response.put("userId", result.userId());
                     response.put("query", result.query());
                     response.put("total", result.total());
-                    response.put("timestamp", LocalDateTime.now().toString());
+                    response.put("timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER));
 
                     List<Map<String, Object>> suggestions = result.suggestions().stream()
                             .map(suggestion -> {
@@ -546,11 +550,12 @@ public class ReminderResource {
             return;
         }
 
-        LocalDateTime scheduledTime;
+        ZonedDateTime scheduledTime;
         try {
-            scheduledTime = LocalDateTime.parse(updateRequest.scheduledTime());
+            scheduledTime = by.losik.util.DateTimeParser.parseZonedDateTime(updateRequest.scheduledTime(), USER_ZONE)
+                    .withZoneSameInstant(ZoneOffset.UTC);
 
-            if (scheduledTime.isBefore(LocalDateTime.now(ZoneId.of("UTC+3")))) {
+            if (scheduledTime.isBefore(ZonedDateTime.now(ZoneOffset.UTC))) {
                 asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
                         .entity(Map.of("error", "scheduledTime must be in the future"))
                         .build());
@@ -585,7 +590,7 @@ public class ReminderResource {
             Map<String, Object> response = Map.of(
                     "reminderId", reminderId,
                     "updated", success,
-                    "timestamp", LocalDateTime.now(ZoneId.of("UTC+3")).toString()
+                    "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
             );
 
             if (success) {
@@ -628,7 +633,7 @@ public class ReminderResource {
                     Map<String, Object> response = Map.of(
                             "reminderId", reminderId,
                             "cancelled", success,
-                            "timestamp", LocalDateTime.now().toString()
+                            "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                     );
 
                     if (success) {
@@ -689,12 +694,14 @@ public class ReminderResource {
             return;
         }
 
-        LocalDateTime startDateTime;
-        LocalDateTime endDateTime;
+        ZonedDateTime startDateTime;
+        ZonedDateTime endDateTime;
 
         try {
-            startDateTime = LocalDateTime.parse(startTime);
-            endDateTime = LocalDateTime.parse(endTime);
+            startDateTime = by.losik.util.DateTimeParser.parseZonedDateTime(startTime, USER_ZONE)
+                    .withZoneSameInstant(ZoneOffset.UTC);
+            endDateTime = by.losik.util.DateTimeParser.parseZonedDateTime(endTime, USER_ZONE)
+                    .withZoneSameInstant(ZoneOffset.UTC);
 
             if (startDateTime.isAfter(endDateTime)) {
                 asyncResponse.resume(Response.status(Response.Status.BAD_REQUEST)
@@ -722,9 +729,9 @@ public class ReminderResource {
                                 map.put("userEmail", reminder.userEmail());
                                 map.put("originalText", reminder.originalText());
                                 map.put("extractedAction", reminder.extractedAction());
-                                map.put("scheduledTime", reminder.scheduledTime().toString());
+                                map.put("scheduledTime", reminder.scheduledTime().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                                 map.put("status", reminder.status().toString());
-                                map.put("createdAt", reminder.createdAt().toString());
+                                map.put("createdAt", reminder.createdAt().withZoneSameInstant(USER_ZONE).format(API_TIME_FORMATTER));
                                 map.put("notificationSent", reminder.notificationSent());
                                 map.put("intent", reminder.intent());
                                 map.put("ruleName", reminder.eventBridgeRuleName());
@@ -738,7 +745,7 @@ public class ReminderResource {
                             "endTime", endTime,
                             "total", reminderList.size(),
                             "reminders", reminderList,
-                            "timestamp", LocalDateTime.now().toString()
+                            "timestamp", ZonedDateTime.now(USER_ZONE).format(API_TIME_FORMATTER)
                     );
 
                     return Response.ok(response).build();

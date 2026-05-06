@@ -14,7 +14,8 @@ import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.File;
-import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -76,7 +77,7 @@ class VoiceReminderServiceTest {
         String reminderId = "reminder-123";
 
         ParsedResult parsedResult = new ParsedResult(
-                LocalDateTime.now().plusDays(1).withHour(9).withMinute(0),
+                ZonedDateTime.now(ZoneOffset.UTC).plusDays(1).withHour(9).withMinute(0),
                 "купить молоко",
                 0.95,
                 "ru",
@@ -139,7 +140,7 @@ class VoiceReminderServiceTest {
         String reminderId = "reminder-123";
         String userEmail = "user@example.com";
         String action = "купить молоко";
-        LocalDateTime scheduledTime = LocalDateTime.now().plusDays(1);
+        ZonedDateTime scheduledTime = ZonedDateTime.now(ZoneOffset.UTC).plusDays(1);
 
         ReminderRecord reminder = new ReminderRecord(
                 reminderId,
@@ -148,7 +149,7 @@ class VoiceReminderServiceTest {
                 "купить молоко завтра в 9 утра",
                 action,
                 scheduledTime,
-                LocalDateTime.now(),
+                ZonedDateTime.now(ZoneOffset.UTC),
                 ReminderRecord.ReminderStatus.SCHEDULED,
                 false,
                 "reminder",
@@ -196,8 +197,8 @@ class VoiceReminderServiceTest {
                 "user@example.com",
                 "купить молоко",
                 "купить молоко",
-                LocalDateTime.now(),
-                LocalDateTime.now(),
+                ZonedDateTime.now(ZoneOffset.UTC),
+                ZonedDateTime.now(ZoneOffset.UTC),
                 ReminderRecord.ReminderStatus.SCHEDULED,
                 false,
                 "reminder",
@@ -229,8 +230,8 @@ class VoiceReminderServiceTest {
                 "user@example.com",
                 "купить молоко",
                 "купить молоко",
-                LocalDateTime.now(),
-                LocalDateTime.now(),
+                ZonedDateTime.now(ZoneOffset.UTC),
+                ZonedDateTime.now(ZoneOffset.UTC),
                 ReminderRecord.ReminderStatus.SCHEDULED,
                 false,
                 "reminder",
@@ -261,8 +262,8 @@ class VoiceReminderServiceTest {
                 "user@example.com",
                 "купить молоко",
                 "купить молоко",
-                LocalDateTime.now(),
-                LocalDateTime.now(),
+                ZonedDateTime.now(ZoneOffset.UTC),
+                ZonedDateTime.now(ZoneOffset.UTC),
                 ReminderRecord.ReminderStatus.SCHEDULED,
                 false,
                 "reminder",
