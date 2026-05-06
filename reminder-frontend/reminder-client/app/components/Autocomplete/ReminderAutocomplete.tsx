@@ -3,8 +3,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Autocomplete, Loader, Text, Group, Box } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
-import { autocompleteReminders } from '../services/reminders/ReminderService';
-import formatDateTime from '../utility/LocaleTimeTranslator';
+import { autocompleteReminders } from '@/app/services/reminders/ReminderService';
+import formatDateTime from '@/app/utility/LocaleTimeTranslator';
 
 interface ReminderSuggestion {
     reminderId: string;

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { getUserReminders, ReminderRecord } from "./services/reminders/ReminderService";
 import { HeroText } from "./components/HeroText/HeroText";
-import { TodaysReminders, TodayReminder } from "./components/Autocomplete/TodaysReminders/TodaysReminders";
+import { TodaysReminders, TodayReminder } from "./components/TodaysReminders/TodaysReminders";
 import { GetUserLogin, IsAuthenticated } from "./services/users/UserService";
 import formatDateTime from "./utility/LocaleTimeTranslator";
 

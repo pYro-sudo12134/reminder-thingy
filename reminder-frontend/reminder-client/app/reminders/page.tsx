@@ -10,9 +10,9 @@ import { GetUserLogin } from "../services/users/UserService";
 import type { ReminderItem } from "../components/cards/ReminderCard";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { ReminderAutocomplete } from "../components/ReminderAutocomplete";
 import ErrorNotification from "../components/Notifications/ErrorNotification";
 import SuccessNotification from "../components/Notifications/SuccessNotification";
+import { ReminderAutocomplete } from "../components/Autocomplete/ReminderAutocomplete";
 
 const defaultValues = {
     id: "",
